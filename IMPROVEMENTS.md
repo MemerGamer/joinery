@@ -261,3 +261,51 @@
   explicitly tested against every single-letter binding (`j`, `k`, `n`, `p`,
   `c`, `r`, `t`, `u`, `e`, `v`) firing while a modal/dialog other than the
   composer has focus.
+
+## http
+
+- **`ws.ts`'s `onMessage`/`onClose` dispatch logic is untested in-process.**
+  A new `apps/server/test/http/` suite covers auth, validation, error
+  mapping, most of `routes.ts`, and static serving, all through
+  `app.fetch()`. The WS *upgrade* route's auth gate is covered the same
+  way, but the actual message dispatch (`subscribe` pushing
+  `files.changed`/`root.rebound`, `unsubscribe`/`focus`/`blur` calling into
+  `EngineRegistry`, a malformed message being dropped without closing the
+  connection, `onClose` cleanup) lives inside the closure hono's
+  `upgradeWebSocket()` returns, which is only reachable through a *real*
+  WebSocket upgrade — hono's Bun adapter reads `c.env.server` inside
+  `upgradeWebSocket()`, which only `Bun.serve({ fetch, websocket })`
+  populates for an actual connection; plain `app.fetch(request)` throws
+  `TypeError: c.env is not an Object` before `onMessage` is ever reached
+  (confirmed by hand). Exercising it for real needs a throwaway
+  `Bun.serve` bound to an ephemeral port plus a real `WebSocket` client,
+  which the http test-suite task's ground rules explicitly excluded (no
+  spawned server, no browser). Four `test.todo`s in
+  `apps/server/test/http/ws.test.ts` mark exactly what's missing:
+  subscribe's initial push, silently-ignored subscribe to an unknown
+  review, malformed-message resilience, and `onClose` cleanup. Whoever
+  picks this up should add a small `test/http/ws-live.test.ts` (or similar)
+  that starts `Bun.serve` on port 0 for the duration of the test and tears
+  it down after — that's a different, heavier test shape than the rest of
+  this suite, which is why it wasn't folded in here.
+- **`errors.ts`'s `renderError`/`errorMessage` has a defensive branch for
+  non-`Error` thrown values that Hono's own dispatcher never actually
+  triggers.** Both `Hono#handleError` and `compose()`'s `onError` branch
+  (`node_modules/hono/dist/{hono-base,compose}.js`) only invoke the
+  registered `app.onError` handler when the thrown value is `instanceof
+  Error`; anything else (a bare string, for instance) is rethrown past
+  `onError` and surfaces as an uncaught throw out of `app.fetch` itself
+  (confirmed by hand: `throw 'x'` in a route handler never reaches
+  `renderError`, it just propagates). `errors.ts`'s own
+  `errorMessage()`/`renderError()` code still handles a non-`Error` `err`
+  gracefully, so nothing needs fixing there, but the "500 without leaking a
+  stack trace" guarantee only actually holds for `Error`-derived throws
+  under the current Hono version — a route that threw a raw string or
+  object would currently 500 the whole server response with no JSON body
+  at all rather than a clean `{error:...}` shape. Worth either asserting
+  every route in `routes.ts` only ever throws `Error`/`HttpError` (true
+  today, by inspection) or wrapping route registration so any thrown value
+  is normalized to an `Error` before Hono sees it, so the guarantee holds
+  even if that changes later. Not fixed here since it's a design decision
+  about where to add that normalization, not a small obviously-correct
+  patch.
