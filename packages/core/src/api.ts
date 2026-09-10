@@ -1,0 +1,241 @@
+/**
+ * The HTTP contract (§10), imported by the server, the web app, and the CLI.
+ *
+ * Each entry carries its method, a path builder, and zod schemas for body and
+ * response — so renaming a route or changing a payload is a compile error in
+ * three packages rather than a runtime 404.
+ */
+import { z } from 'zod';
+import {
+  fileContentsSchema,
+  filePatchSchema,
+} from './domain/diff.ts';
+import { fileListSchema, revisionSchema, reviewStateSchema } from './domain/files.ts';
+import {
+  agentRunSchema,
+  readingOrderPlanSchema,
+  readingOrderSchema,
+  repoSchema,
+  reviewSchema,
+  threadSchema,
+} from './domain/review.ts';
+
+export const errorResponseSchema = z.object({
+  error: z.object({
+    code: z.enum([
+      'not_found',
+      'bad_request',
+      'conflict',
+      'unauthorized',
+      'git_error',
+      'internal',
+    ]),
+    message: z.string(),
+    /** Actionable next step, e.g. the exact `git worktree repair` command (§4). */
+    hint: z.string().optional(),
+  }),
+});
+export type ErrorResponse = z.infer<typeof errorResponseSchema>;
+
+// --- request bodies ---
+
+export const addRepoBodySchema = z.object({ path: z.string().min(1) });
+export const createReviewBodySchema = z.object({
+  repoId: z.string().optional(),
+  repoPath: z.string().optional(),
+  branch: z.string().optional(),
+  sha: z.string().optional(),
+  base: z.string().optional(),
+  prNumber: z.number().int().positive().optional(),
+});
+export const setRevisionBodySchema = z.object({ revision: revisionSchema });
+export const markViewedBodySchema = z.object({
+  path: z.string().min(1),
+  /** Omitted means "the current blob for that path". */
+  blobSha: z.string().optional(),
+  viewed: z.boolean().default(true),
+});
+export const createThreadBodySchema = z.object({
+  path: z.string().min(1),
+  side: z.enum(['old', 'new']),
+  startLine: z.number().int().positive(),
+  endLine: z.number().int().positive(),
+  bodyMd: z.string().min(1),
+  /** Post the comment, then immediately ask an agent to reply (Cmd+Enter). */
+  askAgent: z.boolean().default(false),
+});
+export const replyBodySchema = z.object({
+  bodyMd: z.string().min(1),
+  author: z.enum(['user', 'agent']).default('user'),
+  agentRunId: z.string().optional(),
+  askAgent: z.boolean().default(false),
+});
+export const generateReadingOrderBodySchema = z.object({});
+
+// --- responses ---
+
+export const reviewDetailSchema = z.object({
+  review: reviewSchema,
+  repo: repoSchema,
+  state: reviewStateSchema,
+});
+export type ReviewDetail = z.infer<typeof reviewDetailSchema>;
+
+export const feedbackSchema = z.object({
+  markdown: z.string(),
+});
+
+const noContent = z.object({ ok: z.literal(true) });
+
+type RouteDef<B extends z.ZodTypeAny | undefined, R extends z.ZodTypeAny> = {
+  readonly method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  readonly path: (...args: never[]) => string;
+  readonly body: B;
+  readonly response: R;
+};
+
+const def = <B extends z.ZodTypeAny | undefined, R extends z.ZodTypeAny>(
+  d: RouteDef<B, R>,
+): RouteDef<B, R> => d;
+
+export const api = {
+  listRepos: def({
+    method: 'GET',
+    path: () => '/api/repos',
+    body: undefined,
+    response: z.object({ repos: z.array(repoSchema) }),
+  }),
+  addRepo: def({
+    method: 'POST',
+    path: () => '/api/repos',
+    body: addRepoBodySchema,
+    response: z.object({ repo: repoSchema }),
+  }),
+  listReviews: def({
+    method: 'GET',
+    path: () => '/api/reviews',
+    body: undefined,
+    response: z.object({ reviews: z.array(reviewSchema) }),
+  }),
+  createReview: def({
+    method: 'POST',
+    path: () => '/api/reviews',
+    body: createReviewBodySchema,
+    response: reviewDetailSchema,
+  }),
+  getReview: def({
+    method: 'GET',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}`,
+    body: undefined,
+    response: reviewDetailSchema,
+  }),
+  getFiles: def({
+    method: 'GET',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/files`,
+    body: undefined,
+    response: z.object({
+      list: fileListSchema,
+      viewed: z.array(z.object({ path: z.string(), blobSha: z.string() })),
+    }),
+  }),
+  getDiff: def({
+    method: 'GET',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/diff`,
+    body: undefined,
+    response: z.object({ patch: filePatchSchema }),
+  }),
+  getContents: def({
+    method: 'GET',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/contents`,
+    body: undefined,
+    response: z.object({ contents: fileContentsSchema }),
+  }),
+  getReadingOrder: def({
+    method: 'GET',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/reading-order`,
+    body: undefined,
+    response: z.object({ readingOrder: readingOrderSchema.nullable() }),
+  }),
+  setReadingOrder: def({
+    method: 'PUT',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/reading-order`,
+    body: readingOrderPlanSchema,
+    response: z.object({ readingOrder: readingOrderSchema }),
+  }),
+  generateReadingOrder: def({
+    method: 'POST',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/reading-order/generate`,
+    body: generateReadingOrderBodySchema,
+    response: z.object({ run: agentRunSchema }),
+  }),
+  listThreads: def({
+    method: 'GET',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/threads`,
+    body: undefined,
+    response: z.object({ threads: z.array(threadSchema) }),
+  }),
+  createThread: def({
+    method: 'POST',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/threads`,
+    body: createThreadBodySchema,
+    response: z.object({ thread: threadSchema, run: agentRunSchema.nullable() }),
+  }),
+  getThread: def({
+    method: 'GET',
+    path: (id: string) => `/api/threads/${encodeURIComponent(id)}`,
+    body: undefined,
+    response: z.object({ thread: threadSchema }),
+  }),
+  reply: def({
+    method: 'POST',
+    path: (id: string) => `/api/threads/${encodeURIComponent(id)}/replies`,
+    body: replyBodySchema,
+    response: z.object({ thread: threadSchema, run: agentRunSchema.nullable() }),
+  }),
+  resolveThread: def({
+    method: 'POST',
+    path: (id: string) => `/api/threads/${encodeURIComponent(id)}/resolve`,
+    body: z.object({ resolved: z.boolean().default(true) }),
+    response: z.object({ thread: threadSchema }),
+  }),
+  feedback: def({
+    method: 'GET',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/feedback`,
+    body: undefined,
+    response: feedbackSchema,
+  }),
+  setRevision: def({
+    method: 'POST',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/revision`,
+    body: setRevisionBodySchema,
+    response: z.object({ state: reviewStateSchema }),
+  }),
+  markViewed: def({
+    method: 'POST',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/viewed`,
+    body: markViewedBodySchema,
+    response: noContent,
+  }),
+  getRun: def({
+    method: 'GET',
+    path: (id: string) => `/api/runs/${encodeURIComponent(id)}`,
+    body: undefined,
+    response: z.object({
+      run: agentRunSchema,
+      events: z.array(
+        z.object({ seq: z.number().int(), type: z.string(), payload: z.unknown() }),
+      ),
+    }),
+  }),
+} as const;
+
+export type Api = typeof api;
+export type ApiOperation = keyof Api;
+
+export type BodyOf<K extends ApiOperation> = Api[K]['body'] extends z.ZodTypeAny
+  ? z.input<Api[K]['body']>
+  : never;
+export type ResponseOf<K extends ApiOperation> = z.output<Api[K]['response']>;
+
+export const DEFAULT_PORT = 7317;
+export const DEFAULT_HOST = '127.0.0.1';

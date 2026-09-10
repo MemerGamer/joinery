@@ -1,0 +1,19 @@
+{
+  "name": "review-ui",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "typecheck": "bun run --filter '*' typecheck",
+    "build": "bun run --filter '*' build",
+    "test": "bun test",
+    "check": "bun run typecheck && bun run build && bun test"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/bun": "1.3.12"
+  }
+}
