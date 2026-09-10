@@ -1,0 +1,40 @@
+{
+  "name": "@review/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "vite build",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "@base-ui-components/react": "1.0.0-rc.0",
+    "@pierre/diffs": "1.4.1",
+    "@pierre/theme": "2.0.0",
+    "@pierre/theming": "1.0.1",
+    "@pierre/trees": "1.0.0-beta.6",
+    "@review/core": "workspace:*",
+    "@shikijs/themes": "4.4.3",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "cmdk": "1.1.1",
+    "lucide-react": "1.44.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
+    "shiki": "4.4.3",
+    "tailwind-merge": "3.6.0",
+    "tinykeys": "4.0.0",
+    "zod": "4.6.1"
+  },
+  "devDependencies": {
+    "vite": "8.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "tailwindcss": "4.3.3",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0"
+  }
+}
