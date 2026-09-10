@@ -35,6 +35,10 @@ export function setAuthToken(next: string | null): void {
   token = next;
 }
 
+export function getAuthToken(): string | null {
+  return token;
+}
+
 function buildQuery(query: Record<string, unknown> | undefined): string {
   if (query === undefined) return '';
   const params = new URLSearchParams();

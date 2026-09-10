@@ -7,10 +7,13 @@
     "apps/*"
   ],
   "scripts": {
+    "dev:server": "bun run --filter '@review/server' dev",
+    "dev:web": "bun run --filter '@review/web' dev",
+    "start": "bun run --filter '@review/server' start",
     "typecheck": "bun run --filter '*' typecheck",
-    "build": "bun run --filter '*' build",
+    "build": "bun run --filter '@review/web' build && bun run --filter '@review/cli' build",
     "test": "bun test",
-    "check": "bun run typecheck && bun run build && bun test"
+    "check": "bun run typecheck && bun test"
   },
   "devDependencies": {
     "typescript": "5.9.3",

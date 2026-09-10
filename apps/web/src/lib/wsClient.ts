@@ -7,6 +7,7 @@
  * Reconnect is "send me the list again": on open we resend `subscribe` for
  * every review currently subscribed to.
  */
+import { getAuthToken } from './apiClient.ts';
 import { clientMessageSchema, serverEventSchema, type ClientMessage, type ServerEvent } from '@review/core';
 
 type Listener = (event: ServerEvent) => void;
@@ -26,7 +27,12 @@ export class EventsClient {
 
   private open(): void {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${proto}//${location.host}/api/events`);
+    // A browser's native WebSocket cannot set an Authorization header on the
+    // upgrade, so the token goes in the query string — which the server's
+    // auth middleware accepts for exactly this route.
+    const token = getAuthToken();
+    const auth = token === null ? '' : `?token=${encodeURIComponent(token)}`;
+    const ws = new WebSocket(`${proto}//${location.host}/api/events${auth}`);
     this.ws = ws;
 
     ws.addEventListener('open', () => {

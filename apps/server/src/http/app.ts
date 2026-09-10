@@ -44,7 +44,7 @@ export function createApp(options: CreateAppOptions): CreatedApp {
   const routes = buildRoutes({ db: options.db, registry: options.registry });
   app.route('/', routes);
 
-  mountStatic(app, options.webDistDir);
+  mountStatic(app, options.webDistDir, options.token);
 
   return { app, websocket };
 }

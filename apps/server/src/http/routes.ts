@@ -3,6 +3,7 @@
  * `@review/core`: validate params through each route's `body`/`query`
  * schema, return exactly its `response` shape.
  */
+import { isAbsolute } from 'node:path';
 import { Hono } from 'hono';
 import {
   addRepoBodySchema,
@@ -102,6 +103,15 @@ export function buildRoutes(deps: RoutesDeps): Hono {
 
   app.post('/api/repos', async (c) => {
     const body = await parseBody(addRepoBodySchema, c);
+    // A relative path would resolve against the *server's* cwd, silently
+    // registering a different repo than the caller meant. Clients resolve
+    // before sending; refuse rather than guess.
+    if (!isAbsolute(body.path)) {
+      throw badRequest(
+        `repo path must be absolute, got: ${body.path}`,
+        'Pass a full path, e.g. `review repos add "$(pwd)"`.',
+      );
+    }
     let canonical: string;
     try {
       canonical = await canonicalizePath(body.path);

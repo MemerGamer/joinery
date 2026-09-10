@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import * as client from '../client.ts';
 import { printLine, printTable } from '../format.ts';
 import type { Command } from './types.ts';
@@ -30,7 +31,10 @@ export const reposAdd: Command = {
   async run(argv) {
     const parsed = parseCommand(argv);
     if (wantsHelp(parsed)) return printLine(reposAdd.usage);
-    const path = requirePositional(parsed.positionals, 0, 'path');
+    // Resolved here, against the *client's* cwd: the server runs in its own
+    // directory, so a relative path sent over the wire would silently register
+    // whatever `.` means to the server instead of what the user typed.
+    const path = resolve(requirePositional(parsed.positionals, 0, 'path'));
     const result = await client.addRepo({ path });
     if (maybePrintJson(parsed, result)) return;
     printLine(`added repo ${result.repo.id} at ${result.repo.rootPath}`);
