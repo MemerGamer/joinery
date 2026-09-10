@@ -35,6 +35,7 @@ import {
 } from '../git/index.ts';
 import {
   adoptBranch,
+  findReviewByBranch,
   getReview,
   getThreadWithComments,
   listThreadsByReview,
@@ -438,19 +439,40 @@ export class ReviewEngine {
     if (rootChanged || operationChanged) await this.#emitState();
   }
 
-  /** SPEC §4: the first time a named branch's history contains a `(repo, sha)` review's pinned commit, adopt it. */
+  /**
+   * SPEC §4: the first time a named branch's history contains a `(repo, sha)`
+   * review's pinned commit, adopt it. `git branch --contains` can return
+   * several candidates; walk them in git's order and adopt the first one not
+   * already owned by another review in this repo (the `(repo_id, branch)`
+   * unique index forbids two reviews sharing a branch — stealing it would
+   * silently orphan the other review's threads). If every candidate is
+   * taken, stay detached: adoption is an optimisation, not a requirement.
+   * Never let adoption failure take the tick down with it.
+   */
   async #maybeAdoptBranch(): Promise<void> {
     const review = this.#review;
     if (review.branch !== null || review.pinnedSha === null) return;
-    const result = await git(['branch', '--format=%(refname:short)', '--contains', review.pinnedSha], {
-      cwd: this.#repo.rootPath,
-    });
-    if (result.exitCode !== 0) return;
-    const text = bytesToText(result.stdout).trim();
-    if (text === '') return;
-    const branchName = text.split('\n')[0]?.trim();
-    if (branchName === undefined || branchName === '') return;
-    this.#review = await adoptBranch(this.#db, review.id, branchName);
+    try {
+      const result = await git(['branch', '--format=%(refname:short)', '--contains', review.pinnedSha], {
+        cwd: this.#repo.rootPath,
+      });
+      if (result.exitCode !== 0) return;
+      const text = bytesToText(result.stdout).trim();
+      if (text === '') return;
+      const candidates = text
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line !== '');
+      for (const branchName of candidates) {
+        const owner = await findReviewByBranch(this.#db, review.repoId, branchName);
+        if (owner !== null) continue;
+        this.#review = await adoptBranch(this.#db, review.id, branchName);
+        return;
+      }
+    } catch {
+      // Adoption is an optimisation; a failure here must not crash the tick.
+      return;
+    }
   }
 
   /**

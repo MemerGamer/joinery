@@ -368,3 +368,33 @@
   patched blind — but `#maybeAdoptBranch` swallowing that particular
   `SQLiteError` (or checking first) instead of leaking it out of engine
   creation is probably the right shape of fix.
+
+## branch adoption ownership (2026-09-10)
+
+- **Fixed**, per an explicit design decision from the user (not improvised):
+  two reviews never collapse into one row. `#maybeAdoptBranch()` in
+  `apps/server/src/engine/reviewEngine.ts` now walks *every* candidate
+  branch `git branch --contains <pinnedSha>` returns, in the order git
+  lists them, and checks each one against a new `findReviewByBranch(db,
+  repoId, branch)` query (`apps/server/src/db/reviews.ts`) before adopting
+  it — the first unclaimed candidate wins. If every candidate branch is
+  already owned by another review in the same repo, the review simply
+  stays detached (`branch: null`, `pinnedSha` unchanged); adoption is
+  treated as an optimisation, never a requirement. The whole method is now
+  wrapped in try/catch so a git failure or anything else here can't take
+  `ReviewEngine.create()` or a tick down with it. Ownership is resolved with
+  a real `SELECT` before the `UPDATE`, not by catching the `UNIQUE`
+  constraint error after the fact (a caught constraint error can't
+  distinguish this case from an unrelated bug, and it leaves a failed write
+  in the transaction log for nothing).
+  Reproduced the original crash by hand first (two reviews on the same
+  repo — one owning a branch outright, a second pinned to a sha reachable
+  from that branch — then constructing `ReviewEngine` for the second: it
+  threw `SQLiteError: UNIQUE constraint failed: review.repo_id,
+  review.branch` straight out of `create()`, matching this entry's
+  description exactly), then confirmed the fix no longer throws in the same
+  setup. New coverage in `apps/server/test/engine/reviewEngine.test.ts`:
+  a taken single-candidate branch leaves the review detached and the owning
+  review untouched, and a taken-then-unclaimed two-candidate case (branch
+  names chosen so git's alphabetical `--contains` order puts the taken one
+  first) adopts the later, unclaimed one instead of giving up.

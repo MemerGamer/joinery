@@ -384,6 +384,98 @@ describe('engine tick', () => {
     expect(reloaded?.pinnedSha).toBeNull();
   });
 
+  test('branch adoption: does not steal a branch already owned by another review, stays detached', async () => {
+    const ctx = await setupRepo('feature');
+    cleanups.push(ctx.cleanup);
+    const sha = headSha(ctx.repoDir);
+
+    // Another review already owns 'feature' in this repo.
+    const owner = await createReview(ctx.db, {
+      repoId: ctx.repo.id,
+      branch: 'feature',
+      pinnedSha: null,
+      baseRef: 'main',
+    });
+
+    const detachedReview = await createReview(ctx.db, {
+      repoId: ctx.repo.id,
+      branch: null,
+      pinnedSha: sha,
+      baseRef: 'main',
+    });
+
+    const events: ServerEvent[] = [];
+    const engine = await ReviewEngine.create({
+      db: ctx.db,
+      repo: ctx.repo,
+      review: detachedReview,
+      emit: (e) => events.push(e),
+    });
+    cleanups.push(async () => engine.dispose());
+
+    // create() already ticked once; tick again so a second attempt can't crash either.
+    await engine.tick();
+
+    const reloaded = await getReview(ctx.db, detachedReview.id);
+    expect(reloaded?.branch).toBeNull();
+    expect(reloaded?.pinnedSha).toBe(sha);
+
+    const reloadedOwner = await getReview(ctx.db, owner.id);
+    expect(reloadedOwner?.branch).toBe('feature');
+  });
+
+  test('branch adoption: skips a taken candidate branch and adopts the next unclaimed one', async () => {
+    const ctx = await setupRepo('feature');
+    cleanups.push(ctx.cleanup);
+    const sha = headSha(ctx.repoDir);
+
+    // Two more branches point at the same commit as 'feature'. `git branch
+    // --contains` lists candidates alphabetically, so 'aaa-taken' sorts
+    // before 'feature' and 'zzz-free' sorts after it.
+    runGit(ctx.repoDir, ['branch', 'aaa-taken', sha]);
+    runGit(ctx.repoDir, ['branch', 'zzz-free', sha]);
+
+    const owner = await createReview(ctx.db, {
+      repoId: ctx.repo.id,
+      branch: 'aaa-taken',
+      pinnedSha: null,
+      baseRef: 'main',
+    });
+    // 'feature' is also a candidate (it's the branch the commit was made
+    // on) and is taken too, so only 'zzz-free' is left unclaimed.
+    const featureOwner = await createReview(ctx.db, {
+      repoId: ctx.repo.id,
+      branch: 'feature',
+      pinnedSha: null,
+      baseRef: 'main',
+    });
+
+    const detachedReview = await createReview(ctx.db, {
+      repoId: ctx.repo.id,
+      branch: null,
+      pinnedSha: sha,
+      baseRef: 'main',
+    });
+
+    const events: ServerEvent[] = [];
+    const engine = await ReviewEngine.create({
+      db: ctx.db,
+      repo: ctx.repo,
+      review: detachedReview,
+      emit: (e) => events.push(e),
+    });
+    cleanups.push(async () => engine.dispose());
+
+    const reloaded = await getReview(ctx.db, detachedReview.id);
+    expect(reloaded?.branch).toBe('zzz-free');
+    expect(reloaded?.pinnedSha).toBeNull();
+
+    const reloadedOwner = await getReview(ctx.db, owner.id);
+    expect(reloadedOwner?.branch).toBe('aaa-taken');
+    const reloadedFeatureOwner = await getReview(ctx.db, featureOwner.id);
+    expect(reloadedFeatureOwner?.branch).toBe('feature');
+  });
+
   test('switching revision via db + notifyExternalChange re-renders head', async () => {
     const ctx = await setupRepoAndReview();
     cleanups.push(ctx.cleanup);
