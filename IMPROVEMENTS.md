@@ -159,3 +159,105 @@
   fixable from here. The CLI itself is verified working via
   `bun apps/cli/src/index.ts`. Before shipping a binary, retest on a newer Bun
   or ship a `bun`-shebang script instead of a compiled executable.
+
+## web
+
+- **`vite.config.ts` had to be edited to unblock the build.** It imported
+  `DEFAULT_PORT` from `@review/core`, whose `package.json` "exports" point
+  straight at `.ts` source. `vite.config.ts` is loaded by Node's native ESM
+  loader (not Vite's own transform pipeline), which can't resolve a bare
+  `.ts` file and fails with `ERR_UNKNOWN_FILE_EXTENSION` — reproduced with
+  both `bun run --filter '@review/web' build` and `bun run vite build`
+  directly, so it isn't specific to the filter invocation. Fixed by inlining
+  the port literal (`7317`) in `apps/web/vite.config.ts` with a comment
+  explaining why, rather than importing it. If `@review/core` ever ships a
+  compiled `dist/` with a `.js`/`.d.ts` exports entry, the import can be
+  restored.
+- **Per-file patches are fetched eagerly in file-list order, not lazily by
+  viewport.** SPEC §6 wants patches fetched "on demand in viewport and
+  reading-order sequence." `ReviewContext.rebuildOrder` (`apps/web/src/state/ReviewContext.tsx`)
+  instead kicks off `loadFileDiff` for every un-hydrated file as soon as the
+  file list loads. Doing true viewport-driven fetching needs either an
+  `IntersectionObserver` wired to each rendered `CodeView` item's DOM node
+  (available via `CodeViewHandle.getInstance().getRenderedItems()`, the same
+  API the anchor-capture code already uses) or a scroll-position subscription
+  via `CodeView`'s `onScroll`/`subscribeToScroll`, cross-referenced against
+  reading-order sequence for prefetch-ahead. Given the size of everything else
+  in scope this was left as eager-but-cached (still one request per file, still
+  cached by blob-SHA pair, never a re-fetch) rather than half-implemented.
+- **Large-file collapse threshold approximates "2,000 lines" with
+  `additions + deletions`, and the 500 KB byte-size half of the rule isn't
+  checked at all.** `isLargeFile` in `ReviewContext.tsx` — `FileEntry`
+  (`packages/core/src/domain/files.ts`) carries `additions`/`deletions` but no
+  line count or byte size, so there's nothing else to check against before
+  the patch itself has loaded (at which point `fileDiff.hunks`/`additionLines`
+  would give an exact count, but by then the collapse decision has already
+  been made once for the placeholder). A proper fix likely means the file
+  list response carrying a byte-size/line-count hint per entry, or deferring
+  the collapse decision until the first patch fetch resolves.
+- **No viewport-driven prefetch on scroll**, and hunk-level `j`/`k` navigation
+  (SPEC §11) is a documented no-op stub in `apps/web/src/components/ReviewWindow.tsx`
+  (`nextHunk`). `CodeView`'s public `CodeViewHandle` doesn't expose a
+  "current/next hunk" concept directly — it would need to be built on top of
+  `scrollTo({type:'position', ...})` plus reading hunk boundaries out of each
+  item's `fileDiff.hunks`, tracking which hunk is nearest the current scroll
+  position. `prevHunk`, `nextThread`/`prevThread`, and `expandHunk`/
+  `expandWholeFile` (`e`/`Shift+E`) are likewise wired into
+  `useGlobalKeymap`'s action table in `ReviewWindow.tsx` but have no handler
+  passed in yet — `e`/`Shift+E` need to resolve "the hunk under the cursor",
+  which needs the same missing hunk-position tracking.
+- **Viewport anchoring restores file-level position only, not
+  `(path, side, line)`.** SPEC §5 wants the exact topmost visible line
+  restored after a delta. `captureTopVisiblePath`/`applyPendingRefresh` in
+  `ReviewContext.tsx` measure rendered item elements' `getBoundingClientRect()`
+  against the scroll container to find the topmost visible *file* and
+  `scrollTo({type:'item', ...})` it back into view, with a reading-order
+  nearest-neighbor fallback if that file was removed. Getting to exact line
+  granularity needs either a line-level DOM query inside each item's shadow
+  DOM (undocumented internals) or a Pierre API for "line nearest a given pixel
+  offset," which isn't part of the public `CodeViewHandle` surface.
+- **No resizable pane splitters.** The three panes (`ReviewWindow.tsx`) are
+  fixed-width (`w-60`/`w-72`) rather than drag-resizable. Base UI doesn't ship
+  a resizable-panel primitive; this would need a small custom pointer-drag
+  hook or a dedicated library, neither of which was in the installed
+  dependency set, so it was left out rather than hand-rolled under time
+  pressure.
+- **`@pierre/trees` row decorations use plain text (`✓`, `gen`), not icons.**
+  `FileTreePane.tsx`'s `renderRowDecoration` returns `FileTreeRowDecoration`,
+  whose icon variant takes a `RemappedIcon` (a sprite-sheet icon *name* from
+  `@pierre/trees`' own icon config, not an arbitrary React node), so a
+  `lucide-react` icon can't be dropped in directly without building/wiring a
+  custom sprite sheet via `iconConfig.spriteSheet`. Left as short text labels
+  rather than take on sprite-sheet generation.
+- **Command palette's "ask agent" action (SPEC §11) is not implemented.**
+  `CommandPalette.tsx` covers jump-to-file/step/thread/review, revision
+  switch, theme switch, and generate-reading-order, but "ask agent" needs a
+  selected thread as context (there's no "ask agent about nothing" flow) and
+  the palette currently has no notion of a currently-open thread to attach
+  the action to. `ThreadArticle.tsx`'s "Ask agent" button (inside the reply
+  composer) covers the equivalent action once a thread is open; the palette
+  entry point was left out rather than fabricate a "pick a thread first"
+  sub-flow.
+- **`review.branch` header identity and Homebase repo path both fall back to
+  the raw id when data is missing**, e.g. `review.pinnedSha?.slice(0, 10) ??
+  'detached'` in `Homebase.tsx`/`Header.tsx` — reasonable placeholders, but
+  not validated against what the server actually returns for a `(repo, sha)`
+  review that hasn't adopted a branch yet.
+- **No axe/screen-reader audit was run** (that's explicitly P4.5 in SPEC §12,
+  after this pass) — landmarks, `aria-label`s, and focus rings were applied
+  by hand per SPEC §3's checklist (Base UI primitives weren't pulled in for
+  the threads panel or command palette dismiss behavior — `cmdk`'s
+  `Command.Dialog` supplies its own via the `@radix-ui/react-dialog` it
+  depends on, but the threads panel in `ThreadsPanel.tsx` is a plain
+  `role="region"` panel with a manual close button rather than a Base UI
+  `Dialog`/`Popover`, so it doesn't get automatic focus-trap/restore — it's a
+  non-modal overlay by design (it doesn't block interaction with the diff
+  behind it), but keyboard focus doesn't currently move into it on open).
+- **Split vs unified (`u`) and panel toggles are wired through
+  `useGlobalKeymap`, but text-input contexts aren't specially excluded**
+  beyond `tinykeys`' own `defaultKeybindingsHandlerIgnore` (ignores events
+  from `contenteditable`/form elements unless they're the event target) — this
+  should be correct for the comment composer's `<textarea>`, but wasn't
+  explicitly tested against every single-letter binding (`j`, `k`, `n`, `p`,
+  `c`, `r`, `t`, `u`, `e`, `v`) firing while a modal/dialog other than the
+  composer has focus.

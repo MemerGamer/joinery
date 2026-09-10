@@ -1,0 +1,162 @@
+@import 'tailwindcss';
+
+/*
+ * SPEC §3: Linear's feel comes from the token set — tight spacing scale,
+ * low-contrast chrome, one accent, fast short transitions — not a component
+ * library. Light/dark app chrome are separate CSS-variable sets.
+ */
+:root {
+  --chrome-bg: #ffffff;
+  --chrome-bg-raised: #fafafa;
+  --chrome-bg-sunken: #f5f5f6;
+  --chrome-border: #e4e4e7;
+  --chrome-border-strong: #d4d4d8;
+  --chrome-fg: #1c1c1f;
+  --chrome-fg-muted: #6b6b74;
+  --chrome-fg-subtle: #9a9aa2;
+  --chrome-accent: #5e6ad2;
+  --chrome-accent-fg: #ffffff;
+  --chrome-danger: #e5484d;
+  --chrome-danger-bg: #fdecec;
+  --chrome-warning: #f5a623;
+  --chrome-warning-bg: #fff6e5;
+  --chrome-success: #2fa86a;
+  --chrome-focus-ring: #5e6ad2;
+  --chrome-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.04);
+  --chrome-radius-sm: 4px;
+  --chrome-radius-md: 6px;
+  --chrome-radius-lg: 10px;
+  --chrome-space-1: 4px;
+  --chrome-space-2: 8px;
+  --chrome-space-3: 12px;
+  --chrome-space-4: 16px;
+  --chrome-space-5: 24px;
+  --chrome-transition-fast: 100ms cubic-bezier(0.2, 0, 0, 1);
+  --chrome-transition: 150ms cubic-bezier(0.2, 0, 0, 1);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --chrome-bg: #19191c;
+    --chrome-bg-raised: #202024;
+    --chrome-bg-sunken: #141416;
+    --chrome-border: #2c2c31;
+    --chrome-border-strong: #3a3a41;
+    --chrome-fg: #eceef2;
+    --chrome-fg-muted: #97979f;
+    --chrome-fg-subtle: #6c6c74;
+    --chrome-accent: #7d8aef;
+    --chrome-accent-fg: #0b0b0d;
+    --chrome-danger: #ff6369;
+    --chrome-danger-bg: #3a1f21;
+    --chrome-warning: #f5a623;
+    --chrome-warning-bg: #3a2e14;
+    --chrome-success: #4cc38a;
+    --chrome-focus-ring: #7d8aef;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --chrome-bg: #19191c;
+  --chrome-bg-raised: #202024;
+  --chrome-bg-sunken: #141416;
+  --chrome-border: #2c2c31;
+  --chrome-border-strong: #3a3a41;
+  --chrome-fg: #eceef2;
+  --chrome-fg-muted: #97979f;
+  --chrome-fg-subtle: #6c6c74;
+  --chrome-accent: #7d8aef;
+  --chrome-accent-fg: #0b0b0d;
+  --chrome-danger: #ff6369;
+  --chrome-danger-bg: #3a1f21;
+  --chrome-warning: #f5a623;
+  --chrome-warning-bg: #3a2e14;
+  --chrome-success: #4cc38a;
+  --chrome-focus-ring: #7d8aef;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-chrome-bg: var(--chrome-bg);
+  --color-chrome-bg-raised: var(--chrome-bg-raised);
+  --color-chrome-bg-sunken: var(--chrome-bg-sunken);
+  --color-chrome-border: var(--chrome-border);
+  --color-chrome-border-strong: var(--chrome-border-strong);
+  --color-chrome-fg: var(--chrome-fg);
+  --color-chrome-fg-muted: var(--chrome-fg-muted);
+  --color-chrome-fg-subtle: var(--chrome-fg-subtle);
+  --color-chrome-accent: var(--chrome-accent);
+  --color-chrome-accent-fg: var(--chrome-accent-fg);
+  --color-chrome-danger: var(--chrome-danger);
+  --color-chrome-danger-bg: var(--chrome-danger-bg);
+  --color-chrome-warning: var(--chrome-warning);
+  --color-chrome-warning-bg: var(--chrome-warning-bg);
+  --color-chrome-success: var(--chrome-success);
+}
+
+* {
+  border-color: var(--chrome-border);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--chrome-bg);
+  color: var(--chrome-fg);
+  font:
+    13px/1.5 -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--chrome-focus-ring);
+  outline-offset: 1px;
+  border-radius: var(--chrome-radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --chrome-border: var(--chrome-border-strong);
+    --chrome-fg-muted: var(--chrome-fg);
+  }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--chrome-border-strong);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

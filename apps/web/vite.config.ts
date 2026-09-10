@@ -2,7 +2,14 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { fileURLToPath, URL } from 'node:url';
-import { DEFAULT_PORT } from '@review/core';
+
+// Inlined rather than imported from `@review/core`: `vite.config.ts` is
+// loaded by Node's native ESM loader (not Vite's own transform pipeline),
+// and `@review/core`'s package.json "exports" point straight at `.ts`
+// source, which that loader can't resolve — `bun run vite build` fails with
+// `ERR_UNKNOWN_FILE_EXTENSION` otherwise. Keep in sync with
+// `packages/core/src/api.ts`'s `DEFAULT_PORT`.
+const DEFAULT_PORT = 7317;
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
