@@ -1,5 +1,5 @@
 /**
- * ws.ts covers two concerns: (1) the `GET /api/events` upgrade route is
+ * ws.ts covers two concerns here: (1) the `GET /api/events` upgrade route is
  * gated by the same `/api/*` bearer-token middleware as everything else,
  * and (2) `clientMessageSchema` parses/rejects the wire messages the
  * `onMessage` dispatcher switches on.
@@ -11,14 +11,14 @@
  * node_modules/hono/dist/adapter/bun/websocket.js), and `c.env.server` is
  * only populated when `Bun.serve({ fetch: app.fetch, websocket })` calls
  * `fetch(req, server)` for a real connection — plain `app.fetch(request)`
- * (used everywhere else in this suite, and required by the ground rules
- * here: no spawned server, no browser) leaves `c.env` without a `server`
+ * (used everywhere else in this suite) leaves `c.env` without a `server`
  * and the upgrade throws `TypeError: c.env is not an Object` before
- * `onMessage` is ever reached. Actually driving subscribe/unsubscribe/
- * focus/blur/ping through the registry therefore needs a live
- * `Bun.serve` + a real `WebSocket` client, which is out of scope for this
- * in-process suite. The `test.todo`s below mark that gap explicitly
- * rather than faking it.
+ * `onMessage` is ever reached. That dispatch — subscribe/unsubscribe/
+ * focus/blur/ping through the registry, malformed-message resilience,
+ * onClose cleanup, auth on a real upgrade, and fan-out isolation — is
+ * covered in `ws-live.test.ts`, which stands up a throwaway `Bun.serve` on
+ * an ephemeral port (`port: 0`) and drives it with a real `WebSocket`
+ * client.
  */
 import { describe, expect, test } from 'bun:test';
 import { clientMessageSchema } from '@review/core';
@@ -97,12 +97,7 @@ describe('ws.ts: clientMessageSchema parses exactly what onMessage dispatches on
   });
 });
 
-// Escalated rather than faked: exercising the actual onMessage dispatch
-// (subscribe pushing files.changed/root.rebound, unsubscribe detaching,
-// focus/blur calling into EngineRegistry, and a malformed message being
-// dropped without closing the connection) needs a real Bun.serve + WebSocket
-// client per the module comment above, which these ground rules exclude.
-test.todo('onMessage: subscribe sends files.changed then root.rebound for an existing review (needs a live Bun.serve + WebSocket client)', () => {});
-test.todo('onMessage: subscribe to a non-existent review is silently ignored (needs a live Bun.serve + WebSocket client)', () => {});
-test.todo('onMessage: a malformed message is dropped without closing the connection (needs a live Bun.serve + WebSocket client)', () => {});
-test.todo('onClose: unsubscribes all reviews and blurs the focused one (needs a live Bun.serve + WebSocket client)', () => {});
+// The onMessage/onClose dispatch itself (subscribe pushing files.changed/
+// root.rebound, unsubscribe detaching, focus/blur calling into
+// EngineRegistry, malformed messages being dropped without closing the
+// connection, and onClose cleanup) is covered for real in ws-live.test.ts.

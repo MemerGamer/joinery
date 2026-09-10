@@ -309,3 +309,62 @@
   even if that changes later. Not fixed here since it's a design decision
   about where to add that normalization, not a small obviously-correct
   patch.
+
+## websocket
+
+- **`ws.ts`'s `onMessage`/`onClose` dispatch is now covered for real**, in
+  `apps/server/test/http/ws-live.test.ts`, via a throwaway `Bun.serve` on an
+  ephemeral port (`port: 0`, read back off the server via the new
+  `startLiveServer` helper in `apps/server/test/http/helpers.ts`) driven by a
+  real `WebSocket` client. This closes the gap the previous `## http` entry
+  and the four `test.todo`s in `ws.test.ts` described; the todos are gone
+  and `ws.test.ts`'s module comment now points here. Covered: subscribe's
+  initial `files.changed`/`root.rebound` push plus later forwarded engine
+  events, a no-op re-subscribe, silently-ignored subscribe to an unknown
+  review, non-JSON text / schema-failing JSON / binary frames all being
+  dropped without closing the connection or affecting other clients on the
+  same server, `unsubscribe` detaching a listener, `focus`/`blur`/`ping`
+  reaching `EngineRegistry` with the right `reviewId`, `onClose` unsubscribing
+  and auto-blurring the focused review with no leaked `subscriberCount` across
+  repeated connect/subscribe/disconnect cycles, a real upgrade rejecting a
+  missing or wrong `?token=`, and two clients on different reviews each
+  getting only their own review's events.
+- **Not covered, and why: the actual poll-cadence difference between
+  `FOCUSED_POLL_MS` (15s) and `BLURRED_POLL_MS` (120s) in
+  `reviewEngine.ts`.** `focus()`/`blur()` both call `#restartPoll()`, which
+  sets a `setInterval` at one of those two intervals; observing that
+  difference for real means waiting on the order of the shorter interval,
+  which the task's ground rules explicitly rule out ("do not write tests
+  that wait 15+ seconds"). What *is* tested is that the WS `focus`/`blur`
+  messages reach `EngineRegistry.focus`/`.blur` with the correct `reviewId`
+  (via a method-spy on the registry passed into `createApp`, since that's
+  the only observable, fast, non-flaky surface at this layer) — the poll
+  timer itself is `reviewEngine.ts`-internal state with no public accessor,
+  and `apps/server/test/engine/reviewEngine.test.ts` doesn't test it either.
+  If real coverage of the cadence itself is ever wanted, the cleanest path
+  is likely exporting `FOCUSED_POLL_MS`/`BLURRED_POLL_MS` (or a poll-interval
+  getter) from `reviewEngine.ts` for tests to assert against directly,
+  rather than timing a real interval.
+- **Found while writing the fan-out isolation test, not a bug — a sharp edge
+  worth knowing about:** a *pinned-sha* review (`branch: null`) whose
+  `pinnedSha` is reachable from a branch some other review in the same repo
+  already owns collides on `(repo_id, branch)` the moment its engine first
+  ticks. `ReviewEngine.create()` → `tick()` → `#maybeAdoptBranch()` (SPEC §4:
+  "the first time a named branch's history contains a `(repo, sha)`
+  review's pinned commit, adopt it") runs `git branch --contains
+  <pinnedSha>`, takes the first branch name it lists, and calls
+  `adoptBranch()` unconditionally — with no check for whether that
+  `(repo_id, branch)` pair is already taken by a different review row. In a
+  repo with only two branches where one is already an existing review's
+  branch, *any* pinned sha in that repo's history triggers this, and
+  `adoptBranch`'s `UPDATE ... RETURNING` throws a raw
+  `SQLiteError: UNIQUE constraint failed: review.repo_id, review.branch`
+  that propagates out of `ReviewEngine.create()` uncaught (confirmed by
+  hand: this is what broke the first draft of the fan-out test, which used
+  a pinned-sha second review before switching to a second, never-checked-
+  out branch instead). Whether two reviews should even be allowed to target
+  branches whose adoption could collide like this is a product decision,
+  not an obviously-correct one-line fix, so it's left here rather than
+  patched blind — but `#maybeAdoptBranch` swallowing that particular
+  `SQLiteError` (or checking first) instead of leaking it out of engine
+  creation is probably the right shape of fix.

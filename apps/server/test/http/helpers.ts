@@ -78,6 +78,7 @@ export type HttpFixture = {
   readonly db: Db;
   readonly opened: OpenedDb;
   readonly created: CreatedApp;
+  readonly registry: EngineRegistry;
   readonly token: string;
   cleanup: () => Promise<void>;
 };
@@ -111,6 +112,7 @@ export async function setupHttp(branch = 'feature'): Promise<HttpFixture> {
     db: opened.db,
     opened,
     created,
+    registry,
     token: TEST_TOKEN,
     cleanup: async () => {
       registry.disposeAll();
@@ -170,4 +172,40 @@ export async function apiFetch(
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   return await fixture.created.app.fetch(request);
+}
+
+export type LiveServer = {
+  readonly port: number;
+  /** Builds a `ws://127.0.0.1:<port>/api/events` URL. Pass `{ token: null }` to omit the query token entirely. */
+  readonly wsUrl: (options?: { token?: string | null }) => string;
+  stop: () => void;
+};
+
+/**
+ * A real `Bun.serve` bound to an ephemeral port (`port: 0`; the port is read
+ * back off the returned server, never hardcoded), for tests that need an
+ * actual WebSocket upgrade — hono's Bun adapter only populates `c.env.server`
+ * for a real `Bun.serve` connection, so `WS /api/events`'s `onMessage`/
+ * `onClose` dispatch is unreachable through plain `app.fetch()` (see
+ * `ws.test.ts`'s module comment). Never binds the app's real port (7317);
+ * always closes the server (via the caller's `stop()` in test teardown).
+ */
+export function startLiveServer(fixture: Pick<HttpFixture, 'created' | 'token'>): LiveServer {
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    fetch: fixture.created.app.fetch,
+    websocket: fixture.created.websocket,
+  });
+  const port = server.port;
+  if (port === undefined) throw new Error('Bun.serve did not report a port for the ephemeral (port: 0) listener');
+  return {
+    port,
+    wsUrl: (options = {}) => {
+      const token = options.token === undefined ? fixture.token : options.token;
+      const qs = token === null ? '' : `?token=${encodeURIComponent(token)}`;
+      return `ws://127.0.0.1:${String(port)}/api/events${qs}`;
+    },
+    stop: () => server.stop(true),
+  };
 }
