@@ -8,17 +8,25 @@
  * never a fresh object, or `CodeView` and the virtualizer both lose their
  * place.
  *
- * Per-file collapse follows the same rule: `@pierre/diffs` exposes collapse
- * only as `item.collapsed` on the controlled item (there is no
- * `CodeViewHandle.collapse(id)` — see `CodeViewHandle` in
- * `@pierre/diffs/react`'s `CodeView.d.ts`), so toggling mutates the item in
- * place, bumps `item.version`, and — since the React wrapper's controlled
- * `items` prop is diffed by array/object identity and a same-reference item
- * is treated as unchanged — also calls the core instance's own
- * `updateItem()` (via `codeViewRef.current.getInstance()`, already used
- * below for `captureTopVisiblePath`) so the change is guaranteed to
- * reconcile and repaint immediately rather than waiting on an unrelated
- * membership change.
+ * The full invariant for touching an item already in `itemsRef`, every
+ * time, with no exceptions: mutate its fields in place, bump `item.version`,
+ * and call `notifyItemMutated(item)`. That third step is not optional — the
+ * React wrapper's controlled `items` prop is reconciled by
+ * `areItemListsEqual`, which compares the array *and each element* by
+ * reference (`@pierre/diffs/dist/react/CodeView.js`); since we always mutate
+ * the same object rather than replacing it, that comparison reports "no
+ * change" and `CodeView` never calls `setItems()`/reads the bumped
+ * `version` — the mutation is invisible to it, however long `setItemsVersion`
+ * takes to eventually re-render. `notifyItemMutated` calls the core
+ * instance's own `updateItem()` (via `codeViewRef.current.getInstance()`,
+ * which is not gated by the "cannot be used when controlled" check that
+ * guards the React imperative handle's `updateItem`) so the change reconciles
+ * and repaints immediately regardless of when — or whether — an unrelated
+ * membership change happens to re-render the item list. A mutation that
+ * lands before `CodeView` has mounted needs no such nudge: `getInstance()`
+ * is `undefined` then, but the item is the same object the mount effect's
+ * initial `setItems()` call will read, so the already-applied mutation is
+ * simply part of what it sees.
  */
 import {
   applyDelta,
@@ -209,6 +217,15 @@ export function ReviewProvider({
   const [draftThread, setDraftThread] = useState<DraftThread | null>(null);
   const codeViewRef = useRef<CodeViewHandle<ThreadAnnotationMeta, undefined> | null>(null);
 
+  // Every in-place item mutation must call this afterward (see the module
+  // doc comment above). If CodeView hasn't mounted yet, getInstance() is
+  // undefined and there's nothing to nudge — harmless, since the mount
+  // effect's own setItems() call will read the item's current (already
+  // mutated) content.
+  const notifyItemMutated = useCallback((item: CodeViewDiffItem<ThreadAnnotationMeta>) => {
+    codeViewRef.current?.getInstance()?.updateItem(item);
+  }, []);
+
   // The item map — module-scoped per provider instance, mutated in place.
   // `itemsVersion` forces the memoized `items` array to recompute only when
   // membership/order changes, never on a pure content mutation (that's
@@ -280,9 +297,10 @@ export function ReviewProvider({
       // Same content, but the thread set for this path may have changed.
       existing.item.annotations = annotations;
       existing.item.version = (existing.item.version ?? 0) + 1;
+      notifyItemMutated(existing.item);
       return false;
     },
-    [buildAnnotationsFor],
+    [buildAnnotationsFor, notifyItemMutated],
   );
 
   const loadPatchInto = useCallback((entry: FileEntry) => {
@@ -294,12 +312,13 @@ export function ReviewProvider({
         if (rec === undefined) return;
         rec.item.fileDiff = fileDiff;
         rec.item.version = (rec.item.version ?? 0) + 1;
+        notifyItemMutated(rec.item);
         setItemsVersion((v) => v + 1);
       })
       .catch(() => {
         // Leave the placeholder in place; the file simply stays unloaded.
       });
-  }, [reviewId]);
+  }, [reviewId, notifyItemMutated]);
 
   const rebuildOrder = useCallback((fileList: FileEntry[], threads: Thread[]) => {
     let changedMembership = false;
@@ -464,6 +483,7 @@ export function ReviewProvider({
       if (rec !== undefined) {
         rec.item.annotations = next;
         rec.item.version = (rec.item.version ?? 0) + 1;
+        notifyItemMutated(rec.item);
       }
       anyChanged = true;
     }
@@ -472,7 +492,7 @@ export function ReviewProvider({
       setItemsVersion((v) => v + 1);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.threads, draftThread]);
+  }, [state.threads, draftThread, notifyItemMutated]);
 
   const applyPendingRefresh = useCallback(() => {
     // Viewport anchor (§5, *Scroll and selection stability*): capture the
@@ -555,12 +575,16 @@ export function ReviewProvider({
     setState((s) => ({ ...s, readingOrder: res.readingOrder }));
   }, [reviewId]);
 
-  const bumpAnnotations = useCallback((path: string) => {
-    const rec = itemsRef.current.get(path);
-    if (rec === undefined) return;
-    rec.item.version = (rec.item.version ?? 0) + 1;
-    setItemsVersion((v) => v + 1);
-  }, []);
+  const bumpAnnotations = useCallback(
+    (path: string) => {
+      const rec = itemsRef.current.get(path);
+      if (rec === undefined) return;
+      rec.item.version = (rec.item.version ?? 0) + 1;
+      notifyItemMutated(rec.item);
+      setItemsVersion((v) => v + 1);
+    },
+    [notifyItemMutated],
+  );
 
   // Mutate `rec.item.collapsed` in place, bump its version, and force the
   // core CodeView instance to reconcile that one item immediately (see the
@@ -578,10 +602,10 @@ export function ReviewProvider({
       if (rec.item.collapsed === collapsed) return;
       rec.item.collapsed = collapsed;
       rec.item.version = (rec.item.version ?? 0) + 1;
-      codeViewRef.current?.getInstance()?.updateItem(rec.item);
+      notifyItemMutated(rec.item);
       setItemsVersion((v) => v + 1);
     },
-    [reviewId],
+    [reviewId, notifyItemMutated],
   );
 
   const toggleFileCollapsed = useCallback(
