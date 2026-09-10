@@ -29,6 +29,7 @@ export interface KeymapActions {
   toggleUnifiedSplit?: () => void;
   expandHunk?: () => void;
   expandWholeFile?: () => void;
+  toggleFocusedFileCollapsed?: () => void;
   markViewed?: () => void;
   setRevisionWorking?: () => void;
   setRevisionHead?: () => void;
@@ -68,6 +69,9 @@ export function useGlobalKeymap(actions: KeymapActions): void {
       ...bind('u', actions.toggleUnifiedSplit),
       ...bind('e', actions.expandHunk),
       ...bind('Shift+e', actions.expandWholeFile),
+      // Not in SPEC §11's table (no key was assigned to per-file
+      // collapse/expand there); `z` is free and mirrors vim's fold mnemonic.
+      ...bind('z', actions.toggleFocusedFileCollapsed),
       ...bind('v', actions.markViewed),
       ...bind('1', actions.setRevisionWorking),
       ...bind('2', actions.setRevisionHead),

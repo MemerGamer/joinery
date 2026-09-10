@@ -46,7 +46,12 @@ export function CommentComposer({
         }}
         placeholder={placeholder}
         rows={3}
-        className="w-full resize-none rounded border border-chrome-border bg-chrome-bg p-1.5 text-[13px] text-chrome-fg outline-none focus-visible:border-chrome-accent"
+        // `outline-hidden` (not `outline-none`, which drops the outline
+        // outright under forced-colors mode) defers the visible ring to the
+        // page-wide `:focus-visible` rule in styles/index.css; the
+        // `focus-visible:border-chrome-accent` here is a second, same-hue
+        // cue on the textarea's own border, not a competing treatment.
+        className="w-full resize-none rounded border border-chrome-border bg-chrome-bg p-1.5 text-[13px] text-chrome-fg outline-hidden focus-visible:border-chrome-accent"
         aria-label="Comment body"
       />
       <div className="flex items-center justify-between">

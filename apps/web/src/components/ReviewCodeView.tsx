@@ -13,6 +13,7 @@ import type {
   SelectedLineRange,
   CodeViewItem,
 } from '@pierre/diffs';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useMemo } from 'react';
 import { makeLoadDiffFiles } from '../lib/diffLoader.ts';
 import {
@@ -38,6 +39,7 @@ export function ReviewCodeView(): React.JSX.Element {
     submitDraftThread,
     reloadThreads,
     codeViewRef,
+    toggleFileCollapsed,
   } = useReview();
 
   const loadDiffFiles = useMemo(
@@ -96,9 +98,31 @@ export function ReviewCodeView(): React.JSX.Element {
       ref={codeViewRef}
       items={items}
       options={options}
-      className="h-full w-full"
+      // `--diffs-gap-block`/`--diffs-line-height` are `@pierre/diffs`' own
+      // density knobs (see `dist/style.js`: `padding-block: var(--diffs-gap-block,
+      // var(--diffs-gap-fallback))` at 8px, `line-height: var(--diffs-line-height, 20px)`)
+      // — custom properties inherit through the shadow root the same way
+      // `--trees-density-override` does for `@pierre/trees` (FileTreePane.tsx),
+      // so nudging them here loosens hunk/line spacing to match the rest of
+      // the chrome's density pass without touching internals we don't own.
+      className="h-full w-full [--diffs-gap-block:var(--chrome-space-3)] [--diffs-line-height:22px]"
       style={{ height: '100%', overflow: 'auto' }}
       renderCodeViewHeader={() => <StepHeaderCard step={currentStep} />}
+      renderHeaderPrefix={(item: CodeViewItem<ThreadAnnotationMeta>) => (
+        <button
+          type="button"
+          onClick={() => toggleFileCollapsed(item.id)}
+          aria-label={item.collapsed === true ? `Expand ${item.id}` : `Collapse ${item.id}`}
+          aria-expanded={item.collapsed !== true}
+          className="flex shrink-0 items-center justify-center rounded p-0.5 text-chrome-fg-muted transition-colors hover:bg-chrome-bg-sunken hover:text-chrome-fg"
+        >
+          {item.collapsed === true ? (
+            <ChevronRight size={14} strokeWidth={1.5} aria-hidden />
+          ) : (
+            <ChevronDown size={14} strokeWidth={1.5} aria-hidden />
+          )}
+        </button>
+      )}
       renderAnnotation={(
         annotation: LineAnnotation<ThreadAnnotationMeta> | DiffLineAnnotation<ThreadAnnotationMeta>,
         item: CodeViewItem<ThreadAnnotationMeta>,

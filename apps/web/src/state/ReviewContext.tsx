@@ -7,6 +7,18 @@
  * entries mutate that item's `fileDiff` in place plus bump `item.version` —
  * never a fresh object, or `CodeView` and the virtualizer both lose their
  * place.
+ *
+ * Per-file collapse follows the same rule: `@pierre/diffs` exposes collapse
+ * only as `item.collapsed` on the controlled item (there is no
+ * `CodeViewHandle.collapse(id)` — see `CodeViewHandle` in
+ * `@pierre/diffs/react`'s `CodeView.d.ts`), so toggling mutates the item in
+ * place, bumps `item.version`, and — since the React wrapper's controlled
+ * `items` prop is diffed by array/object identity and a same-reference item
+ * is treated as unchanged — also calls the core instance's own
+ * `updateItem()` (via `codeViewRef.current.getInstance()`, already used
+ * below for `captureTopVisiblePath`) so the change is guaranteed to
+ * reconcile and repaint immediately rather than waiting on an unrelated
+ * membership change.
  */
 import {
   applyDelta,
@@ -37,6 +49,47 @@ import { loadFileDiff, placeholderFileDiff } from '../lib/diffLoader.ts';
 import { eventsClient } from '../lib/wsClient.ts';
 
 export type DiffStyle = 'split' | 'unified';
+
+/**
+ * Per-file collapse overrides an explicit user choice — click a file's
+ * header chevron, or the `z` shortcut — as opposed to the automatic
+ * binary/generated/large-file default `ensureItem` applies otherwise
+ * (SPEC §6). Persisted per review so it survives reloads and live updates:
+ * a file the user expanded stays expanded when its content changes, and
+ * vice versa. Keyed by path; `true` = explicitly collapsed, `false` =
+ * explicitly expanded.
+ */
+function collapseStorageKey(reviewId: string): string {
+  return `review-ui:collapsed:${reviewId}`;
+}
+
+function isCollapseOverrideRecord(value: unknown): value is Record<string, boolean> {
+  if (typeof value !== 'object' || value === null) return false;
+  return Object.values(value).every((v) => typeof v === 'boolean');
+}
+
+/** Reads `localStorage` defensively — it throws in some privacy contexts. */
+function readStoredCollapseOverrides(reviewId: string): Map<string, boolean> {
+  try {
+    const raw = window.localStorage.getItem(collapseStorageKey(reviewId));
+    if (raw === null) return new Map();
+    const parsed: unknown = JSON.parse(raw);
+    return isCollapseOverrideRecord(parsed) ? new Map(Object.entries(parsed)) : new Map();
+  } catch {
+    return new Map();
+  }
+}
+
+function persistCollapseOverrides(reviewId: string, overrides: ReadonlyMap<string, boolean>): void {
+  try {
+    window.localStorage.setItem(
+      collapseStorageKey(reviewId),
+      JSON.stringify(Object.fromEntries(overrides)),
+    );
+  } catch {
+    // Best-effort only — private/locked-down storage just won't persist.
+  }
+}
 
 export interface ViewportAnchor {
   path: string;
@@ -97,6 +150,22 @@ export interface ReviewEngine extends ReviewEngineState {
   cancelDraftThread: () => void;
   submitDraftThread: (bodyMd: string, askAgent: boolean) => Promise<void>;
   codeViewRef: React.RefObject<CodeViewHandle<ThreadAnnotationMeta, undefined> | null>;
+  /** Toggle one file's collapsed state — an explicit, persisted choice. */
+  toggleFileCollapsed: (path: string) => void;
+  /**
+   * Expand a file if it is currently collapsed, without recording it as an
+   * explicit user choice — used when navigating to a file (FileTreePane)
+   * so selection never lands on a collapsed diff.
+   */
+  expandFileForNavigation: (path: string) => void;
+  /** Collapse every file not already collapsed (bulk, not persisted). */
+  collapseAllFiles: () => void;
+  /**
+   * Expand every file not already expanded, except files collapsed by the
+   * automatic binary/generated/large default that the user hasn't
+   * overridden — SPEC §6 excludes those from any "expand all" action.
+   */
+  expandAllFiles: () => void;
 }
 
 const ReviewCtx = createContext<ReviewEngine | null>(null);
@@ -148,6 +217,10 @@ export function ReviewProvider({
   const [itemsVersion, setItemsVersion] = useState(0);
   const orderRef = useRef<string[]>([]);
 
+  // Explicit per-file collapse choices (path -> collapsed), persisted to
+  // localStorage per review. Reloaded whenever `reviewId` changes, below.
+  const collapseOverridesRef = useRef<Map<string, boolean>>(readStoredCollapseOverrides(reviewId));
+
   const revision = state.reviewState?.currentRevision;
   const revisionRef = useRef<Revision | undefined>(revision);
   revisionRef.current = revision;
@@ -188,13 +261,18 @@ export function ReviewProvider({
       const annotations = buildAnnotationsFor(entry.path, threads);
       annotationsRef.current.set(entry.path, annotations);
       if (existing === undefined) {
+        // The automatic default (SPEC §6) applies only to files the user
+        // has never touched — an explicit override always wins, so a file
+        // the user expanded stays expanded across a live update that
+        // recreates its item (e.g. removed then re-added).
+        const override = collapseOverridesRef.current.get(entry.path);
         const item: CodeViewDiffItem<ThreadAnnotationMeta> = {
           id: entry.path,
           type: 'diff',
           fileDiff: placeholderFileDiff(entry),
           annotations,
           version: 0,
-          collapsed: entry.binary || entry.generated || isLargeFile(entry),
+          collapsed: override ?? (entry.binary || entry.generated || isLargeFile(entry)),
         };
         itemsRef.current.set(entry.path, { entry, item });
         return true;
@@ -284,6 +362,7 @@ export function ReviewProvider({
   useEffect(() => {
     itemsRef.current = new Map();
     orderRef.current = [];
+    collapseOverridesRef.current = readStoredCollapseOverrides(reviewId);
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reviewId]);
@@ -483,6 +562,61 @@ export function ReviewProvider({
     setItemsVersion((v) => v + 1);
   }, []);
 
+  // Mutate `rec.item.collapsed` in place, bump its version, and force the
+  // core CodeView instance to reconcile that one item immediately (see the
+  // module doc comment above on why `setItemsVersion` alone isn't enough).
+  // `persist` records the change as an explicit user choice; navigation
+  // convenience (FileTreePane) and bulk collapse/expand-all pass `false`.
+  const setItemCollapsed = useCallback(
+    (path: string, collapsed: boolean, persist: boolean) => {
+      const rec = itemsRef.current.get(path);
+      if (rec === undefined) return;
+      if (persist) {
+        collapseOverridesRef.current.set(path, collapsed);
+        persistCollapseOverrides(reviewId, collapseOverridesRef.current);
+      }
+      if (rec.item.collapsed === collapsed) return;
+      rec.item.collapsed = collapsed;
+      rec.item.version = (rec.item.version ?? 0) + 1;
+      codeViewRef.current?.getInstance()?.updateItem(rec.item);
+      setItemsVersion((v) => v + 1);
+    },
+    [reviewId],
+  );
+
+  const toggleFileCollapsed = useCallback(
+    (path: string) => {
+      const rec = itemsRef.current.get(path);
+      if (rec === undefined) return;
+      setItemCollapsed(path, !(rec.item.collapsed ?? false), true);
+    },
+    [setItemCollapsed],
+  );
+
+  const expandFileForNavigation = useCallback(
+    (path: string) => {
+      const rec = itemsRef.current.get(path);
+      if (rec === undefined || rec.item.collapsed !== true) return;
+      setItemCollapsed(path, false, false);
+    },
+    [setItemCollapsed],
+  );
+
+  const collapseAllFiles = useCallback(() => {
+    for (const path of itemsRef.current.keys()) setItemCollapsed(path, true, false);
+  }, [setItemCollapsed]);
+
+  const expandAllFiles = useCallback(() => {
+    for (const [path, rec] of itemsRef.current) {
+      // SPEC §6: binary/over-2000-line/generated files are excluded from
+      // "expand all" — unless the user has explicitly chosen to expand this
+      // one, in which case that choice stands.
+      const autoCollapsed = rec.entry.binary || rec.entry.generated || isLargeFile(rec.entry);
+      if (autoCollapsed && !collapseOverridesRef.current.has(path)) continue;
+      setItemCollapsed(path, false, false);
+    }
+  }, [setItemCollapsed]);
+
   const startDraftThread = useCallback((draft: DraftThread) => setDraftThread(draft), []);
   const cancelDraftThread = useCallback(() => {
     setDraftThread(null);
@@ -556,6 +690,10 @@ export function ReviewProvider({
     cancelDraftThread,
     submitDraftThread,
     codeViewRef,
+    toggleFileCollapsed,
+    expandFileForNavigation,
+    collapseAllFiles,
+    expandAllFiles,
   };
   // annotationsVersion is read only to satisfy the exhaustive-deps linter's
   // intent (annotationsByPath is a ref, so consumers re-render off version).

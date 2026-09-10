@@ -1,4 +1,13 @@
-import { Columns2, GitBranch, PanelLeft, PanelRight, Rows2, Search } from 'lucide-react';
+import {
+  ChevronsDownUp,
+  ChevronsUpDown,
+  Columns2,
+  GitBranch,
+  PanelLeft,
+  PanelRight,
+  Rows2,
+  Search,
+} from 'lucide-react';
 import { goHomebase } from '../lib/router.ts';
 import { useReview } from '../state/ReviewContext.tsx';
 import { RevisionPicker } from './RevisionPicker.tsx';
@@ -14,6 +23,8 @@ export function Header({ onOpenPalette }: { onOpenPalette: () => void }): React.
     toggleRightPanel,
     diffStyle,
     setDiffStyle,
+    collapseAllFiles,
+    expandAllFiles,
   } = useReview();
 
   return (
@@ -49,6 +60,27 @@ export function Header({ onOpenPalette }: { onOpenPalette: () => void }): React.
       </button>
 
       <RevisionPicker />
+
+      <div className="flex items-center gap-0.5">
+        <button
+          type="button"
+          onClick={collapseAllFiles}
+          aria-label="Collapse all files"
+          title="Collapse all files"
+          className="rounded-md p-2 text-chrome-fg-muted transition-colors hover:bg-chrome-bg-raised hover:text-chrome-fg active:bg-chrome-bg-sunken"
+        >
+          <ChevronsDownUp size={16} strokeWidth={1.5} aria-hidden />
+        </button>
+        <button
+          type="button"
+          onClick={expandAllFiles}
+          aria-label="Expand all files"
+          title="Expand all files"
+          className="rounded-md p-2 text-chrome-fg-muted transition-colors hover:bg-chrome-bg-raised hover:text-chrome-fg active:bg-chrome-bg-sunken"
+        >
+          <ChevronsUpDown size={16} strokeWidth={1.5} aria-hidden />
+        </button>
+      </div>
 
       <button
         type="button"

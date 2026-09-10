@@ -508,3 +508,58 @@
   ever looks subtly "off" from the rest of the chrome in one theme, this is
   why — consider wiring `--trees-bg-override`/`--trees-fg-override`/etc. to
   the `--chrome-*` variables for a single source of truth.
+
+## file collapsing
+
+- **`@pierre/diffs` has no `CodeViewHandle.collapse(id)` / no controlled-mode
+  `updateItem`.** Per-file collapse is implemented by mutating
+  `item.collapsed` in place, bumping `item.version`, and — since the React
+  wrapper's controlled `items` diffing (`areItemListsEqual` in
+  `dist/react/CodeView.js`) compares the array element-by-element by
+  reference and treats a same-reference item as unchanged, so it never calls
+  the core `setItems`/`reconcileItems` path that actually reads `version` —
+  also calling `codeViewRef.current.getInstance().updateItem(item)` (the
+  vanilla `CodeView` class's own public method, unguarded by the "cannot be
+  used when controlled" check that only exists on the React handle) to force
+  an immediate reconcile. This same gap plausibly affects the *existing*
+  annotation-bump (`bumpAnnotations`) and patch-hydration (`loadPatchInto`)
+  paths in `ReviewContext.tsx`, which mutate + bump `version` +
+  `setItemsVersion` only, without an `updateItem()` call — they may be
+  relying on some other repaint trigger (a later scroll, a sibling
+  membership change) rather than reconciling immediately on their own. Worth
+  checking in a browser (this task couldn't use one) whether an annotation
+  appearing after clicking the gutter `+` on an otherwise-static file, or a
+  patch finishing hydration for an off-screen file, actually repaints
+  without additional user interaction; if not, the fix is the same
+  `getInstance()?.updateItem(rec.item)` call added here.
+
+- **SPEC §11's keyboard table doesn't list a per-file collapse/expand key.**
+  `z` was picked (free, vim-fold mnemonic) and wired in `lib/keymap.ts` /
+  `components/ReviewWindow.tsx`, but `SPEC.md`'s table (§11) wasn't updated
+  since that file is the product spec, not app source — worth adding a row
+  there (`z` | toggle focused file collapsed) to keep it the source of truth.
+
+- **Collapse-all / expand-all (`components/Header.tsx`) are bulk, ephemeral
+  actions — they don't write to the persisted per-file override map** (see
+  `collapseOverridesRef` / `review-ui:collapsed:<reviewId>` in
+  `state/ReviewContext.tsx`). Only an individual file's chevron click or the
+  `z` shortcut records an explicit choice. This means a reload after
+  "collapse all" reverts every non-explicitly-touched file to its default
+  state rather than staying bulk-collapsed. That's a deliberate simplicity
+  call (bulk view state treated like scroll position, not a saved
+  preference) but flagging it in case product intent differs — the
+  alternative is writing every affected path into the override map from
+  `collapseAllFiles`/`expandAllFiles` too.
+
+- **`ReviewCodeView.tsx`'s density tweak (`--diffs-gap-block` /
+  `--diffs-line-height` set via Tailwind arbitrary properties on the
+  `CodeView` `className`)** is based on reading `@pierre/diffs`' compiled
+  default stylesheet (`node_modules/@pierre/diffs/dist/style.js`:
+  `padding-block: var(--diffs-gap-block, var(--diffs-gap-fallback))` at an
+  8px fallback, `line-height: var(--diffs-line-height, 20px)`) rather than
+  any documented public API — these custom properties aren't listed in
+  `types.d.ts` the way `itemMetrics`/`layout` are, so they could change or
+  be renamed in a future `@pierre/diffs` version without a type error to
+  catch it. Worth a visual check in a browser (not available for this task)
+  to confirm the loosened spacing actually reads as intended in both split
+  and unified, and both themes, before relying on it further.

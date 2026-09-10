@@ -20,7 +20,7 @@ const STATUS_MAP: Record<FileStatus, GitStatusEntry['status']> = {
 };
 
 export function FileTreePane(): React.JSX.Element {
-  const { fileList, isViewed, selectedPath, setSelectedPath } = useReview();
+  const { fileList, isViewed, selectedPath, setSelectedPath, expandFileForNavigation } = useReview();
   const byPath = useMemo(() => new Map(fileList.map((f) => [f.path, f])), [fileList]);
 
   const sorted = useMemo(() => [...fileList].sort(compareFileEntries), [fileList]);
@@ -44,7 +44,11 @@ export function FileTreePane(): React.JSX.Element {
     },
     onSelectionChange: (selected) => {
       const first = selected[0];
-      if (first !== undefined) setSelectedPath(first);
+      if (first !== undefined) {
+        setSelectedPath(first);
+        // Navigating to a file should never land on a collapsed diff.
+        expandFileForNavigation(first);
+      }
     },
   });
 

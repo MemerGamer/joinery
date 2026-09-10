@@ -48,6 +48,9 @@ function ReviewWindowInner(): React.JSX.Element {
     goSteps: () => review.toggleRightPanel(),
     openPalette: () => setPaletteOpen(true),
     nextHunk,
+    toggleFocusedFileCollapsed: () => {
+      if (review.selectedPath !== null) review.toggleFileCollapsed(review.selectedPath);
+    },
   });
 
   if (review.loading) {
