@@ -79,7 +79,7 @@ function ReviewWindowInner(): React.JSX.Element {
       {review.reviewState !== null && <DivergenceBanner state={review.reviewState} />}
       <div className="flex min-h-0 flex-1">
         {review.leftPanelOpen && (
-          <div className="w-60 shrink-0 border-r border-chrome-border">
+          <div className="w-64 shrink-0 border-r border-chrome-border">
             <FileTreePane />
           </div>
         )}
@@ -87,7 +87,7 @@ function ReviewWindowInner(): React.JSX.Element {
           <ReviewCodeView />
         </div>
         {review.rightPanelOpen && (
-          <div className="w-72 shrink-0 border-l border-chrome-border">
+          <div className="w-80 shrink-0 border-l border-chrome-border">
             <ReadingOrderPane />
           </div>
         )}

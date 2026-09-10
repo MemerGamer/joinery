@@ -3,8 +3,22 @@
  * coordinated, debounced action (SPEC §6, *Themes*): flipping chrome
  * light/dark also flips which half of the diff theme pair is active, and
  * both go through the worker pool's `setRenderOptions` together.
+ *
+ * `setRenderOptions({ theme })` behaves differently depending on the shape
+ * of `theme` (see `@pierre/diffs`' `getHighlighterThemeStyles` /
+ * `renderFileWithHighlighter`, in `node_modules/@pierre/diffs/dist`):
+ *   - a single theme *name* renders every token with that one theme's
+ *     colours baked in directly (shiki's single-theme mode).
+ *   - a `{ dark, light }` *pair* renders every token with BOTH colour sets
+ *     embedded as CSS custom properties (shiki's dual-theme mode), on the
+ *     assumption that host CSS picks between the two per token. This app
+ *     has no such CSS, so passing the pair is inert: the worker still
+ *     produces "a" render, but nothing ever chooses between the two halves,
+ *     so flipping chrome mode changes nothing about the colours shown.
+ * The fix is to always pass the single, already-resolved theme name for the
+ * *active* chrome mode, not the raw pair.
  */
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { DEFAULT_DIFF_THEME } from '../lib/themes.ts';
 import { useCoordinatedThemeChange } from '../lib/workerPool.tsx';
 
@@ -22,6 +36,60 @@ interface ThemeCtxValue extends ThemeState {
 
 const ThemeCtx = createContext<ThemeCtxValue | null>(null);
 
+const STORAGE_KEY = 'review-ui:theme';
+
+function activeDiffThemeName(state: ThemeState): string {
+  return state.chromeMode === 'dark' ? state.diffTheme.dark : state.diffTheme.light;
+}
+
+function readSystemChromeMode(): ChromeMode {
+  if (typeof window.matchMedia !== 'function') return 'dark';
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function isThemeState(value: unknown): value is ThemeState {
+  if (typeof value !== 'object' || value === null) return false;
+  const { chromeMode, diffTheme } = value as Record<string, unknown>;
+  if (chromeMode !== 'light' && chromeMode !== 'dark') return false;
+  if (typeof diffTheme !== 'object' || diffTheme === null) return false;
+  const { dark, light } = diffTheme as Record<string, unknown>;
+  return typeof dark === 'string' && typeof light === 'string';
+}
+
+/** Reads `localStorage` defensively — it throws in some privacy contexts. */
+function readStoredThemeState(): ThemeState | null {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (raw === null) return null;
+    const parsed: unknown = JSON.parse(raw);
+    return isThemeState(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistThemeState(state: ThemeState): void {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Best-effort only — private/locked-down storage just won't persist.
+  }
+}
+
+function getInitialThemeState(): ThemeState {
+  return readStoredThemeState() ?? { chromeMode: readSystemChromeMode(), diffTheme: DEFAULT_DIFF_THEME };
+}
+
+// Computed once at module evaluation, which happens synchronously while
+// `main.tsx`'s module graph loads — well before `createRoot(...).render()`
+// runs, so this can never race the first paint. Applying it to the DOM here
+// (rather than only inside `setChromeMode`) is what keeps the document and
+// React's initial state in agreement: previously `data-theme` was only ever
+// written inside `setChromeMode`, so on load the document carried no
+// `data-theme` at all while React's initial state claimed 'dark'.
+const initialThemeState = getInitialThemeState();
+document.documentElement.dataset['theme'] = initialThemeState.chromeMode;
+
 export function useTheme(): ThemeCtxValue {
   const ctx = useContext(ThemeCtx);
   if (ctx === null) throw new Error('useTheme must be used within ThemeProvider');
@@ -29,28 +97,46 @@ export function useTheme(): ThemeCtxValue {
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
-  const [state, setState] = useState<ThemeState>({
-    chromeMode: 'dark',
-    diffTheme: DEFAULT_DIFF_THEME,
-  });
+  const [state, setState] = useState<ThemeState>(initialThemeState);
   const applyCoordinated = useCoordinatedThemeChange();
 
   const setChromeMode = useCallback(
     (mode: ChromeMode) => {
       document.documentElement.dataset['theme'] = mode;
-      setState((s) => ({ ...s, chromeMode: mode }));
-      applyCoordinated({ diffTheme: state.diffTheme });
+      setState((s) => {
+        const next = { ...s, chromeMode: mode };
+        applyCoordinated({ diffTheme: activeDiffThemeName(next) });
+        return next;
+      });
     },
-    [applyCoordinated, state.diffTheme],
+    [applyCoordinated],
   );
 
   const setDiffTheme = useCallback(
     (theme: { dark: string; light: string }) => {
-      setState((s) => ({ ...s, diffTheme: theme }));
-      applyCoordinated({ diffTheme: theme });
+      setState((s) => {
+        const next = { ...s, diffTheme: theme };
+        applyCoordinated({ diffTheme: activeDiffThemeName(next) });
+        return next;
+      });
     },
     [applyCoordinated],
   );
+
+  // Sync the worker pool's initial render options (created from the module-
+  // scope `highlighterOptions.theme` pair in workerPool.tsx, before this
+  // provider — and therefore any stored/system preference — could apply) to
+  // the actually-active single theme name, once, on mount.
+  useEffect(() => {
+    applyCoordinated({ diffTheme: activeDiffThemeName(state) });
+    // Deliberately run once: subsequent changes flow through the setters
+    // above, which already send the coordinated update themselves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    persistThemeState(state);
+  }, [state]);
 
   const value = useMemo<ThemeCtxValue>(
     () => ({ ...state, setChromeMode, setDiffTheme }),

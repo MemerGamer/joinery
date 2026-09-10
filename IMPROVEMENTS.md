@@ -439,3 +439,72 @@
   didn't meaningfully change? If line endings aren't normalized
   consistently, that's a real, if narrow, "goes outdated when it should
   have followed" bug.
+
+## web interaction
+
+- **`thread.relocated` and `thread.updated`/`thread.created` WS handlers
+  always produce a new `threads` array reference, even when nothing about
+  a given thread's path/side/line actually changed** (`apps/web/src/state/
+  ReviewContext.tsx`, the `eventsClient.onEvent` switch, ~line 320-338).
+  After the Bug 1 fix, the "re-derive annotations" effect now compares
+  built annotations by value before touching `annotationsRef`/bumping
+  `item.version`, so a no-op relocation event no longer forces a
+  re-render of every file — but every such event still runs the full
+  `buildAnnotationsFor` comparison over `candidatePaths` (bounded by
+  thread count, not file count, so it's cheap) on every WS message. If
+  thread volume ever gets very large, consider having the server only
+  emit these events when a thread's derivable annotation fields actually
+  changed, rather than on every relocation attempt (including ones that
+  resolve to the same line).
+
+- **`captureTopVisiblePath` / `nearestSurvivingPath` (`apps/web/src/state/
+  ReviewContext.tsx`) anchor scroll position at file granularity, not
+  line granularity**, per the comment already in the code — this was not
+  part of the assigned bug set but is worth flagging again: after a
+  live-update delta lands mid-review, the viewport snaps to the top of
+  the nearest surviving file rather than preserving the exact line the
+  user was reading. Doing better would need a line-level anchor from
+  Pierre's internal row layout, which isn't part of the public
+  `CodeViewHandle` surface today (confirmed while reading `CodeView.d.ts`
+  for this task — the handle exposes `scrollTo`, `setSelectedLines` /
+  `getSelectedLines` / `clearSelectedLines`, `getInstance`, and item
+  CRUD, but nothing for "the line nearest pixel Y").
+
+## web appearance
+
+- **`CommentComposer.tsx`'s textarea uses `outline-none` and relies entirely
+  on the page-wide `:focus-visible` rule in `apps/web/src/styles/index.css`
+  for a focus ring** (it does have its own `focus-visible:border-chrome-accent`
+  as a secondary cue, so it isn't broken, just worth confirming intentional).
+  Out of scope here — `CommentComposer.tsx` is explicitly off-limits while
+  another agent is editing it — but worth a second look once that lands, to
+  make sure the two focus treatments don't fight each other visually.
+
+- **`ReviewCodeView.tsx` (off-limits here) is the one pane whose internal
+  row/gutter density I could not touch.** `FileTreePane.tsx` got a
+  `--trees-density-override` bump and `ReadingOrderPane.tsx`/`ThreadsPanel.tsx`
+  got more generous row padding as part of this pass, but the centre code
+  view's own line height, gutter width and hunk-header spacing are entirely
+  `@pierre/diffs`-internal and weren't touched. If "things are too close
+  together" persists specifically inside diff content (as opposed to the
+  chrome around it), that's the next place to look — check whether
+  `@pierre/diffs` exposes an equivalent density/line-height render option
+  (parallel to `--trees-density-override` on `@pierre/trees`).
+
+- **`CommandPalette.tsx` was left as-is** — it wasn't in the explicit list of
+  components for the density pass (Header, RevisionPicker, DivergenceBanner,
+  StepHeaderCard, RefreshPill, ThemePicker, plus the three panes), but its
+  row padding/spacing currently doesn't match the rhythm applied elsewhere
+  (e.g. its rows are tighter than the refreshed `ThemePicker`/`ReadingOrderPane`
+  rows). Worth a follow-up pass for consistency.
+
+- **`@pierre/trees`' own bg/fg/border tokens (`--trees-bg`, `--trees-fg`,
+  `--trees-border-color`, etc., see `node_modules/@pierre/trees/dist/style.js`)
+  are independent of this app's `--chrome-*` tokens** — they resolve via CSS
+  `light-dark()` off the browser's `color-scheme`, which happens to end up
+  visually close to the app chrome today, but they're a second, separate
+  color source. Not changed in this pass (out of scope / risk of visual
+  regression without a browser to verify against), but if `FileTreePane`
+  ever looks subtly "off" from the rest of the chrome in one theme, this is
+  why — consider wiring `--trees-bg-override`/`--trees-fg-override`/etc. to
+  the `--chrome-*` variables for a single source of truth.

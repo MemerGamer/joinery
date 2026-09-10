@@ -30,36 +30,36 @@ export function ThreadsPanel(): React.JSX.Element {
       aria-label="Threads"
       className="absolute inset-0 z-10 flex flex-col bg-chrome-bg"
     >
-      <div className="flex items-center justify-between border-b border-chrome-border px-3 py-2">
-        <h2 className="text-xs font-medium uppercase tracking-wide text-chrome-fg-muted">
+      <div className="flex items-center justify-between border-b border-chrome-border px-3 py-2.5">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-chrome-fg-muted">
           Threads
         </h2>
         <button
           type="button"
           onClick={toggleThreadsPanel}
           aria-label="Close threads panel"
-          className="rounded p-1 text-chrome-fg-muted hover:bg-chrome-bg-raised"
+          className="rounded-md p-1.5 text-chrome-fg-muted transition-colors hover:bg-chrome-bg-raised hover:text-chrome-fg"
         >
           <X size={16} strokeWidth={1.5} aria-hidden />
         </button>
       </div>
-      <div className="flex gap-1 border-b border-chrome-border p-2">
+      <div className="flex gap-1 border-b border-chrome-border p-2.5">
         <button
           type="button"
           onClick={() => setFilter('open')}
-          className={`flex-1 rounded px-2 py-1 text-xs ${filter === 'open' ? 'bg-chrome-bg-sunken text-chrome-fg' : 'text-chrome-fg-muted'}`}
+          className={`flex-1 rounded px-2 py-1.5 text-xs font-medium transition-colors ${filter === 'open' ? 'bg-chrome-bg-sunken text-chrome-fg' : 'text-chrome-fg-muted hover:text-chrome-fg'}`}
         >
           Open
         </button>
         <button
           type="button"
           onClick={() => setFilter('resolved')}
-          className={`flex-1 rounded px-2 py-1 text-xs ${filter === 'resolved' ? 'bg-chrome-bg-sunken text-chrome-fg' : 'text-chrome-fg-muted'}`}
+          className={`flex-1 rounded px-2 py-1.5 text-xs font-medium transition-colors ${filter === 'resolved' ? 'bg-chrome-bg-sunken text-chrome-fg' : 'text-chrome-fg-muted hover:text-chrome-fg'}`}
         >
           Resolved
         </button>
       </div>
-      <ul className="flex-1 overflow-y-auto p-2">
+      <ul className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
         {visible.length === 0 && (
           <li className="p-3 text-center text-xs text-chrome-fg-muted">No {filter} threads.</li>
         )}
@@ -68,13 +68,13 @@ export function ThreadsPanel(): React.JSX.Element {
             <button
               type="button"
               onClick={() => jumpTo(thread)}
-              className="flex w-full flex-col gap-1 rounded-md px-2 py-2 text-left hover:bg-chrome-bg-raised"
+              className="flex w-full flex-col gap-1.5 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-chrome-bg-raised"
             >
               <span className="flex items-center gap-1.5 text-[11px] text-chrome-fg-subtle">
                 {thread.status === 'resolved' ? (
-                  <Check size={12} strokeWidth={1.5} aria-hidden />
+                  <Check size={12} strokeWidth={1.5} className="shrink-0" aria-hidden />
                 ) : (
-                  <MessageSquare size={12} strokeWidth={1.5} aria-hidden />
+                  <MessageSquare size={12} strokeWidth={1.5} className="shrink-0" aria-hidden />
                 )}
                 <span className="truncate">
                   {thread.path}:{thread.startLine}

@@ -13,9 +13,9 @@ export function DivergenceBanner({ state }: { state: ReviewState }): React.JSX.E
     return (
       <div
         role="status"
-        className="flex items-center gap-2 border-b border-chrome-border bg-chrome-bg-sunken px-4 py-1.5 text-xs text-chrome-fg-muted"
+        className="flex items-center gap-2.5 border-b border-chrome-border bg-chrome-bg-sunken px-4 py-2 text-xs text-chrome-fg-muted"
       >
-        <GitCompare size={14} strokeWidth={1.5} aria-hidden />
+        <GitCompare size={14} strokeWidth={1.5} className="shrink-0" aria-hidden />
         {operationInProgress} in progress — showing the last good snapshot.
       </div>
     );
@@ -29,7 +29,7 @@ export function DivergenceBanner({ state }: { state: ReviewState }): React.JSX.E
     return (
       <div
         role="alert"
-        className="flex items-center gap-2 border-b border-chrome-danger bg-chrome-danger-bg px-4 py-2 text-sm font-medium text-chrome-fg"
+        className="flex items-center gap-2.5 border-b border-chrome-danger bg-chrome-danger-bg px-4 py-2.5 text-sm font-medium text-chrome-fg"
       >
         <AlertTriangle size={16} strokeWidth={1.5} className="shrink-0 text-chrome-danger" aria-hidden />
         {ahead > 0
@@ -41,8 +41,8 @@ export function DivergenceBanner({ state }: { state: ReviewState }): React.JSX.E
   }
 
   return (
-    <div className="flex items-center gap-2 border-b border-chrome-border bg-chrome-bg-sunken px-4 py-1 text-xs text-chrome-fg-muted">
-      <GitCompare size={14} strokeWidth={1.5} aria-hidden />
+    <div className="flex items-center gap-2.5 border-b border-chrome-border bg-chrome-bg-sunken px-4 py-2 text-xs text-chrome-fg-muted">
+      <GitCompare size={14} strokeWidth={1.5} className="shrink-0" aria-hidden />
       {ahead} unpushed commit{ahead === 1 ? '' : 's'}
     </div>
   );

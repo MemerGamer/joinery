@@ -12,7 +12,11 @@ export function RevisionPicker(): React.JSX.Element | null {
   if (reviewState === null) return null;
 
   return (
-    <div role="radiogroup" aria-label="Revision" className="flex items-center gap-0.5 rounded-md bg-chrome-bg-sunken p-0.5">
+    <div
+      role="radiogroup"
+      aria-label="Revision"
+      className="flex items-center gap-0.5 rounded-md bg-chrome-bg-sunken p-1"
+    >
       {reviewState.availableRevisions.map((rev) => {
         const active = rev === reviewState.currentRevision;
         return (
@@ -22,7 +26,7 @@ export function RevisionPicker(): React.JSX.Element | null {
             role="radio"
             aria-checked={active}
             onClick={() => void setRevision(rev)}
-            className={`rounded px-2.5 py-1 text-xs transition-colors ${
+            className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
               active
                 ? 'bg-chrome-bg text-chrome-fg shadow-[var(--chrome-shadow)]'
                 : 'text-chrome-fg-muted hover:text-chrome-fg'

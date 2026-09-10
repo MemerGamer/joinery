@@ -53,7 +53,14 @@ export function FileTreePane(): React.JSX.Element {
   }, [selectedPath, model]);
 
   return (
-    <nav aria-label="Changed files" className="flex h-full w-full flex-col overflow-hidden">
+    // `--trees-density-override` widens the library's own row height/padding
+    // (see @pierre/trees' style.js: row height and radius both scale off
+    // this variable) so rows are comfortably clickable instead of tightly
+    // stacked, without reimplementing the tree's internal row rendering.
+    <nav
+      aria-label="Changed files"
+      className="flex h-full w-full flex-col overflow-hidden [--trees-density-override:1.15]"
+    >
       <FileTree model={model} />
     </nav>
   );

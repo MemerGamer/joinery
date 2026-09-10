@@ -26,6 +26,20 @@
   --chrome-radius-sm: 4px;
   --chrome-radius-md: 6px;
   --chrome-radius-lg: 10px;
+  /*
+   * Spacing scale (SPEC §6 density pass). Every chrome component should
+   * round to one of these five steps rather than picking ad-hoc values:
+   *   1 = 4px  — icon-to-glyph, tightest pairing
+   *   2 = 8px  — gaps inside a control, list-item internal gaps
+   *   3 = 12px — control padding, row padding, header gaps
+   *   4 = 16px — pane section padding, card padding
+   *   5 = 24px — major card padding, top-level section separation
+   * These map onto Tailwind's own 4px-based scale (space-1 => p-1/gap-1,
+   * space-3 => p-3/gap-3, space-5 => p-6) so components use plain Tailwind
+   * utilities rather than these variables directly; the constants below
+   * exist for the few places that need the raw px value (e.g. inline
+   * style calculations), and as the single source of truth for the scale.
+   */
   --chrome-space-1: 4px;
   --chrome-space-2: 8px;
   --chrome-space-3: 12px;
