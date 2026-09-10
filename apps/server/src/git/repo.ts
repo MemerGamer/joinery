@@ -1,0 +1,158 @@
+/**
+ * Repo facts: default branch, remote owner/name, `$GIT_COMMON_DIR`,
+ * merge-base computation, PR divergence, in-progress-operation detection,
+ * and `refs/review/<id>` pinning (SPEC §4, §5).
+ */
+import { access } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { git, gitOrThrow, type GitCallOptions } from './run.ts';
+import type { GitOperation } from '@review/core';
+
+/** `git rev-parse --git-common-dir`, resolved to an absolute path. */
+export async function gitCommonDir(options: GitCallOptions): Promise<string> {
+  const result = await gitOrThrow(['rev-parse', '--git-common-dir'], options);
+  const raw = new TextDecoder().decode(result.stdout).trim();
+  if (raw.startsWith('/')) return raw;
+  // rev-parse can return a path relative to cwd.
+  return resolve(options.cwd, raw);
+}
+
+/** `git rev-parse --show-toplevel`. */
+export async function showToplevel(options: GitCallOptions): Promise<string> {
+  const result = await gitOrThrow(['rev-parse', '--show-toplevel'], options);
+  return new TextDecoder().decode(result.stdout).trim();
+}
+
+/**
+ * The default branch's short name (e.g. "main"), read from the remote
+ * HEAD symref. Falls back to `null` if it cannot be determined (no remote,
+ * or the symref was never set locally by a clone/fetch).
+ */
+export async function defaultBranch(options: GitCallOptions): Promise<string | null> {
+  const result = await git(['symbolic-ref', 'refs/remotes/origin/HEAD'], options);
+  if (result.exitCode !== 0) return null;
+  const ref = new TextDecoder().decode(result.stdout).trim();
+  const prefix = 'refs/remotes/origin/';
+  return ref.startsWith(prefix) ? ref.slice(prefix.length) : null;
+}
+
+export type RemoteIdentity = {
+  owner: string | null;
+  name: string | null;
+};
+
+/**
+ * Parse `owner/name` out of an origin URL. Handles the common SSH and HTTPS
+ * GitHub shapes; returns nulls for anything else rather than guessing.
+ */
+export function parseRemoteIdentity(url: string): RemoteIdentity {
+  const trimmed = url.trim().replace(/\.git$/u, '');
+
+  // git@github.com:owner/name  or  ssh://git@github.com/owner/name
+  const sshMatch = /^(?:ssh:\/\/)?git@[^:/]+[:/]([^/]+)\/([^/]+)$/u.exec(trimmed);
+  if (sshMatch !== null) {
+    return { owner: sshMatch[1] ?? null, name: sshMatch[2] ?? null };
+  }
+
+  // https://github.com/owner/name
+  const httpsMatch = /^https?:\/\/[^/]+\/([^/]+)\/([^/]+)$/u.exec(trimmed);
+  if (httpsMatch !== null) {
+    return { owner: httpsMatch[1] ?? null, name: httpsMatch[2] ?? null };
+  }
+
+  return { owner: null, name: null };
+}
+
+/** `git config --get remote.origin.url`, parsed into owner/name. Null fields if there's no origin. */
+export async function remoteIdentity(options: GitCallOptions): Promise<RemoteIdentity> {
+  const result = await git(['config', '--get', 'remote.origin.url'], options);
+  if (result.exitCode !== 0) return { owner: null, name: null };
+  const url = new TextDecoder().decode(result.stdout).trim();
+  if (url === '') return { owner: null, name: null };
+  return parseRemoteIdentity(url);
+}
+
+/** `git merge-base <a> <b>`. Null if the revisions share no history. */
+export async function mergeBase(a: string, b: string, options: GitCallOptions): Promise<string | null> {
+  const result = await git(['merge-base', a, b], options);
+  if (result.exitCode !== 0) return null;
+  const sha = new TextDecoder().decode(result.stdout).trim();
+  return sha === '' ? null : sha;
+}
+
+/** `git rev-parse <rev>`, resolved to a full SHA. Null if it doesn't resolve. */
+export async function revParse(rev: string, options: GitCallOptions): Promise<string | null> {
+  const result = await git(['rev-parse', '--verify', rev], options);
+  if (result.exitCode !== 0) return null;
+  const sha = new TextDecoder().decode(result.stdout).trim();
+  return sha === '' ? null : sha;
+}
+
+export type Divergence = {
+  ahead: number;
+  behind: number;
+};
+
+/**
+ * `git rev-list --left-right --count <head>...<pr>` (SPEC §4, "Local vs
+ * remote divergence"). Output is "<ahead>\t<behind>".
+ */
+export async function divergence(head: string, pr: string, options: GitCallOptions): Promise<Divergence> {
+  const result = await gitOrThrow(
+    ['rev-list', '--left-right', '--count', `${head}...${pr}`],
+    options,
+  );
+  const text = new TextDecoder().decode(result.stdout).trim();
+  const [aheadText, behindText] = text.split(/\s+/u);
+  const ahead = Number(aheadText ?? '0');
+  const behind = Number(behindText ?? '0');
+  return {
+    ahead: Number.isFinite(ahead) ? ahead : 0,
+    behind: Number.isFinite(behind) ? behind : 0,
+  };
+}
+
+const OPERATION_MARKERS: { file: string; op: GitOperation }[] = [
+  { file: 'rebase-merge', op: 'rebase' },
+  { file: 'rebase-apply', op: 'rebase' },
+  { file: 'MERGE_HEAD', op: 'merge' },
+  { file: 'CHERRY_PICK_HEAD', op: 'cherry-pick' },
+  { file: 'BISECT_LOG', op: 'bisect' },
+  { file: 'REVERT_HEAD', op: 'revert' },
+];
+
+/**
+ * Detect an in-progress operation by checking for the marker files under
+ * `$GIT_DIR` (SPEC §5, "Mid-operation states"). Returns the first one found;
+ * order matches `OPERATION_MARKERS`, which lists rebase markers first since
+ * a rebase can leave `MERGE_HEAD`-like state behind transiently too.
+ *
+ * `gitDir` is the *per-worktree* git dir (`$GIT_COMMON_DIR` for the main
+ * worktree, or `$GIT_COMMON_DIR/worktrees/<name>` for a linked one) — these
+ * markers are worktree-private, unlike `refs/`.
+ */
+export async function detectInProgressOperation(gitDir: string): Promise<GitOperation | null> {
+  for (const marker of OPERATION_MARKERS) {
+    try {
+      await access(join(gitDir, marker.file));
+      return marker.op;
+    } catch {
+      // not present, keep looking
+    }
+  }
+  return null;
+}
+
+/**
+ * Pin `sha` at `refs/review/<reviewId>` so the commit survives GC even
+ * without a directory on disk (SPEC §4). This is the one ref-writing
+ * operation in the write allowlist.
+ */
+export async function pinReviewRef(reviewId: string, sha: string, options: GitCallOptions): Promise<void> {
+  await gitOrThrow(['update-ref', `refs/review/${reviewId}`, sha], options);
+}
+
+/** Delete a review's ref pin, e.g. on review archive. */
+export async function unpinReviewRef(reviewId: string, options: GitCallOptions): Promise<void> {
+  await gitOrThrow(['update-ref', '-d', `refs/review/${reviewId}`], options);
+}

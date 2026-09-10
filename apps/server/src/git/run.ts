@@ -1,0 +1,209 @@
+/**
+ * The single `git()` runner every invocation in this package goes through
+ * (SPEC §5 "Concurrency and safety").
+ *
+ * Two rules, both non-negotiable:
+ *
+ * 1. `GIT_OPTIONAL_LOCKS=0` on every call, always, no escape hatch. A
+ *    read-only observer must never take `index.lock` and never make the
+ *    user's or an agent's git command wait. This has a measured cost (status
+ *    goes 82 ms → 581 ms after a mass mtime change, settling around 250 ms)
+ *    and that is the correct trade — do not "fix" it by dropping the flag.
+ * 2. A read-only subcommand allowlist, plus a narrow write allowlist:
+ *    - `worktree add --detach <sha> <path>`, with `<path>` required to
+ *      resolve under the configured data directory.
+ *    - `update-ref refs/review/<id> ...` (including `-d` deletes), with the
+ *      ref required to start with `refs/review/`.
+ *    Anything else throws before a process is ever spawned.
+ *
+ * Scoped worktree *registry-entry* deletion (SPEC §4 "Worktrees in arbitrary
+ * locations": `rm -rf` the directory under `data/worktrees`, then delete
+ * exactly `$GIT_COMMON_DIR/worktrees/<our-name>`) is a filesystem operation,
+ * not a git subcommand — there is no `git worktree prune <path>`, and
+ * manual `rm -rf` is what SPEC prescribes precisely because it must work
+ * even when the directory is already gone or `git worktree remove` would
+ * refuse. That cleanup therefore lives in `worktree.ts` using `node:fs`
+ * directly, not through this allowlist.
+ */
+
+export type GitResult = {
+  stdout: Uint8Array;
+  stderr: string;
+  exitCode: number;
+};
+
+export class GitError extends Error {
+  readonly subcommand: string;
+  readonly args: readonly string[];
+  readonly exitCode: number;
+  readonly stderrText: string;
+
+  constructor(subcommand: string, args: readonly string[], exitCode: number, stderrText: string) {
+    super(`git ${args.join(' ')} exited ${exitCode}: ${stderrText.trim() || '(no stderr)'}`);
+    this.name = 'GitError';
+    this.subcommand = subcommand;
+    this.args = args;
+    this.exitCode = exitCode;
+    this.stderrText = stderrText;
+  }
+}
+
+/** Thrown when an invocation is not on either allowlist. Never caught and retried. */
+export class GitNotAllowedError extends Error {
+  constructor(args: readonly string[], reason: string) {
+    super(`git invocation not allowed: ${reason} (args: ${args.join(' ')})`);
+    this.name = 'GitNotAllowedError';
+  }
+}
+
+const READ_ONLY_SUBCOMMANDS = new Set([
+  'status',
+  'diff',
+  'log',
+  'rev-list',
+  'rev-parse',
+  'merge-base',
+  'cat-file',
+  'hash-object',
+  'ls-files',
+  'check-attr',
+  'config',
+  'symbolic-ref',
+  'branch',
+  'remote',
+  'show',
+  'grep',
+]);
+
+export type GitCallOptions = {
+  cwd: string;
+  /**
+   * Required for write calls: the data directory writes are scoped under.
+   * Ignored for read-only calls.
+   */
+  dataDir?: string;
+  /** Extra environment variables, merged over the inherited environment. */
+  env?: Record<string, string>;
+  /** Data written to the process's stdin, e.g. for `hash-object --stdin-paths`. */
+  stdin?: string;
+};
+
+/**
+ * Validate an invocation against the allowlists. Throws `GitNotAllowedError`
+ * if it matches neither. Exported so `catfile.ts` — which spawns its own
+ * long-lived process rather than going through `run()` — can reuse the same
+ * check for `cat-file --batch`.
+ */
+export function assertAllowed(args: readonly string[], dataDir: string | undefined): void {
+  const sub = args[0];
+  if (sub === undefined) {
+    throw new GitNotAllowedError(args, 'empty argument list');
+  }
+
+  if (READ_ONLY_SUBCOMMANDS.has(sub)) {
+    return;
+  }
+
+  if (sub === 'worktree') {
+    const action = args[1];
+    if (action === 'list') {
+      return; // `git worktree list --porcelain` — read-only.
+    }
+    if (action === 'add') {
+      validateWorktreeAdd(args, dataDir);
+      return;
+    }
+    throw new GitNotAllowedError(args, `worktree subaction "${String(action)}" is not allowed`);
+  }
+
+  if (sub === 'update-ref') {
+    validateUpdateRef(args);
+    return;
+  }
+
+  throw new GitNotAllowedError(args, `subcommand "${sub}" is not on the read or write allowlist`);
+}
+
+function validateWorktreeAdd(args: readonly string[], dataDir: string | undefined): void {
+  if (dataDir === undefined) {
+    throw new GitNotAllowedError(args, 'worktree add requires dataDir to be set for scoping');
+  }
+  if (!args.includes('--detach')) {
+    throw new GitNotAllowedError(args, 'worktree add must be --detach (a review never holds a branch)');
+  }
+  // Expected shape: worktree add --detach <path> <sha>  (git accepts either
+  // order for the trailing operands, but we always call it as path then sha).
+  const rest = args.slice(2).filter((a) => a !== '--detach');
+  const path = rest[0];
+  if (path === undefined) {
+    throw new GitNotAllowedError(args, 'worktree add missing target path');
+  }
+  const resolvedDataDir = dataDir.endsWith('/') ? dataDir : `${dataDir}/`;
+  const resolvedPath = path.endsWith('/') ? path : `${path}/`;
+  if (!resolvedPath.startsWith(resolvedDataDir)) {
+    throw new GitNotAllowedError(args, `worktree add target must be under data dir ${dataDir}`);
+  }
+}
+
+function validateUpdateRef(args: readonly string[]): void {
+  // Accept: update-ref [-d] refs/review/<...> [<sha>]
+  const rest = args.slice(1);
+  const isDelete = rest[0] === '-d';
+  const ref = isDelete ? rest[1] : rest[0];
+  if (ref === undefined || !ref.startsWith('refs/review/')) {
+    throw new GitNotAllowedError(args, 'update-ref is only allowed for refs/review/*');
+  }
+}
+
+/**
+ * Run git, returning the result regardless of exit code. Callers that treat
+ * a non-zero exit as expected (e.g. `merge-base` finding nothing) should use
+ * this; everyone else should use `gitOrThrow`.
+ */
+export async function git(args: readonly string[], options: GitCallOptions): Promise<GitResult> {
+  assertAllowed(args, options.dataDir);
+
+  const proc = Bun.spawn(['git', ...args], {
+    cwd: options.cwd,
+    env: {
+      ...process.env,
+      ...options.env,
+      GIT_OPTIONAL_LOCKS: '0',
+    },
+    stdin: 'pipe',
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+
+  // Always close stdin, even when there's nothing to write: any subcommand
+  // that unexpectedly tries to read from it gets EOF immediately rather than
+  // hanging, and the ones we actually feed (hash-object --stdin-paths) get
+  // their input.
+  if (options.stdin !== undefined) {
+    proc.stdin.write(options.stdin);
+  }
+  proc.stdin.end();
+
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).bytes(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+
+  return { stdout, stderr, exitCode };
+}
+
+/** Like `git`, but throws a typed `GitError` on non-zero exit. */
+export async function gitOrThrow(args: readonly string[], options: GitCallOptions): Promise<GitResult> {
+  const result = await git(args, options);
+  if (result.exitCode !== 0) {
+    throw new GitError(args[0] ?? '(none)', args, result.exitCode, result.stderr);
+  }
+  return result;
+}
+
+const decoder = new TextDecoder();
+
+export function bytesToText(bytes: Uint8Array): string {
+  return decoder.decode(bytes);
+}

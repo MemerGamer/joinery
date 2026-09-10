@@ -87,52 +87,78 @@ export const feedbackSchema = z.object({
 
 const noContent = z.object({ ok: z.literal(true) });
 
-type RouteDef<B extends z.ZodTypeAny | undefined, R extends z.ZodTypeAny> = {
+/**
+ * `P` is a type parameter rather than a fixed `(...args: never[]) => string` so
+ * each route keeps its own path signature: `getReview.path` is `(id: string)`,
+ * and calling it with the wrong number or type of segments is a compile error
+ * in the client rather than a cast at the call site.
+ */
+type PathFn = (...args: never[]) => string;
+
+type RouteDef<
+  P extends PathFn,
+  B extends z.ZodTypeAny | undefined,
+  Q extends z.ZodTypeAny | undefined,
+  R extends z.ZodTypeAny,
+> = {
   readonly method: 'GET' | 'POST' | 'PUT' | 'DELETE';
-  readonly path: (...args: never[]) => string;
+  readonly path: P;
   readonly body: B;
+  /** Query-string schema, so `?rev=` and `?unresolved=` are typed too. */
+  readonly query: Q;
   readonly response: R;
 };
 
-const def = <B extends z.ZodTypeAny | undefined, R extends z.ZodTypeAny>(
-  d: RouteDef<B, R>,
-): RouteDef<B, R> => d;
+const def = <
+  P extends PathFn,
+  B extends z.ZodTypeAny | undefined,
+  Q extends z.ZodTypeAny | undefined,
+  R extends z.ZodTypeAny,
+>(
+  d: RouteDef<P, B, Q, R>,
+): RouteDef<P, B, Q, R> => d;
 
 export const api = {
   listRepos: def({
     method: 'GET',
     path: () => '/api/repos',
     body: undefined,
+    query: undefined,
     response: z.object({ repos: z.array(repoSchema) }),
   }),
   addRepo: def({
     method: 'POST',
     path: () => '/api/repos',
     body: addRepoBodySchema,
+    query: undefined,
     response: z.object({ repo: repoSchema }),
   }),
   listReviews: def({
     method: 'GET',
     path: () => '/api/reviews',
     body: undefined,
+    query: undefined,
     response: z.object({ reviews: z.array(reviewSchema) }),
   }),
   createReview: def({
     method: 'POST',
     path: () => '/api/reviews',
     body: createReviewBodySchema,
+    query: undefined,
     response: reviewDetailSchema,
   }),
   getReview: def({
     method: 'GET',
     path: (id: string) => `/api/reviews/${encodeURIComponent(id)}`,
     body: undefined,
+    query: undefined,
     response: reviewDetailSchema,
   }),
   getFiles: def({
     method: 'GET',
     path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/files`,
     body: undefined,
+    query: undefined,
     response: z.object({
       list: fileListSchema,
       viewed: z.array(z.object({ path: z.string(), blobSha: z.string() })),
@@ -142,84 +168,101 @@ export const api = {
     method: 'GET',
     path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/diff`,
     body: undefined,
+    query: z.object({ path: z.string().min(1), rev: revisionSchema.optional() }),
     response: z.object({ patch: filePatchSchema }),
   }),
   getContents: def({
     method: 'GET',
     path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/contents`,
     body: undefined,
+    query: z.object({ path: z.string().min(1), rev: revisionSchema.optional() }),
     response: z.object({ contents: fileContentsSchema }),
   }),
   getReadingOrder: def({
     method: 'GET',
     path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/reading-order`,
     body: undefined,
+    query: undefined,
     response: z.object({ readingOrder: readingOrderSchema.nullable() }),
   }),
   setReadingOrder: def({
     method: 'PUT',
     path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/reading-order`,
     body: readingOrderPlanSchema,
+    query: undefined,
     response: z.object({ readingOrder: readingOrderSchema }),
   }),
   generateReadingOrder: def({
     method: 'POST',
     path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/reading-order/generate`,
     body: generateReadingOrderBodySchema,
+    query: undefined,
     response: z.object({ run: agentRunSchema }),
   }),
   listThreads: def({
     method: 'GET',
     path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/threads`,
     body: undefined,
+    query: z.object({ status: z.enum(['open', 'resolved']).optional() }),
     response: z.object({ threads: z.array(threadSchema) }),
   }),
   createThread: def({
     method: 'POST',
     path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/threads`,
     body: createThreadBodySchema,
+    query: undefined,
     response: z.object({ thread: threadSchema, run: agentRunSchema.nullable() }),
   }),
   getThread: def({
     method: 'GET',
     path: (id: string) => `/api/threads/${encodeURIComponent(id)}`,
     body: undefined,
+    query: undefined,
     response: z.object({ thread: threadSchema }),
   }),
   reply: def({
     method: 'POST',
     path: (id: string) => `/api/threads/${encodeURIComponent(id)}/replies`,
     body: replyBodySchema,
+    query: undefined,
     response: z.object({ thread: threadSchema, run: agentRunSchema.nullable() }),
   }),
   resolveThread: def({
     method: 'POST',
     path: (id: string) => `/api/threads/${encodeURIComponent(id)}/resolve`,
     body: z.object({ resolved: z.boolean().default(true) }),
+    query: undefined,
     response: z.object({ thread: threadSchema }),
   }),
   feedback: def({
     method: 'GET',
     path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/feedback`,
     body: undefined,
+    query: z.object({
+      format: z.literal('markdown').optional(),
+      unresolved: z.enum(['true', 'false']).optional(),
+    }),
     response: feedbackSchema,
   }),
   setRevision: def({
     method: 'POST',
     path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/revision`,
     body: setRevisionBodySchema,
+    query: undefined,
     response: z.object({ state: reviewStateSchema }),
   }),
   markViewed: def({
     method: 'POST',
     path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/viewed`,
     body: markViewedBodySchema,
+    query: undefined,
     response: noContent,
   }),
   getRun: def({
     method: 'GET',
     path: (id: string) => `/api/runs/${encodeURIComponent(id)}`,
     body: undefined,
+    query: undefined,
     response: z.object({
       run: agentRunSchema,
       events: z.array(
@@ -235,6 +278,10 @@ export type ApiOperation = keyof Api;
 export type BodyOf<K extends ApiOperation> = Api[K]['body'] extends z.ZodTypeAny
   ? z.input<Api[K]['body']>
   : never;
+export type QueryOf<K extends ApiOperation> = Api[K]['query'] extends z.ZodTypeAny
+  ? z.input<Api[K]['query']>
+  : never;
+export type PathArgsOf<K extends ApiOperation> = Parameters<Api[K]['path']>;
 export type ResponseOf<K extends ApiOperation> = z.output<Api[K]['response']>;
 
 export const DEFAULT_PORT = 7317;
