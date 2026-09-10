@@ -25,20 +25,26 @@ function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
   return out;
 }
 
-/** Buffers a `ReadableStream<Uint8Array>` so callers can pull exact byte counts or lines. */
+/**
+ * Buffers a `ReadableStream<Uint8Array>` so callers can pull exact byte
+ * counts or lines. Consumed via async iteration rather than `.getReader()`
+ * so it doesn't need to name `ReadableStreamDefaultReader` — under this
+ * project's DOM-less lib config that type resolves ambiguously between
+ * Bun's own streams global and `node:stream/web`'s.
+ */
 class ByteReader {
-  #reader: ReadableStreamDefaultReader<Uint8Array>;
+  #iterator: AsyncIterator<Uint8Array>;
   #buffered: Uint8Array = new Uint8Array(0);
   #ended = false;
 
   constructor(stream: ReadableStream<Uint8Array>) {
-    this.#reader = stream.getReader();
+    this.#iterator = stream[Symbol.asyncIterator]();
   }
 
   async #fill(): Promise<boolean> {
     if (this.#ended) return false;
-    const { value, done } = await this.#reader.read();
-    if (done || value === undefined) {
+    const { value, done } = await this.#iterator.next();
+    if (done === true || value === undefined) {
       this.#ended = true;
       return false;
     }
@@ -156,7 +162,21 @@ export class CatFile {
     });
     await previous;
     try {
-      return await this.#readBlobsSerial(oids);
+      // One retry: if the process was killed or died between our liveness
+      // check and actually writing/reading (e.g. an external kill lands in
+      // that window, or `exitCode` hasn't been updated by the runtime yet),
+      // the first attempt fails cleanly, drops the dead process, and the
+      // retry spawns a fresh one. A second consecutive failure is a real
+      // problem and propagates.
+      try {
+        return await this.#readBlobsSerial(oids);
+      } catch (err) {
+        if (this.#closed) throw err;
+        this.#proc = null;
+        this.#reader = null;
+        void err; // surfaced only if the retry also fails
+        return await this.#readBlobsSerial(oids);
+      }
     } finally {
       release();
     }
@@ -173,8 +193,8 @@ export class CatFile {
     for (const oid of oids) {
       const header = await reader.readLine();
       if (header === null) {
-        // The process died mid-batch. Drop it so the next call restarts
-        // fresh; this batch is a loss for its remaining oids.
+        // The process died mid-batch. Drop it so a retry (or the next call)
+        // restarts fresh; this batch is a loss for its remaining oids.
         this.#proc = null;
         this.#reader = null;
         throw new Error(`cat-file --batch process ended unexpectedly while reading ${oid}`);
@@ -216,5 +236,14 @@ export class CatFile {
     }
     this.#proc = null;
     this.#reader = null;
+  }
+
+  /**
+   * Test-only: kill the underlying process without marking this `CatFile`
+   * closed, to exercise the "restart if it dies" behavior without needing
+   * to reach into private state from outside the module.
+   */
+  killUnderlyingProcessForTest(): void {
+    this.#proc?.kill();
   }
 }

@@ -184,13 +184,13 @@ export async function git(args: readonly string[], options: GitCallOptions): Pro
   }
   proc.stdin.end();
 
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).bytes(),
+  const [stdoutBuffer, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).arrayBuffer(),
     new Response(proc.stderr).text(),
     proc.exited,
   ]);
 
-  return { stdout, stderr, exitCode };
+  return { stdout: new Uint8Array(stdoutBuffer), stderr, exitCode };
 }
 
 /** Like `git`, but throws a typed `GitError` on non-zero exit. */

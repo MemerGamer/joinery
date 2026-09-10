@@ -252,8 +252,13 @@ export async function buildFileList(params: BuildFileListParams): Promise<FileEn
   const target = isWorking ? undefined : params.targetSha;
   const diffTargetArgs = target === undefined ? [params.baseSha] : [params.baseSha, target];
 
+  // `--abbrev=40`: `--full-index` only affects the "index" line of patch
+  // *text* output and is silently ignored for `--raw`, which otherwise
+  // abbreviates object ids — breaking both the NULL_BLOB comparison below
+  // and cacheKey identity downstream. `--abbrev=40` is what actually forces
+  // full-width ids in `--raw` output (verified against git 2.39).
   const [rawResult, numstatResult] = await Promise.all([
-    gitOrThrow(['diff', '-M', '--raw', '-z', ...diffTargetArgs], options),
+    gitOrThrow(['diff', '-M', '--raw', '--abbrev=40', '-z', ...diffTargetArgs], options),
     gitOrThrow(['diff', '-M', '--numstat', '-z', ...diffTargetArgs], options),
   ]);
   const rawEntries = parseRawDiffZ(rawResult.stdout);
