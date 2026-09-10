@@ -398,3 +398,44 @@
   review untouched, and a taken-then-unclaimed two-candidate case (branch
   names chosen so git's alphabetical `--contains` order puts the taken one
   first) adopts the later, unclaimed one instead of giving up.
+
+## anchoring
+
+- **Ambiguous relocation match — needs a design decision, not fixed.**
+  `findSubsequence` (`apps/server/src/engine/anchor.ts`) returns the
+  *earliest* index where the captured context occurs, with no signal back
+  to `relocate`/`#reanchorThreads` that a match was ambiguous. If a file
+  contains two identical copies of a thread's `±3`-line captured context
+  (a duplicated block, a copy-pasted function, a repeated boilerplate
+  section), the thread silently relocates to the first copy — which may or
+  may not be the one it was actually about — with `outdated` left `false`
+  and no way for the UI or the user to know the match was uncertain. This
+  is exactly the "quietly attaches to the wrong lines" failure mode the
+  anchoring system exists to avoid. Pinned as current behaviour in
+  `apps/server/test/engine/anchor.test.ts` ("two identical copies of the
+  anchored block: the first copy wins"). Recommendation: either (a) have
+  `findSubsequence`/`relocate` detect a second match and, when the
+  captured context is short/generic enough to occur more than once,
+  prefer marking the thread `outdated` over guessing — accuracy over
+  recall for a data-loss-adjacent decision — or (b) at minimum, surface a
+  distinct "ambiguously relocated" state distinct from a clean relocation,
+  so the UI can flag it for a human to confirm. Left undecided here per
+  the task's ground rules: this is a product/design call, not an
+  obviously-correct one-line fix.
+
+- **Anchor hashing is byte-sensitive to line endings and trailing
+  whitespace — likely fine, but unverified upstream.** `hashContext`
+  (`apps/server/src/engine/anchor.ts`) hashes the literal captured text, so
+  a line with a stray `\r` (CRLF) or trailing whitespace hashes differently
+  from its LF/trimmed counterpart. Confirmed and pinned in
+  `apps/server/test/engine/anchor.test.ts`. This is fine *if* every code
+  path that reads file contents into `lines: readonly string[]` for
+  `captureContext`/`relocate` consistently normalizes line endings before
+  splitting — but that normalization wasn't verified as part of this task
+  (it lives in whatever reads the blob/working-tree contents upstream of
+  `anchor.ts`, outside this file). Worth a follow-up check: does a file
+  that round-trips through a CRLF-preserving tool (some Windows editors,
+  some formatters) fail to re-anchor threads even though its *content*
+  didn't meaningfully change? If line endings aren't normalized
+  consistently, that's a real, if narrow, "goes outdated when it should
+  have followed" bug.

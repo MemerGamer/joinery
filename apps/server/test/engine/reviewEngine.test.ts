@@ -7,12 +7,15 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { ReviewEngine } from '../../src/engine/reviewEngine.ts';
 import { captureContext } from '../../src/engine/anchor.ts';
 import {
+  appendReply,
   createReview,
   createThread,
   getReview,
   getThreadWithComments,
   setCurrentRevision,
 } from '../../src/db/index.ts';
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { ServerEvent } from '@review/core';
 import { gitCommit, headSha, runGit, setupRepo, setupRepoAndReview, writeRepoFile, type TestFixture } from './helpers.ts';
 import type { Review } from '@review/core';
@@ -334,6 +337,95 @@ describe('engine tick', () => {
     const goneReloaded = await getThreadWithComments(ctx.db, goneThread.id);
     expect(goneReloaded).not.toBeNull(); // never deleted
     expect(goneReloaded?.outdated).toBe(true);
+  });
+
+  test('a commit that rewrites the anchored lines marks the thread outdated, keeping it and all its comments', async () => {
+    const ctx = await setupRepoAndReview();
+    cleanups.push(ctx.cleanup);
+    const events: ServerEvent[] = [];
+
+    const lines = ['line1', 'line2', 'line3 TARGET', 'line4', 'line5'];
+    await writeRepoFile(ctx.repoDir, 'edited.txt', lines.join('\n') + '\n');
+    gitCommit(ctx.repoDir, 'add edited.txt');
+
+    const engine = await makeEngine(ctx, events);
+    cleanups.push(async () => engine.dispose());
+
+    const entry = engine.getFileList().files.find((f) => f.path === 'edited.txt');
+    expect(entry).toBeDefined();
+    const { context, hash } = captureContext(lines, 3, 3);
+
+    const editedThread = await createThread(ctx.db, {
+      reviewId: ctx.review.id,
+      path: 'edited.txt',
+      side: 'new',
+      startLine: 3,
+      endLine: 3,
+      anchorBlobSha: entry?.newBlob ?? '',
+      anchorContextHash: hash,
+      anchorContext: context,
+      bodyMd: 'first comment',
+    });
+    await appendReply(ctx.db, { threadId: editedThread.id, author: 'user', bodyMd: 'a follow-up' });
+    await appendReply(ctx.db, { threadId: editedThread.id, author: 'agent', bodyMd: 'an agent reply' });
+
+    // Rewrite the exact anchored line (and its surrounding context), so the
+    // captured context can no longer be found anywhere in the new file —
+    // this must go `outdated`, not silently relocate to a wrong line.
+    await writeRepoFile(
+      ctx.repoDir,
+      'edited.txt',
+      ['line1', 'line2', 'line3 REWRITTEN', 'line4', 'line5'].join('\n') + '\n',
+    );
+    await engine.tick();
+
+    const reloaded = await getThreadWithComments(ctx.db, editedThread.id);
+    expect(reloaded).not.toBeNull(); // never deleted
+    expect(reloaded?.outdated).toBe(true);
+    expect(reloaded?.comments).toHaveLength(3); // original + two replies, all intact
+    expect(reloaded?.comments.map((c) => c.bodyMd)).toEqual(['first comment', 'a follow-up', 'an agent reply']);
+    // The stale line numbers and captured context are preserved for display
+    // against "the code context captured when it was written" (SPEC §8),
+    // not reset or blanked out.
+    expect(reloaded?.startLine).toBe(3);
+    expect(reloaded?.anchorContext).toBe(context);
+  });
+
+  test('the anchored file deleted entirely marks its thread outdated without deleting it', async () => {
+    const ctx = await setupRepoAndReview();
+    cleanups.push(ctx.cleanup);
+    const events: ServerEvent[] = [];
+
+    const lines = ['line1', 'line2', 'line3 TARGET', 'line4', 'line5'];
+    await writeRepoFile(ctx.repoDir, 'doomed.txt', lines.join('\n') + '\n');
+    gitCommit(ctx.repoDir, 'add doomed.txt');
+
+    const engine = await makeEngine(ctx, events);
+    cleanups.push(async () => engine.dispose());
+
+    const entry = engine.getFileList().files.find((f) => f.path === 'doomed.txt');
+    expect(entry).toBeDefined();
+    const { context, hash } = captureContext(lines, 3, 3);
+
+    const doomedThread = await createThread(ctx.db, {
+      reviewId: ctx.review.id,
+      path: 'doomed.txt',
+      side: 'new',
+      startLine: 3,
+      endLine: 3,
+      anchorBlobSha: entry?.newBlob ?? '',
+      anchorContextHash: hash,
+      anchorContext: context,
+      bodyMd: 'about to be orphaned',
+    });
+
+    await rm(join(ctx.repoDir, 'doomed.txt'));
+    await engine.tick();
+
+    const reloaded = await getThreadWithComments(ctx.db, doomedThread.id);
+    expect(reloaded).not.toBeNull(); // never deleted, per SPEC §8
+    expect(reloaded?.outdated).toBe(true);
+    expect(reloaded?.comments).toHaveLength(1);
   });
 
   test('ticks serialize under a burst of events', async () => {
