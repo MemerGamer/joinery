@@ -73,6 +73,10 @@ const READ_ONLY_SUBCOMMANDS = new Set([
   'remote',
   'show',
   'grep',
+  // Added for the engine's remote poll (SPEC §5, "Detectors"): always called
+  // with `--no-write-fetch-head` and never writes the working tree, index,
+  // or any ref outside `refs/remotes/*` / the explicit refspec given.
+  'fetch',
 ]);
 
 export type GitCallOptions = {
