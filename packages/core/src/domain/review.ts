@@ -22,8 +22,8 @@ export const reviewSchema = z.object({
   pinnedSha: z.string().nullable(),
   baseRef: z.string(),
   prNumber: z.number().int().positive().nullable(),
-  attachedPath: z.string().nullable(),
-  currentRevision: revisionSchema,
+  /** Null means no explicit choice yet, so the §13.2 default applies. */
+  currentRevision: revisionSchema.nullable(),
   lastSeenPrSha: z.string().nullable(),
   status: reviewStatusSchema,
   createdAt: z.number().int(),

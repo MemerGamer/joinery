@@ -7,6 +7,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { ReviewEngine } from '../../src/engine/reviewEngine.ts';
 import { captureContext } from '../../src/engine/anchor.ts';
 import {
+  createReview,
   createThread,
   getReview,
   getThreadWithComments,
@@ -144,6 +145,102 @@ describe('engine tick', () => {
     await engine.tick();
     state = await engine.getState();
     expect(state.availableRevisions).toContain('working');
+    expect(state.root.attachedPath).not.toBeNull();
+  });
+
+  test('an attached review with no stored choice defaults to working (§13.2)', async () => {
+    const ctx = await setupRepo('feature');
+    cleanups.push(ctx.cleanup);
+    const review = await createReview(ctx.db, {
+      repoId: ctx.repo.id,
+      branch: 'feature',
+      pinnedSha: null,
+      baseRef: 'main',
+    });
+    expect(review.currentRevision).toBeNull();
+
+    const events: ServerEvent[] = [];
+    const engine = await makeEngine({ ...ctx, review }, events);
+    cleanups.push(async () => engine.dispose());
+
+    const state = await engine.getState();
+    expect(state.currentRevision).toBe('working');
+  });
+
+  test('a review whose branch is checked out nowhere defaults to head (§13.2)', async () => {
+    const ctx = await setupRepo('feature');
+    cleanups.push(ctx.cleanup);
+    runGit(ctx.repoDir, ['checkout', '-q', 'main']);
+    const review = await createReview(ctx.db, {
+      repoId: ctx.repo.id,
+      branch: 'feature',
+      pinnedSha: null,
+      baseRef: 'main',
+    });
+    expect(review.currentRevision).toBeNull();
+
+    const events: ServerEvent[] = [];
+    const engine = await makeEngine({ ...ctx, review }, events);
+    cleanups.push(async () => engine.dispose());
+
+    const state = await engine.getState();
+    expect(state.currentRevision).toBe('head');
+    expect(state.root.attachedPath).toBeNull();
+  });
+
+  test('an explicit "head" choice on an attached review does not flip to working (§4)', async () => {
+    const ctx = await setupRepo('feature');
+    cleanups.push(ctx.cleanup);
+    const created = await createReview(ctx.db, {
+      repoId: ctx.repo.id,
+      branch: 'feature',
+      pinnedSha: null,
+      baseRef: 'main',
+    });
+    const review = await setCurrentRevision(ctx.db, created.id, 'head');
+
+    const events: ServerEvent[] = [];
+    const engine = await makeEngine({ ...ctx, review }, events);
+    cleanups.push(async () => engine.dispose());
+
+    const state = await engine.getState();
+    expect(state.currentRevision).toBe('head');
+    expect(state.root.attachedPath).not.toBeNull();
+  });
+
+  test('an explicit "working" choice survives detach/reattach without being overwritten (§9)', async () => {
+    const ctx = await setupRepo('feature');
+    cleanups.push(ctx.cleanup);
+    const created = await createReview(ctx.db, {
+      repoId: ctx.repo.id,
+      branch: 'feature',
+      pinnedSha: null,
+      baseRef: 'main',
+    });
+    const review = await setCurrentRevision(ctx.db, created.id, 'working');
+
+    const events: ServerEvent[] = [];
+    const engine = await makeEngine({ ...ctx, review }, events);
+    cleanups.push(async () => engine.dispose());
+
+    let state = await engine.getState();
+    expect(state.currentRevision).toBe('working');
+
+    runGit(ctx.repoDir, ['checkout', '-q', 'main']);
+    await engine.tick();
+    state = await engine.getState();
+    expect(state.currentRevision).toBe('head');
+    expect(state.root.attachedPath).toBeNull();
+
+    // The stored choice was never overwritten by the fallback, so checking
+    // the branch back out restores it without any new explicit choice.
+    const stillStored = await getReview(ctx.db, review.id);
+    expect(stillStored?.currentRevision).toBe('working');
+
+    runGit(ctx.repoDir, ['checkout', '-q', 'feature']);
+    await engine.tick();
+    state = await engine.getState();
+    expect(state.currentRevision).toBe('working');
     expect(state.root.attachedPath).not.toBeNull();
   });
 

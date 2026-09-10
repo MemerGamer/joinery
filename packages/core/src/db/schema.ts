@@ -29,8 +29,8 @@ export const repo = sqliteTable(
  * A review is `(repo, branch)`. A detached review starts as `(repo, pinned_sha)`
  * with a null branch and adopts one later, in place (§4).
  *
- * `attached_path` is set only while the branch is checked out somewhere. There
- * is no second path column: rendering a commit never touches the filesystem.
+ * Root attachment is resolved from git on every tick (§4) and is not stored
+ * here — `ReviewState.root.attachedPath` is the live value.
  */
 export const review = sqliteTable(
   'review',
@@ -43,9 +43,12 @@ export const review = sqliteTable(
     pinnedSha: text('pinned_sha'),
     baseRef: text('base_ref').notNull(),
     prNumber: integer('pr_number'),
-    attachedPath: text('attached_path'),
-    /** 'working' | 'head' | 'pr' — validated by `revisionSchema` at the boundary. */
-    currentRevision: text('current_revision').notNull().default('head'),
+    /**
+     * 'working' | 'head' | 'pr' — validated by `revisionSchema` at the
+     * boundary. NULL means the user has never chosen: the §13.2 default
+     * applies instead of a stored value.
+     */
+    currentRevision: text('current_revision'),
     /** PR head SHA last rendered, for the "changes since you last looked" view (§4). */
     lastSeenPrSha: text('last_seen_pr_sha'),
     status: text('status').notNull().default('open'),

@@ -101,7 +101,7 @@ export class ReviewEngine {
     this.#catFile = new CatFile(params.repo.rootPath);
     this.#snapshot = {
       reviewId: params.review.id,
-      revision: params.review.currentRevision,
+      revision: params.review.currentRevision ?? 'head',
       baseSha: '',
       headSha: '',
       files: [],
@@ -346,8 +346,7 @@ export class ReviewEngine {
     }
 
     const review = this.#review;
-    const effectiveRevision: Revision =
-      review.currentRevision === 'working' && this.#attachedPath === null ? 'head' : review.currentRevision;
+    const effectiveRevision = this.#resolveEffectiveRevision();
     const cwd = this.#attachedPath ?? this.#repo.rootPath;
 
     let targetRef: string | undefined;
@@ -365,22 +364,32 @@ export class ReviewEngine {
       return;
     }
 
-    const mergeBaseTarget = effectiveRevision === 'working' ? 'HEAD' : (targetRef as string);
+    const headRef = effectiveRevision === 'working' ? 'HEAD' : (targetRef as string);
 
-    // 2. `git status`/rev-parse equivalent: resolve the base.
-    const baseSha = (await mergeBase(review.baseRef, mergeBaseTarget, { cwd })) ?? (await revParse(mergeBaseTarget, { cwd }));
-    if (baseSha === null) {
+    // 2. Resolve the ref to a commit, once, before anything reads it.
+    //
+    // Everything downstream has to agree on a single commit even if the ref
+    // moves mid-tick, and `headSha` is what a later tick compares against to
+    // decide whether head actually moved — a ref *name* would always compare
+    // equal to itself, so storing one silently disables that check.
+    const headSha = await revParse(headRef, { cwd });
+    if (headSha === null) {
       if (rootChanged || operationChanged) await this.#emitState();
       return;
     }
+
+    // No merge base means `baseRef` is unknown to this repo (a deleted or
+    // never-fetched branch): fall back to head, i.e. an empty diff, rather
+    // than showing the whole history as changed.
+    const baseSha = (await mergeBase(review.baseRef, headSha, { cwd })) ?? headSha;
 
     // 3. Build the file list (includes the one `hash-object` spawn for working).
     let newFiles;
     try {
       newFiles = await buildFileList(
-        targetRef === undefined
+        effectiveRevision === 'working'
           ? { cwd, revision: effectiveRevision, baseSha }
-          : { cwd, revision: effectiveRevision, baseSha, targetSha: targetRef },
+          : { cwd, revision: effectiveRevision, baseSha, targetSha: headSha },
       );
     } catch {
       // A git error mid-tick — hold the last good snapshot rather than crash the actor.
@@ -392,6 +401,11 @@ export class ReviewEngine {
     const delta = diffFileLists(this.#snapshot.files, newFiles);
     const revisionChanged = effectiveRevision !== this.#snapshot.revision;
     if (isEmptyDelta(delta) && !revisionChanged) {
+      // The *files* are unchanged, but head may still have moved under them
+      // (an amend, a rebase that preserved the tree). Per-file patch fetches
+      // key off these shas, so keep them current even though there is nothing
+      // for the client to redraw.
+      this.#snapshot = { ...this.#snapshot, baseSha, headSha };
       if (rootChanged || operationChanged) await this.#emitState();
       return;
     }
@@ -416,7 +430,7 @@ export class ReviewEngine {
       reviewId: review.id,
       revision: effectiveRevision,
       baseSha,
-      headSha: mergeBaseTarget,
+      headSha,
       files: newFiles,
     };
 
@@ -437,6 +451,21 @@ export class ReviewEngine {
     const branchName = text.split('\n')[0]?.trim();
     if (branchName === undefined || branchName === '') return;
     this.#review = await adoptBranch(this.#db, review.id, branchName);
+  }
+
+  /**
+   * SPEC §13.2 / §4 / §9: the stored choice always wins when present; falling
+   * back for unavailability must never overwrite it, so a branch that goes
+   * away and comes back restores the prior choice rather than adopting
+   * whatever the fallback picked in the meantime.
+   */
+  #resolveEffectiveRevision(): Revision {
+    const review = this.#review;
+    const attached = this.#attachedPath !== null;
+    const desired = review.currentRevision ?? (attached ? 'working' : 'head');
+    if (desired === 'working' && !attached) return 'head';
+    if (desired === 'pr' && review.prNumber === null) return 'head';
+    return desired;
   }
 
   async #detectOperation(attachedPath: string): Promise<GitOperation | null> {
@@ -562,7 +591,7 @@ export class ReviewEngine {
     return {
       reviewId: review.id,
       availableRevisions: available,
-      currentRevision: review.currentRevision,
+      currentRevision: this.#resolveEffectiveRevision(),
       root: { attachedPath: this.#attachedPath, detachedReason: this.#detachedReason },
       divergence: divergenceValue,
       basesMismatched,

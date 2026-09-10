@@ -6,13 +6,13 @@ import { join } from 'node:path';
 import { runMigrations } from '../../src/db/migrate.ts';
 
 describe('runMigrations', () => {
-  test('applies 0001_init.sql and is idempotent when run twice', async () => {
+  test('applies all migrations and is idempotent when run twice', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'review-ui-migrate-test-'));
     try {
       const sqlite = new Database(join(dir, 'state.sqlite'), { create: true });
 
       const first = await runMigrations(sqlite);
-      expect(first).toEqual(['0001_init.sql']);
+      expect(first).toEqual(['0001_init.sql', '0002_revision_choice.sql']);
 
       const tables = sqlite
         .query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type = 'table'")
@@ -33,7 +33,7 @@ describe('runMigrations', () => {
         .query<{ name: string }, []>('SELECT name FROM schema_migrations')
         .all()
         .map((r) => r.name);
-      expect(applied).toEqual(['0001_init.sql']);
+      expect(applied).toEqual(['0001_init.sql', '0002_revision_choice.sql']);
 
       sqlite.close();
     } finally {

@@ -17,8 +17,10 @@ function toReview(row: typeof review.$inferSelect): Review {
     pinnedSha: row.pinnedSha,
     baseRef: row.baseRef,
     prNumber: row.prNumber,
-    attachedPath: row.attachedPath,
-    currentRevision: narrowUnion(row.currentRevision, revisionSchema.options, 'review.current_revision'),
+    currentRevision:
+      row.currentRevision === null
+        ? null
+        : narrowUnion(row.currentRevision, revisionSchema.options, 'review.current_revision'),
     lastSeenPrSha: row.lastSeenPrSha,
     status: narrowUnion(row.status, reviewStatusSchema.options, 'review.status'),
     createdAt: row.createdAt,
@@ -97,10 +99,6 @@ async function update(db: Db, id: string, set: Partial<typeof review.$inferInser
 
 export async function setCurrentRevision(db: Db, id: string, revision: Revision): Promise<Review> {
   return update(db, id, { currentRevision: revision });
-}
-
-export async function setAttachedPath(db: Db, id: string, attachedPath: string | null): Promise<Review> {
-  return update(db, id, { attachedPath });
 }
 
 export async function setPrNumber(db: Db, id: string, prNumber: number | null): Promise<Review> {

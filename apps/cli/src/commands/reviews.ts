@@ -20,7 +20,7 @@ export const list: Command = {
     }
     printTable(
       ['ID', 'BRANCH', 'STATUS', 'REVISION'],
-      result.reviews.map((r) => [r.id, r.branch ?? '(detached)', r.status, r.currentRevision]),
+      result.reviews.map((r) => [r.id, r.branch ?? '(detached)', r.status, r.currentRevision ?? '(default)']),
     );
   },
 };
