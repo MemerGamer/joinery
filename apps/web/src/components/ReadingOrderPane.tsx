@@ -3,27 +3,23 @@
  * regenerable — regenerating supersedes rather than replaces. The threads
  * panel slides over this pane rather than replacing it.
  */
-import { ChevronDown, ChevronRight, FileText, Sparkles } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, FileText, Sparkles } from 'lucide-react';
 import { useState } from 'react';
-import { callApi } from '../lib/apiClient.ts';
+import { runUiState } from '../lib/runState.ts';
 import { useReview } from '../state/ReviewContext.tsx';
 import { ThreadsPanel } from './ThreadsPanel.tsx';
 
 export function ReadingOrderPane(): React.JSX.Element {
-  const { review, readingOrder, selectedPath, setSelectedPath, codeViewRef, reloadReadingOrder, threadsPanelOpen } =
+  const { review, readingOrder, readingOrderRun, selectedPath, setSelectedPath, codeViewRef, generateReadingOrder, threadsPanelOpen } =
     useReview();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [generating, setGenerating] = useState(false);
+
+  const runState = runUiState(readingOrderRun);
+  const generating = runState.phase === 'pending';
 
   const generate = async () => {
     if (review === null) return;
-    setGenerating(true);
-    try {
-      await callApi('generateReadingOrder', { params: [review.id], body: {} });
-      await reloadReadingOrder();
-    } finally {
-      setGenerating(false);
-    }
+    await generateReadingOrder();
   };
 
   const jumpTo = (path: string) => {
@@ -48,6 +44,19 @@ export function ReadingOrderPane(): React.JSX.Element {
           {generating ? 'Generating…' : 'Generate'}
         </button>
       </div>
+
+      {runState.phase === 'error' && (
+        <div
+          role="alert"
+          className="flex items-start gap-2.5 border-b border-chrome-danger bg-chrome-danger-bg px-3 py-2.5 text-xs text-chrome-fg"
+        >
+          <AlertTriangle size={14} strokeWidth={1.5} className="mt-0.5 shrink-0 text-chrome-danger" aria-hidden />
+          <div className="flex flex-col gap-1">
+            <span className="font-medium">Reading order generation failed</span>
+            <span className="leading-relaxed text-chrome-fg-muted">{runState.message}</span>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto p-3">
         {readingOrder === null || readingOrder.steps.length === 0 ? (

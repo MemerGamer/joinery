@@ -1086,3 +1086,226 @@ restoration (`RESTORED EXACTLY`), so none of the concurrent edits other
 agents were making to that file in parallel were lost. Full suite re-run
 after restoration: `bun run typecheck` (all 4 workspaces) and `bun test`
 (256 pass, 0 fail) both clean.
+
+## agent run feedback (2026-09-11)
+
+Fixed the silent-failure bug where clicking Generate in the reading-order
+pane produced no visible feedback: the server returns HTTP 200 with a run
+object whose `status` can be `"error"` (with the real failure in
+`run.error`), and both call sites — `ReadingOrderPane.tsx`'s Generate
+button and `CommandPalette.tsx`'s "Generate reading order" action — did a
+bare `void callApi('generateReadingOrder', ...)` and threw the response
+away. A genuinely-thrown failure (network error, non-2xx) was equally
+silent via `.catch(() => undefined)`-style discarding.
+
+Added `apps/web/src/lib/runState.ts`: a pure `runUiState(run: AgentRun |
+null)` mapping a run to `{phase: 'idle'|'pending'|'error'|'done'}` (with
+the real `error` string on the error phase), plus `localRun(reviewId,
+status, error?)` to synthesize an `AgentRun`-shaped object for the two
+moments a real one doesn't exist yet — the optimistic click before the POST
+resolves, and a thrown network/non-2xx failure that never produced a
+server-side run at all. Deliberately generic: it branches on `run.status`/
+`run.error`, never on the specific error text, since the agent/server side
+is being rewritten concurrently and generation is expected to start
+succeeding. Unit-tested in `apps/web/test/runState.test.ts` (8 cases:
+idle/pending/error/done phases, the cancelled-as-error case, the
+no-error-text fallback, and both `localRun` shapes) following the existing
+`bun:test` pattern rather than `reviewProviderRenders.test.ts`'s
+`happy-dom` one, since this is a pure function with no DOM/React involved.
+
+Centralized the actual request in `ReviewContext.tsx` rather than
+duplicating it at both call sites: added `readingOrderRun: AgentRun | null`
+to the engine state and a `generateReadingOrder()` action that sets an
+optimistic `localRun(..., 'pending')` immediately, then either the real
+`run` from the POST response or a synthesized error run from a caught
+exception. `ReadingOrderPane.tsx` and `CommandPalette.tsx` both now call
+`review.generateReadingOrder()` instead of `callApi` directly. Success is
+still driven by the existing live-update path — `run.started`/`run.ended`
+WS events (added to the `switch` in `ReviewContext.tsx`, filtered to
+`event.run.kind === 'reading_order'`) keep `readingOrderRun` current, and
+the pre-existing `reading_order.updated` event (untouched) is what actually
+refetches and renders the generated reading order — no redundant polling or
+parallel refetch mechanism added.
+
+UI: the pane's Generate button already disabled itself and showed
+"Generating…" while a local `generating` boolean was true; that boolean
+now comes from `runUiState(readingOrderRun).phase === 'pending'` instead,
+so it reflects the real run lifecycle (including a run kicked off from the
+command palette, or one whose `run.started` event arrives before the POST
+promise resolves) rather than only this component's own in-flight request.
+Added an error banner between the pane header and the step list — same
+`role="alert"`, `AlertTriangle`, and `--chrome-danger`/`--chrome-danger-bg`
+token treatment `DivergenceBanner.tsx` uses for its `behind > 0` case — that
+renders `runState.message` verbatim (the real server text, not a generic
+fallback) whenever `runState.phase === 'error'`. The fallback string in
+`runUiState` only fires when the server genuinely sends no `error` text at
+all, which the SPEC §9 stub in the confirmed reproduction case does not
+hit.
+
+Left undone / not attempted: no visible affordance distinguishes "just
+finished successfully" from "idle, nothing has ever run" — once a
+`run.ended` event with `status: "done"` lands, `readingOrderRun` sits in
+the `done` phase (which renders no banner, same as `idle`) until the next
+generate click or page reload resets it to `null` on the next full
+`load()`. Since the actual reading-order content refreshes via
+`reading_order.updated` in the same moment, this seemed like the right
+call rather than adding a transient success toast nothing else in this
+codebase does (`RefreshPill.tsx`'s pattern is for a different kind of
+pending-user-action state, not a fire-and-forget success). Also didn't add
+a "Retry" affordance beyond the existing Generate button doubling as one —
+clicking Generate again after an error clears `readingOrderRun` back to
+pending and re-attempts, which seemed sufficient rather than a second
+dedicated control.
+
+Verified: `bun run typecheck` (all 4 workspaces clean), `bun test` (264
+pass, 0 fail — up from 256 before this change, the 8 new `runState.test.ts`
+cases), and `cd apps/web && bun run build` (succeeds; the "chunks larger
+than 500 kB" warnings are pre-existing, from the shipped syntax-highlighting
+theme/language bundles, unrelated to this change).
+
+## reading order generation (2026-09-11)
+
+Implemented SPEC §9's `reading_order` run kind: `generateReadingOrder` in
+`apps/server/src/agent/runs.ts` now actually drives
+`@anthropic-ai/claude-agent-sdk` instead of immediately erroring. New files,
+all under `apps/server/src/agent/`: `model.ts` (the `AGENT_MODEL_ID`
+constant, `claude-haiku-4-5` — the user explicitly asked for Haiku so
+testing stays cheap; kept in one named export rather than inlined so
+switching models later is a one-line change), `permissions.ts` (read-only
+enforcement), and `readingOrder.ts` (prompt building + the `query()` call +
+output validation).
+
+**Auth**: confirmed early, per the task's instruction to stop rather than
+build something unrunnable. There is no `ANTHROPIC_API_KEY` on this
+machine and no `ant` CLI, but `/Users/szabi/.local/bin/claude` is on
+`$PATH` and already logged in. The SDK spawns that binary and rides its
+session credentials — verified with a bare `query()` smoke test before
+writing any real code (it produced a normal completion, `cache_read_input_tokens`
+and all, with `ANTHROPIC_API_KEY` unset). No key handling was added
+anywhere; there was nothing to add.
+
+**Structured output, not a `review reading-order set --file plan.json`
+Bash call.** SPEC §9's run-kind table says the agent "calls `review
+reading-order set --file plan.json`" itself. This implementation does not
+do that — instead it passes `outputFormat: { type: 'json_schema', schema:
+z.toJSONSchema(readingOrderPlanSchema) }` (Zod 4's built-in JSON Schema
+export; the CLI's `--json-schema` flag rejects a top-level `$schema` key,
+so that key is stripped before use) to `query()`, reads the final
+`result` message's `.result` string, `JSON.parse`s it, and validates it
+with `readingOrderPlanSchema.safeParse` before anything touches the
+database — exactly the task's instruction ("never trust it unvalidated").
+On success it calls `writeReadingOrderPlan(db, reviewId, plan, run.id)`
+directly — the same function the CLI's `review reading-order set` route
+(`PUT /api/reviews/:id/reading-order` → `writeReadingOrderPlan`) calls —
+so there is exactly one persistence path, per the task's instruction not to
+write a second one. This also sidesteps a real gap in the spec's literal
+design: if the agent were allowed to invoke `review reading-order set`
+through Bash, that CLI command mutates the database, and nothing in §9's
+Bash allowlist distinguishes it from `review reading-order get` — Bash
+gating would have to special-case CLI subcommands to keep the run
+read-only (which `permissions.ts` does anyway, see below, but the
+structured-output approach means it doesn't have to be load-bearing for
+persistence).
+
+**Read-only enforcement — a real bypass found and closed, not just the
+literal spec text implemented.** `permissions.ts` exports
+`isReadOnlyBashCommand` (pure, unit-tested in
+`apps/server/test/agent/permissions.test.ts` against the exact smuggling
+attempts the task listed — `;`, `&&`, `||`, `|`, backticks, `$(...)`,
+redirection, newlines — plus sed `-i`, non-read-only `git` subcommands, and
+non-read-only `review` CLI subcommands) and `agentCanUseTool`, the
+`canUseTool` callback: auto-allow `Read`/`Grep`/`Glob`, gate `Bash` through
+the predicate, deny every other tool by default (an allowlist, so a tool
+the SDK adds later is denied, not silently allowed).
+
+While testing this against the real SDK, `agentCanUseTool` turned out to
+never be called for some Bash commands — including a literal
+`git log | head -1`, which the predicate itself denies (pipes are on the
+smuggling-rejection list). Instrumenting `canUseTool` to log every call
+showed why: Claude Code has a built-in classifier that auto-approves bash
+commands it judges "obviously read-only" *without* consulting `canUseTool`
+at all — confirmed by testing an adversarial command
+(`git log --oneline | xargs -I{} touch /tmp/pwned-{}`), which *did* reach
+`canUseTool` and was correctly denied, so the classifier is conservative
+about anything resembling a write, but it is not SPEC §9's allowlist and
+is not this codebase's to audit or trust. The fix, found by trial against
+the running SDK and now in `readingOrder.ts`: pass
+`settings: { permissions: { ask: ['Bash'] } }`, which forces every Bash
+call onto the interactive-confirmation tier and therefore through
+`canUseTool` — after this change, the same `git log | head -1` probe did
+reach `agentCanUseTool` and was denied by `isReadOnlyBashCommand` (pipes
+aren't on the allowlist). Also set `settingSources: []` (SPEC §9 says
+`['user','project','local']`, to load the user's own `CLAUDE.md`/skills) —
+deliberately narrower: the review root is *the reviewed repo*, so a branch
+under review could add a permissive `.claude/settings.local.json`
+(`{"permissions":{"allow":["Bash"]}}`) and, with project/local settings
+loaded, re-open exactly the hole just closed. Loading the user's own
+personal settings was judged not worth that risk for this run kind.
+`isReadOnlyBashCommand` is therefore the actual, sole enforcement boundary
+for Bash — not a check the SDK's own fast path can route around.
+
+One more deliberate narrowing beyond SPEC §9's literal wording: the
+allowlisted `review` CLI prefix is restricted to its read-only subcommands
+(`list`, `show`, `files`, `diff`, `threads`, `thread`, `feedback`, `run`,
+`reading-order get`, `repos list`) rather than the whole CLI, because the
+CLI also has mutating subcommands (`reading-order set`, `reading-order
+generate`, `repos add`, `create`, `revision`, `viewed`, `reply`,
+`resolve`) that would let a "read-only" Bash call bypass the
+`disallowedTools: ['Write','Edit','NotebookEdit']` block entirely by going
+through the CLI's own persistence layer instead of the SDK's file tools.
+
+**Run lifecycle**: `run.started`/`run.ended` are still emitted, and
+`agent_run.status` still transitions `pending → running → done|error`
+through the existing `setRunStatus`/`setRunError` functions, so WS clients
+and the CLI's `review run <id>` are unaffected. Every SDK message is also
+persisted via the existing `appendEvent(runId, seq, type, payload)` as it
+streams in (visible under `GET /api/runs/:id`), which gets most of §9's
+"every SDK message is persisted to `agent_event`" for free without
+building the rest of the session machinery below.
+
+**What SPEC §9 describes that this unit deliberately does not implement**
+(the task said to say so rather than silently under-deliver):
+- **No long-lived streaming session / `resume`.** Each run is one
+  standalone `query()` call with a plain string `prompt`, not a
+  `Map<runId, SessionContext>` fed from an `AsyncIterable<SDKUserMessage>`
+  queue. There is no follow-up/steering mid-run, and `resume_cursor` /
+  `session_id` on `agent_run` are never populated by this code path (the
+  columns exist from the earlier §9 scaffolding but reading-order runs
+  don't use them) — a server restart mid-run loses that run; it does not
+  resume.
+- **No `startup()` pre-warming.** Every run pays full subprocess spawn
+  cost; no subprocess pool.
+- **No `includePartialMessages` / token-level streaming UI.** Messages are
+  persisted as they arrive (coarse-grained: complete SDK messages, not
+  partial tokens), but the `run.delta` WS event SPEC §9 defines for
+  token-level UI is never emitted by this path. The work-in-progress UI, if
+  it exists, will only see `run.started` and `run.ended` for this run kind.
+- **`requestThreadReply` (`thread_reply` run kind) is untouched** — still
+  the placeholder that immediately errors. Explicitly out of scope per the
+  task.
+
+**Verified end to end**, twice, against the live server (not just unit
+tests) with the exact repro from the task: `POST
+/api/reviews/rev_12065d626c614114afcc15/reading-order/generate` (the
+`waszabi` repo's `descent` branch, 9 changed files) both times returned a
+run with `"status":"done"` and `"error":null`, and the follow-up `GET
+.../reading-order` returned a real, schema-valid plan with
+`"unassignedPaths":[]` — version 1 (before the `settings.permissions.ask`
+hardening) grouped the 9 files into 6 steps starting with "Configuration
+and styling foundation"; version 2 (after) grouped them into 8 steps
+starting with "Introduce scroll-driven state with the Dive hook". Both
+runs' persisted `agent_event` rows were inspected directly (`GET
+/api/runs/:id`) to confirm the actual tool calls made stayed within
+`Read`/`Grep`/`Glob`/allowlisted-`Bash` and that the structured output was
+the last event before `result`. `git status --porcelain` in
+`/Users/szabi/coding/waszabi` was clean before and after both runs — the
+agent made no writes to the reviewed repo. `bun run typecheck` (all 4
+workspaces) and `bun test` (281 pass, 0 fail, including the 17 new
+`apps/server/test/agent/*.test.ts` cases) both pass from the repo root.
+
+Left broken/undone: nothing observed. The dev server needed a manual
+restart during testing because a stale instance from earlier in this
+session was already bound to :7317 running the pre-change code — not a
+defect in this change, just a note for anyone re-running the repro that
+`bun run --filter '@review/server' start` won't pick up new code on an
+already-running process.

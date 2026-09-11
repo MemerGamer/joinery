@@ -32,6 +32,7 @@ import {
   applyDelta,
   diffFileLists,
   isEmptyDelta,
+  type AgentRun,
   type FileEntry,
   type FileListDelta,
   type ReadingOrder,
@@ -54,6 +55,7 @@ import {
 } from 'react';
 import { ApiError, callApi } from '../lib/apiClient.ts';
 import { loadFileDiff, placeholderFileDiff } from '../lib/diffLoader.ts';
+import { localRun } from '../lib/runState.ts';
 import { eventsClient } from '../lib/wsClient.ts';
 
 export type DiffStyle = 'split' | 'unified';
@@ -129,6 +131,15 @@ interface ReviewEngineState {
   threads: Thread[];
   readingOrder: ReadingOrder | null;
   pendingDelta: FileListDelta | null;
+  /**
+   * The latest known run for this review's reading-order generation (SPEC
+   * §9) — drives the Generate button's pending/error feedback. `null` means
+   * no generation is in flight and none has failed since the last success.
+   * Never read `.status`/`.error` off the `generateReadingOrder` API
+   * response directly outside this file; go through `runUiState` (see
+   * `lib/runState.ts`) so callers can't special-case today's error text.
+   */
+  readingOrderRun: AgentRun | null;
 }
 
 export interface ReviewEngine extends ReviewEngineState {
@@ -154,6 +165,16 @@ export interface ReviewEngine extends ReviewEngineState {
   reloadThreads: () => Promise<void>;
   reloadReadingOrder: () => Promise<void>;
   reloadAll: () => Promise<void>;
+  /**
+   * Kick off reading-order generation and track its outcome in
+   * `readingOrderRun` (pending immediately, then whatever the server ends
+   * up reporting — including a genuinely-thrown network/non-2xx failure,
+   * synthesized into the same run shape so callers have one code path).
+   * Both call sites (the pane's Generate button and the command palette)
+   * should call this instead of `callApi('generateReadingOrder', ...)`
+   * directly, so the outcome is never silently dropped.
+   */
+  generateReadingOrder: () => Promise<void>;
   bumpAnnotations: (path: string) => void;
   annotationsByPath: Map<string, DiffLineAnnotation<ThreadAnnotationMeta>[]>;
   draftThread: DraftThread | null;
@@ -210,6 +231,7 @@ export function ReviewProvider({
     threads: [],
     readingOrder: null,
     pendingDelta: null,
+    readingOrderRun: null,
   });
 
   const [diffStyle, setDiffStyle] = useState<DiffStyle>('split');
@@ -370,6 +392,7 @@ export function ReviewProvider({
         threads: threadsRes.threads,
         readingOrder: readingOrderRes.readingOrder,
         pendingDelta: null,
+        readingOrderRun: null,
       });
       rebuildOrder(filesRes.list.files, threadsRes.threads);
     } catch (err) {
@@ -441,6 +464,14 @@ export function ReviewProvider({
           callApi('getReadingOrder', { params: [reviewId] })
             .then((res) => setState((s) => ({ ...s, readingOrder: res.readingOrder })))
             .catch(() => undefined);
+          break;
+        }
+        case 'run.started':
+        case 'run.ended': {
+          // Only reading-order runs drive this pane's feedback; a
+          // thread_reply run for the same review is someone else's concern.
+          if (event.run.kind !== 'reading_order') break;
+          setState((s) => ({ ...s, readingOrderRun: event.run }));
           break;
         }
         default:
@@ -578,6 +609,32 @@ export function ReviewProvider({
     setState((s) => ({ ...s, readingOrder: res.readingOrder }));
   }, [reviewId]);
 
+  const generateReadingOrder = useCallback(async () => {
+    // Optimistic pending feedback the instant the click registers, before
+    // the POST (or the `run.started` event it triggers server-side) lands —
+    // generation can take a while and the button must not look inert.
+    setState((s) => ({ ...s, readingOrderRun: localRun(reviewId, 'pending') }));
+    try {
+      const res = await callApi('generateReadingOrder', { params: [reviewId], body: {} });
+      // The response's `run` may already report `status: "error"` (a 200
+      // carrying a failed run, SPEC §9) — store it as-is and let
+      // `runUiState` (lib/runState.ts) interpret it; a later `run.started`/
+      // `run.ended` WS event for the same run just overwrites this with the
+      // same or a more up-to-date copy.
+      setState((s) => ({ ...s, readingOrderRun: res.run }));
+    } catch (err) {
+      // Genuinely thrown: network failure or non-2xx, no run object at all.
+      setState((s) => ({
+        ...s,
+        readingOrderRun: localRun(
+          reviewId,
+          'error',
+          err instanceof ApiError ? err.message : 'Could not reach the server.',
+        ),
+      }));
+    }
+  }, [reviewId]);
+
   const bumpAnnotations = useCallback(
     (path: string) => {
       const rec = itemsRef.current.get(path);
@@ -713,6 +770,7 @@ export function ReviewProvider({
     reloadThreads,
     reloadReadingOrder,
     reloadAll: load,
+    generateReadingOrder,
     bumpAnnotations,
     annotationsByPath: annotationsRef.current,
     draftThread,

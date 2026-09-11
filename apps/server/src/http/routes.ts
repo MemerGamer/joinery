@@ -273,7 +273,13 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     const id = c.req.param('id');
     await requireReview(deps, id);
     await parseBody(generateReadingOrderBodySchema, c);
-    const run = await generateReadingOrder({ db: deps.db, emit: (e) => dispatch(id, e) }, id);
+    const engine = await requireEngine(deps, id);
+    const renderCtx = engine.getRenderContext();
+    const files = engine.getFileList().files;
+    const run = await generateReadingOrder({ db: deps.db, emit: (e) => dispatch(id, e) }, id, {
+      cwd: renderCtx.cwd,
+      files,
+    });
     return c.json({ run }, 202);
   });
 

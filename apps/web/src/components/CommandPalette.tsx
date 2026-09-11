@@ -263,7 +263,7 @@ export function CommandPalette({
                 <Command.Item
                   value="generate reading order"
                   onSelect={() => {
-                    void callApi('generateReadingOrder', { params: [currentReview.id], body: {} });
+                    void review.generateReadingOrder();
                     close();
                   }}
                   className={ITEM_CLASS}
