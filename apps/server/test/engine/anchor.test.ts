@@ -6,7 +6,14 @@
  * never deleted, only relocated or marked `outdated`).
  */
 import { describe, expect, test } from 'bun:test';
-import { CONTEXT_RADIUS, captureContext, findSubsequence, hashContext, relocate } from '../../src/engine/anchor.ts';
+import {
+  CONTEXT_RADIUS,
+  captureContext,
+  findAllSubsequences,
+  findSubsequence,
+  hashContext,
+  relocate,
+} from '../../src/engine/anchor.ts';
 
 describe('findSubsequence', () => {
   test('found at the start', () => {
@@ -62,6 +69,28 @@ describe('findSubsequence', () => {
   });
 });
 
+describe('findAllSubsequences', () => {
+  test('returns every match, in ascending order, not just the first', () => {
+    expect(findAllSubsequences(['p', 'q', 'x', 'y', 'p', 'q'], ['p', 'q'])).toEqual([0, 4]);
+  });
+
+  test('three matches, including overlapping ones', () => {
+    expect(findAllSubsequences(['a', 'a', 'a', 'a'], ['a', 'a'])).toEqual([0, 1, 2]);
+  });
+
+  test('no matches returns an empty array, not null', () => {
+    expect(findAllSubsequences(['a', 'b', 'c'], ['x'])).toEqual([]);
+  });
+
+  test('empty needle returns an empty array', () => {
+    expect(findAllSubsequences(['a', 'b'], [])).toEqual([]);
+  });
+
+  test('single unambiguous match returns a one-element array', () => {
+    expect(findAllSubsequences(['a', 'b', 'c'], ['b'])).toEqual([1]);
+  });
+});
+
 describe('captureContext / hashContext', () => {
   const lines = ['l1', 'l2', 'l3', 'l4', 'l5', 'l6', 'l7', 'l8', 'l9', 'l10'];
 
@@ -109,19 +138,33 @@ describe('captureContext / hashContext', () => {
     expect(hashContext('text a')).not.toBe(hashContext('text b'));
   });
 
-  test('CRLF vs LF is a different hash — captured context is byte-sensitive', () => {
-    // Flagged, not silently blessed: `captureContext` joins raw line strings
-    // with '\n', and if the source lines themselves carry a trailing '\r'
-    // (a file read without CRLF normalization) that '\r' is baked into the
-    // hash. This is defensible only if the read path normalizes line
-    // endings upstream; if it doesn't, a mixed-line-ending file could fail
-    // to re-anchor after a tool resaves it with different endings. Worth
-    // confirming upstream normalization exists — see IMPROVEMENTS.md.
-    expect(hashContext('line\r')).not.toBe(hashContext('line'));
+  test('CRLF vs LF hashes identically — normalized before hashing (Issue 2 fix)', () => {
+    // Traced the read path feeding `captureContext`/`hashContext`
+    // (reviewEngine.ts#reanchorThreads, routes.ts's thread-creation
+    // handler) back through git/diff.ts#getFileContents: committed blobs
+    // come back verbatim from `cat-file --batch` and a `working` revision's
+    // new side is a plain `fs.readFile` + `TextDecoder` — no line-ending
+    // normalization anywhere upstream. So a pure CRLF/LF change (a file
+    // resaved by a different tool) must not change the hash or the
+    // anchoring outcome; `hashContext` now normalizes a trailing '\r' away
+    // per line before hashing.
+    expect(hashContext('line\r')).toBe(hashContext('line'));
   });
 
-  test('trailing whitespace on a line is a different hash', () => {
-    expect(hashContext('line   ')).not.toBe(hashContext('line'));
+  test('trailing whitespace on a line hashes identically to the trimmed line', () => {
+    expect(hashContext('line   ')).toBe(hashContext('line'));
+  });
+
+  test('normalization is per-line, not a blanket trim: interior/leading whitespace is untouched', () => {
+    expect(hashContext('  line')).not.toBe(hashContext('line'));
+    expect(hashContext('a  b')).not.toBe(hashContext('a b'));
+  });
+
+  test('captureContext stores already-normalized text, so trailing whitespace/CRLF never reaches anchorContext', () => {
+    const crlfLines = ['l1\r', 'l2  \r', 'TARGET\r', 'l4\r', 'l5\r'];
+    const { context, hash } = captureContext(crlfLines, 3, 3);
+    expect(context).toBe(['l1', 'l2', 'TARGET', 'l4', 'l5'].join('\n'));
+    expect(hash).toBe(hashContext(['l1', 'l2', 'TARGET', 'l4', 'l5'].join('\n')));
   });
 });
 
@@ -171,32 +214,107 @@ describe('relocate', () => {
     expect(result).toBeNull();
   });
 
-  test('two identical copies of the anchored block: the first copy wins (documented ambiguity, not obviously correct)', () => {
-    // This is the genuinely ambiguous case flagged in the task brief. The
-    // current behaviour (inherited from findSubsequence's earliest-match
-    // semantics) is to silently pick the first occurrence, with no signal
-    // to the caller that the match was ambiguous. That's a defensible
-    // choice (some answer beats none, and it's deterministic) but it is
-    // also a real way for a thread to attach to the *wrong* one of two
-    // identical blocks with full confidence and no `outdated` flag. This
-    // test pins current behaviour; see IMPROVEMENTS.md for the escalation.
-    const original = ['pre', 'BLOCK', 'mid1', 'mid2', 'mid3', 'mid4', 'mid5', 'mid6', 'BLOCK', 'post'];
-    const thread = ctx(original, 2, 2); // anchors the *first* BLOCK
-    // Re-run relocate against the very same content: both copies are valid
-    // candidate matches for the 1-line context "BLOCK" alone in isolation,
-    // but captureContext included surrounding lines, so let's construct a
-    // case where the *captured context itself* is duplicated verbatim
-    // elsewhere in the new file.
-    const dup = ['pre', 'BLOCK', 'mid1', 'mid2', 'unrelated', 'pre', 'BLOCK', 'mid1', 'mid2', 'tail'];
-    // Build a thread whose 2-line context ("pre","BLOCK") appears twice in `dup`.
-    const twoLineThread = { anchorContext: ['pre', 'BLOCK'].join('\n'), startLine: 2, endLine: 2 };
-    const result = relocate(dup, twoLineThread);
+  test('two equidistant identical copies of the context: genuinely ambiguous, goes outdated rather than guessing', () => {
+    // Issue 1 fix. Two copies of the single-line context "BLOCK", placed so
+    // their resulting candidate lines are *exactly* equidistant (4 lines
+    // either side) from the thread's last known line (10): neither is
+    // closer than the other, so there is no basis to prefer one over the
+    // other. Silently picking the first (old behaviour) risks attaching the
+    // comment to the *wrong* one of two identical blocks with false
+    // confidence. Marking it `outdated` (relocate returns null) is
+    // recoverable; a wrong silent relocation is not.
+    const haystack = ['x0', 'x1', 'BLOCK', 'x3', 'x4', 'x5', 'x6', 'x7', 'x8', 'x9', 'BLOCK', 'x11'];
+    const thread = { anchorContext: 'BLOCK', startLine: 10, endLine: 10 };
+    // Candidate A: index 2 -> startLine 6 (distance |6-10| = 4).
+    // Candidate B: index 10 -> startLine 14 (distance |14-10| = 4). Tied.
+    const result = relocate(haystack, thread);
+    expect(result).toBeNull();
+  });
+
+  test('three or more identical copies: the one unambiguously nearest the original line wins', () => {
+    const original = ['pad1', 'pad2', 'a', 'b', 'BLOCK', 'c', 'd'];
+    const thread = ctx(original, 5, 5); // BLOCK at line 5; captures lines 2..7 (radius 3 clipped after by EOF): pad2,a,b,BLOCK,c,d
+
+    // Three copies of the captured 6-line context, at three different
+    // distances from the original startLine (5): one very close, one
+    // moderately far, one very far. Only the closest may win; the other
+    // two exist to confirm a 3rd/4th candidate doesn't confuse the
+    // proximity scan.
+    const nearFiller = Array.from({ length: 5 }, (_, i) => `near-filler${i}`);
+    const midFiller = Array.from({ length: 50 }, (_, i) => `mid-filler${i}`);
+    const farFiller = Array.from({ length: 500 }, (_, i) => `far-filler${i}`);
+    const copy = ['pad2', 'a', 'b', 'BLOCK', 'c', 'd']; // matches thread.anchorContext exactly
+    const threeCopies = [...nearFiller, ...copy, ...midFiller, ...copy, ...farFiller, ...copy];
+
+    const result = relocate(threeCopies, thread);
     expect(result).not.toBeNull();
-    expect(result?.startLine).toBe(2); // first occurrence, index 0 + beforeCount(1) + 1
-    // (the `thread` var from ctx() above is unused in this duplicate-context
-    // scenario; keep the realistic captureContext-built fixture for
-    // reference/documentation of how a thread would normally be built)
-    void thread;
+    expect(result?.confidence).toBe('nearest');
+    // Nearest copy: 'pad2' at 0-indexed 5, 'BLOCK' at 0-indexed 8 -> 1-indexed startLine 9.
+    expect(result?.startLine).toBe(9);
+  });
+
+  test('ambiguous but tie-breakable: one candidate near the original line, one far away — the near one wins', () => {
+    // Same captured context appears twice, at very different distances from
+    // where the thread used to be. Proximity to the last known line breaks
+    // the tie deterministically and plausibly (code drifts a little, it
+    // doesn't teleport across the file).
+    const original = ['pad1', 'pad2', 'pad3', 'pad4', 'pad5', 'a', 'b', 'BLOCK', 'c', 'd'];
+    const thread = ctx(original, 8, 8); // BLOCK at line 8; captures lines 5..10 (whole file)
+
+    const filler = Array.from({ length: 300 }, (_, i) => `filler${i}`); // 300 lines of unrelated padding
+    // One copy of the captured context sits right where it used to be
+    // (near line 8); an identical copy sits far away, deep in the filler.
+    const nearAndFar = [
+      'pad5',
+      'a',
+      'b',
+      'BLOCK',
+      'c',
+      'd',
+      'pad1',
+      'pad2', // near copy: starts at line 1, 'BLOCK' at line 4
+      ...filler, // lines 9..308
+      'pad5',
+      'a',
+      'b',
+      'BLOCK',
+      'c',
+      'd', // far copy: starts at line 309, 'BLOCK' at line 312
+    ];
+    const result = relocate(nearAndFar, thread);
+    expect(result).not.toBeNull();
+    expect(result?.confidence).toBe('nearest');
+    expect(result?.startLine).toBe(4); // the near copy (distance 4 from original line 8), not the far one (distance ~304)
+  });
+
+  test('a single unambiguous match reports confidence "unique"', () => {
+    const original = ['a', 'b', 'TARGET', 'c', 'd'];
+    const thread = ctx(original, 3, 3);
+    const shifted = ['x', 'y', 'a', 'b', 'TARGET', 'c', 'd'];
+    const result = relocate(shifted, thread);
+    expect(result?.confidence).toBe('unique');
+  });
+
+  test('CRLF-only change in the file being searched does not orphan the thread', () => {
+    // The captured context (from a clean LF file) must still be found in a
+    // haystack whose lines carry trailing '\r' (as if the file was resaved
+    // with CRLF endings) or trailing whitespace — a purely cosmetic change,
+    // not a content change.
+    const original = ['a', 'b', 'TARGET', 'c', 'd'];
+    const thread = ctx(original, 3, 3);
+    const crlfVersion = ['a\r', 'b\r', 'TARGET\r', 'c\r', 'd\r'];
+    const result = relocate(crlfVersion, thread);
+    expect(result).not.toBeNull();
+    expect(result?.startLine).toBe(3);
+  });
+
+  test('trailing-whitespace-only change in the file being searched does not orphan the thread', () => {
+    const original = ['a', 'b', 'TARGET', 'c', 'd'];
+    const thread = ctx(original, 3, 3);
+    const trimmedAway = ['a  ', 'b', 'TARGET   ', 'c', 'd '];
+    const result = relocate(trimmedAway, thread);
+    expect(result).not.toBeNull();
+    expect(result?.startLine).toBe(3);
   });
 
   test('a multi-line thread spanning a region that gets split apart returns null', () => {

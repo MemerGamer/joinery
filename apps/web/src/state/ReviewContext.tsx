@@ -138,6 +138,9 @@ export interface ReviewEngine extends ReviewEngineState {
   leftPanelOpen: boolean;
   rightPanelOpen: boolean;
   threadsPanelOpen: boolean;
+  setLeftPanelOpen: (open: boolean) => void;
+  setRightPanelOpen: (open: boolean) => void;
+  setThreadsPanelOpen: (open: boolean) => void;
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;
   toggleThreadsPanel: () => void;
@@ -691,6 +694,9 @@ export function ReviewProvider({
     leftPanelOpen,
     rightPanelOpen,
     threadsPanelOpen,
+    setLeftPanelOpen,
+    setRightPanelOpen,
+    setThreadsPanelOpen,
     toggleLeftPanel: () => setLeftPanelOpen((v) => !v),
     toggleRightPanel: () => setRightPanelOpen((v) => !v),
     toggleThreadsPanel: () => setThreadsPanelOpen((v) => !v),

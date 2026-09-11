@@ -811,3 +811,278 @@ Left undone / out of scope:
   `Command.Dialog` (cmdk doesn't render one) — a pre-existing dev-console a11y
   warning from Radix, not a regression from this change, not fixed here since
   it's inside `cmdk`'s own `Dialog` wrapper.
+
+## panel state (2026-09-11)
+
+- Added direct setters to `ReviewContext` — `setLeftPanelOpen(open)`,
+  `setRightPanelOpen(open)`, `setThreadsPanelOpen(open)` — alongside the
+  existing `toggleLeftPanel`/`toggleRightPanel`/`toggleThreadsPanel`. The
+  toggles are now expressed as `setXPanelOpen((v) => !v)` against the same
+  `useState`, so there is one source of truth (no separate toggle-only vs.
+  setter-only state). Toggles stay in the public API — `Header.tsx`, the
+  `Cmd+B` / `Cmd+Alt+B` / `t` keymap bindings, `CommandPalette.tsx`, and
+  `ThreadsPanel.tsx`'s close button all call them for genuine toggle intent
+  and were left unchanged.
+- Confirmed the three panel-open booleans are not persisted to
+  `localStorage` anywhere (only per-file collapse overrides are, via
+  `collapseStorageKey`/`readStoredCollapseOverrides` elsewhere in
+  `ReviewContext.tsx`) — so no persistence work was needed for the new
+  setters to stay consistent with the toggles.
+- This resolves the Bug 4 limitation noted in `## keymap (2026-09-11)`
+  above: `ReviewWindow.tsx`'s `goSteps` (`g s`) now calls
+  `review.setRightPanelOpen(true)` unconditionally instead of
+  check-then-`toggleRightPanel()`, removing the read-then-write race the
+  old workaround had. Focus behavior is unchanged — immediate
+  `rightPanelRef.current?.focus()` when the panel is already open, or via
+  the existing pending-focus ref resolved in the `useEffect` keyed on
+  `rightPanelOpen` once the panel mounts when this call is what opened it.
+  The stale "Bug 4 fix" comment describing the workaround and its
+  `ReviewContext` limitation has been replaced with one describing the
+  current (unconditional-open) behavior; the limitation no longer exists.
+- Verified: `bun run typecheck` (all packages), `bun test` (240 pass, 0
+  fail — unrelated to this change), and `cd apps/web && bun run build` all
+  succeed.
+
+## anchoring (2026-09-11)
+
+- **Issue 1 fixed — ambiguous relocation matches no longer silently pick the
+  earliest occurrence.** `relocate` (`apps/server/src/engine/anchor.ts`) now
+  finds every occurrence of the captured context via a new
+  `findAllSubsequences` (all match indices, ascending; `findSubsequence`
+  becomes a thin `[0] ?? null` wrapper over it, so its own 8 tests and
+  documented "earliest wins" contract at the primitive level are
+  unchanged). Policy, written as a doc comment on `relocate` itself:
+  - exactly one match → relocate, `confidence: 'unique'`.
+  - two or more matches → break the tie by proximity: the candidate whose
+    resulting start line is *strictly* closer to the thread's previous
+    `startLine` than every other candidate wins (`confidence: 'nearest'`).
+    Code under review drifts a little, it doesn't teleport, so "closest to
+    where it was" is a real signal, not an arbitrary one.
+  - if no single candidate is strictly closest (two or more tie for
+    closest — including the common symmetric case of one match equally far
+    above and another equally far below), that is genuine ambiguity with
+    no basis to break it further, and `relocate` returns `null` so the
+    caller marks the thread `outdated`. A thread the user has to
+    re-locate is recoverable; a comment silently attached to the wrong one
+    of two identical blocks is not — accuracy over recall for a
+    data-loss-adjacent decision, per the task brief.
+  - The "prefer a longer/more specific match" tie-breaker from the brief
+    was considered but doesn't apply *inside* `relocate`: every candidate
+    here matched the same fixed-length needle (the thread's one captured
+    context), so none can be longer/more specific than another. It would
+    only matter for an architecture that retries with progressively
+    shorter context windows, which this one doesn't (`CONTEXT_RADIUS` is
+    fixed) — noted in the doc comment as considered-and-rejected rather
+    than left unaddressed.
+  - `RelocateResult` gained a `confidence: 'unique' | 'nearest'` field so
+    the value means something a caller could act on (e.g. badge a
+    tie-broken relocation differently from a clean one); no current caller
+    reads it yet — `reviewEngine.ts#reanchorThreads` only destructures
+    `startLine`/`endLine`, which is unaffected by the additive field, so no
+    change was needed there.
+  - The never-delete invariant is untouched: an ambiguous match still only
+    ever produces `null` → `outdated`, same as any other miss.
+
+- **Issue 2 — investigated, upstream does NOT normalize; fixed in
+  `anchor.ts`.** Traced the read path: `reviewEngine.ts#reanchorThreads`
+  and `routes.ts`'s thread-creation handler both get file text from
+  `git/diff.ts#getFileContents`, which reads committed sides verbatim via
+  `cat-file --batch` (whatever bytes git stored — no `core.autocrlf`
+  equivalent applied) and a `working`-revision new side via a plain
+  `fs.readFile` + `TextDecoder` (also verbatim). No line-ending or
+  whitespace normalization exists anywhere upstream of `anchor.ts`, so a
+  file resaved with different line endings, or an editor stripping
+  trailing whitespace, would previously have both (a) changed every
+  affected line's contribution to `anchorContextHash`, and — the more
+  serious half, since matching in `relocate` is plain per-line string
+  equality via `findSubsequence`/`findAllSubsequences`, not hash-based —
+  (b) made the captured context fail to literally match the new lines,
+  orphaning (marking `outdated`) every thread whose context crossed a
+  changed line. Fixed with a new `normalizeLine` (strips a trailing `\r`
+  and trailing horizontal whitespace per line) applied in three places so
+  the fix is end-to-end rather than cosmetic:
+  1. `captureContext` normalizes before storing, so `anchorContext` is
+     clean from the moment a thread is created.
+  2. `hashContext` normalizes independently too (defensive — meaningful
+     even if ever called on text that didn't go through `captureContext`;
+     normalizing already-clean text is a no-op).
+  3. `relocate` normalizes both `newLines` (the haystack) and the split
+     `anchorContext` (the needle) before searching, so old threads
+     captured before this fix (whose stored `anchorContext` may still
+     carry raw `\r`/trailing whitespace) keep matching too.
+  Tradeoff, documented on `normalizeLine`: a line whose *only* change is
+  trailing whitespace or line-ending style now reads as unchanged by
+  anchoring, including not tripping `changedSinceComment` — judged correct
+  since that is what a reviewer would call "nothing meaningful happened
+  here," not a near-miss. Normalization is deliberately per-line and only
+  trailing/CR, not a blanket trim — leading/interior whitespace changes
+  (indentation, `a  b` → `a b`) still count as real content changes and
+  are pinned by a dedicated test.
+
+- **Tests added** (`apps/server/test/engine/anchor.test.ts`, all passing):
+  `findAllSubsequences` (5 new tests: all-matches order, overlapping,
+  empty needle/no-match, single match); the two duplicate-content
+  `relocate` scenarios split into precise cases — two equidistant
+  candidates (ambiguous → `outdated`), three-or-more candidates with one
+  unambiguously nearest (`confidence: 'nearest'`), one-near-one-far
+  (nearest wins over a ~300-line-distant duplicate), and a plain
+  single-match case asserting `confidence: 'unique'`; normalization tests
+  for `hashContext` (CRLF/trailing-whitespace now hash identically,
+  leading/interior whitespace still differs), `captureContext` (stores
+  pre-normalized text), and `relocate` (a CRLF-only or trailing-whitespace-
+  only rewrite of the searched file no longer orphans the thread). The two
+  pre-existing tests that had pinned the *old*, now-fixed behaviour
+  (CRLF/trailing-whitespace hashing differently; "first copy wins" on
+  duplicate context) were rewritten in place to assert the new, corrected
+  behaviour rather than left contradicting it.
+
+- **Mutation testing** (deliberately broke each fix in `anchor.ts`, reran
+  `bun test apps/server/test/engine/anchor.test.ts`, confirmed red, then
+  restored via a scratch backup):
+  1. Removed the tie-break/ambiguity logic entirely (always return the
+     first candidate as `'unique'`) → caught by 3 tests (the two
+     tie-breakable cases expecting `'nearest'`, and the equidistant case
+     expecting `null`).
+  2. Disabled `normalizeLine` (identity function) → caught by 5 tests (3
+     hash/capture-context tests, 2 relocate-survives-whitespace tests).
+  3. Removed normalization specifically from `relocate`'s haystack/needle
+     (left `hashContext`/`captureContext` normalizing) → caught by the 2
+     `relocate`-level CRLF/whitespace tests — confirming those two tests
+     exercise the matching path specifically, not just the hash.
+  4. Weakened the tie-break comparison (`<=` instead of `<`, disabling tie
+     detection) → caught, but by only 1 test (the equidistant-ambiguity
+     case). Worth flagging as the thinnest catch of the four mutations: no
+     other test would have noticed this specific regression, since it
+     only differs from correct behaviour in the exact-tie case.
+  5. Removed `hashContext`'s own independent normalization (leaving only
+     `captureContext`'s) → caught by the 2 tests that call `hashContext`
+     directly on raw un-normalized text.
+  All five mutations were caught by at least one test; no coverage gap was
+  found, though mutation 4 shows the ambiguity-tie-detection path has only
+  a single test guarding it.
+
+- **Nothing left unresolved** for the two assigned issues. Scope was kept
+  to `apps/server/src/engine/anchor.ts` and its test file, per the task's
+  file ownership; `reviewEngine.ts` was read but not modified — the
+  `RelocateResult.confidence` addition is additive and required no caller
+  change.
+
+## render coverage (2026-09-11)
+
+Closed the gap called out in the task: there was no test anywhere that
+asserted the centre pane actually renders content, which is how a change
+could zero out `apps/web/src/state/ReviewContext.tsx`'s `items` array and
+still pass typecheck, all 240 tests, and a clean build.
+
+**Step 1 — what's actually available.** Checked `bun.lock` and every
+`package.json` in the workspace: no `playwright`, no `puppeteer`, no
+`jsdom`, no `happy-dom`, no `react-test-renderer`, no `@testing-library/*`
+anywhere before this change. `apps/web` had zero DOM test setup — confirmed
+by `apps/web/test/keymapGuard.test.ts`, the only prior web test, which is
+written against pure helpers for exactly that reason. `bun test` itself has
+no `--dom`/jsdom flag (checked `bun test --help`); DOM setup has to come
+from a preload or from the test file itself.
+
+**Step 2 — is a full render reachable?** No, not without a heavy new
+dependency, and the task's own instinct here was right. `@pierre/diffs`'
+`CodeView` needs real Web Workers (`Worker`, tokenization/highlight workers)
+and renders into shadow-DOM custom elements (`<diffs-container>`,
+`<file-tree-container>`) — verified by trying it: importing `@pierre/diffs`'
+runtime module (via `apps/web/src/lib/diffLoader.ts`, which imports
+`parsePatchFiles`/`trimPatchContext` from it directly, not type-only) throws
+`ReferenceError: customElements is not defined` the instant it's imported
+without *some* DOM present, before workers even enter the picture. Getting
+an actual `CodeView` to paint rows would need a real browser engine
+(Playwright/Puppeteer) — a genuinely heavy dependency this task said not to
+add without strong justification, and mounting a full browser for one smoke
+test isn't that justification on its own.
+
+**What was built instead — `apps/web/test/reviewProviderRenders.test.ts`.**
+A state-layer test, honestly named and commented as such, that mounts the
+*real* `ReviewProvider` (not a reimplementation of its logic) via
+`react-dom/client` + `react`'s `act`, against a mocked `callApi` (the one
+network seam) and a stubbed `eventsClient` (so the mount effect doesn't try
+a real WebSocket). It never touches `CodeView` — the `Consumer` component
+just calls `useReview()` and captures the engine. Because
+`apps/web/src/lib/diffLoader.ts` does a real runtime import of
+`@pierre/diffs` (for `parsePatchFiles`), a minimal DOM was still required
+just to import that module without crashing, which is why `happy-dom` was
+added as an `apps/web` devDependency (`bun add -d happy-dom`, scoped to that
+one workspace) — the lightest thing that makes `customElements`,
+`HTMLElement`, etc. exist. It is explicitly NOT used to render `CodeView`
+itself, only to let React commit into a real (if fake) DOM and let
+`@pierre/diffs`' module-scope `customElements.get(...)` check not throw.
+
+Because `bun test` runs every test file in one shared process/global object,
+the DOM globals are installed as a narrow **allowlist**
+(`HTMLElement`, `Element`, `Node`, `Text`, `Comment`, `DocumentFragment`,
+`Document`, `Event`, `CustomEvent`, `MutationObserver`, `customElements`,
+`navigator`, `location`, plus `window`/`document`/`requestAnimationFrame`/
+`cancelAnimationFrame`), not a blanket `Object.assign(globalThis, window)`.
+The first version of this test did the blanket copy, which silently
+clobbered Bun's native `WebSocket`/`fetch`/`Request`/`Response` globals and
+broke 7 unrelated `apps/server` websocket tests elsewhere in the same
+`bun test` run (`hono`'s adapter started throwing `c.env is not an Object`)
+— caught by running the full suite, not just the new file. Also intentionally
+left off the allowlist: `console` (happy-dom's `VirtualConsole` throws
+`Method not implemented` on `timeStamp`, which react-dom's dev build calls).
+
+What the test covers, precisely:
+- Mounts `ReviewProvider` with a mocked review of 3 changed files and
+  asserts `items.length === 3`, one per file, matched by path — this is the
+  exact invariant that broke in the blank-pane regression.
+- Asserts each item's `fileDiff` carries real parsed hunk content (not the
+  `isPartial`/empty-hunks placeholder `placeholderFileDiff` produces before
+  `loadFileDiff` resolves) — proving the patch-loading path, not just the
+  file-list path, produced something.
+- Asserts the SPEC §6 collapse defaults: a normal file defaults expanded, a
+  >2000-line file and a `generated` file both default collapsed.
+- Asserts `loading` becomes `false` and `error` stays `null` after the
+  mocked load resolves.
+
+What it does NOT cover — named plainly, not papered over:
+- `CodeView` itself never mounts. Whether `@pierre/diffs` actually paints
+  rows into shadow DOM from the `items` array this test validates is
+  unverified. A regression inside `CodeView`'s own reconciliation (the kind
+  the module doc comment at the top of `ReviewContext.tsx` warns about —
+  mutating an item in place without calling `notifyItemMutated`) would NOT
+  be caught by this test.
+- No web workers, no tokenization/highlighting, no shadow-DOM assertions,
+  no visual output of any kind.
+- `ReviewWindow.tsx` (owned by a concurrent agent this session) is not
+  exercised at all — this test only reaches `ReviewProvider`/`useReview()`,
+  not the component that actually renders `<CodeView items={...}>`.
+- Live-update application (`applyPendingRefresh`, viewport anchoring) is not
+  covered — `eventsClient` is stubbed out entirely.
+
+**To close the remaining gap** (actually proving `CodeView` paints rows),
+the task's own read was correct: it needs a real browser. Concretely: add
+Playwright (`@playwright/test` or `playwright` + a thin driver), a real dev
+server (`vite build && vite preview`, or the existing `apps/web` dev
+server) or a static host of the built app, a running `apps/server` instance
+(or a mocked backend reachable over real HTTP, since `CodeView`'s workers
+run in a real browser process and can't have their `fetch`/`callApi` calls
+intercepted by `mock.module` the way this test's does), and an assertion
+that queries into the `diffs-container` custom element's shadow root (or a
+`data-testid` `@pierre/diffs` exposes, if any) for a non-zero row count.
+Rough sizing: a new `apps/web` (or root) devDependency plus browser
+binaries (`playwright install chromium`, ~100-300MB, not vendorable into a
+lockfile), a `bunfig.toml`/separate script to keep it out of the default
+fast `bun test` run (it needs a live server and is not "fast and
+deterministic" the way the rest of the suite is), and non-trivial setup
+time given no test harness like this exists in the repo today. Worth doing
+as a deliberate, separately-scoped follow-up — not folded into this task's
+budget.
+
+Mutation test performed to confirm the new test actually catches the
+regression class it claims to: temporarily changed the `items` `useMemo` in
+`apps/web/src/state/ReviewContext.tsx` (lines 682-687) to unconditionally
+`return [];`, ran `bun test apps/web/test/reviewProviderRenders.test.ts`,
+and got exactly the expected failures — `items.length` `Expected: 3,
+Received: 0` and the collapse-default assertions failing on `undefined`
+(no items at all). Restored the file from a copy taken immediately before
+the edit and diffed it against the restored version to confirm byte-for-byte
+restoration (`RESTORED EXACTLY`), so none of the concurrent edits other
+agents were making to that file in parallel were lost. Full suite re-run
+after restoration: `bun run typecheck` (all 4 workspaces) and `bun test`
+(256 pass, 0 fail) both clean.

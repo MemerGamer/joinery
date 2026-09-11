@@ -27,12 +27,11 @@ function ReviewWindowInner(): React.JSX.Element {
   const review = useReview();
   const [paletteOpen, setPaletteOpen] = useState(false);
 
-  // Bug 4 fix (keymap audit, 2026-09-11): "go to steps" must OPEN the right
-  // panel and focus it, not toggle it — `ReviewContext` only exposes
-  // `toggleRightPanel()` (no direct setter/opener), so the minimal correct
-  // fix within the files this task owns is to only call it when the panel
-  // is currently closed, and to focus the panel afterwards. See
-  // IMPROVEMENTS.md for the limitation this works around.
+  // "Go to steps" is an open intent, not a toggle intent: it should always
+  // land on the right panel, focused, regardless of the panel's current
+  // state. `setRightPanelOpen(true)` below is idempotent, so this effect
+  // only needs to focus once the panel is actually open — immediately if it
+  // was already open, or after it mounts if this call is what opened it.
   const rightPanelRef = useRef<HTMLDivElement | null>(null);
   const focusRightPanelOnOpen = useRef(false);
 
@@ -56,11 +55,11 @@ function ReviewWindowInner(): React.JSX.Element {
     setRevisionPr: () => void review.setRevision('pr'),
     goHomebase: () => goHomebase(),
     goSteps: () => {
-      if (!review.rightPanelOpen) {
-        focusRightPanelOnOpen.current = true;
-        review.toggleRightPanel();
-      } else {
+      if (review.rightPanelOpen) {
         rightPanelRef.current?.focus();
+      } else {
+        focusRightPanelOnOpen.current = true;
+        review.setRightPanelOpen(true);
       }
     },
     openPalette: () => setPaletteOpen(true),

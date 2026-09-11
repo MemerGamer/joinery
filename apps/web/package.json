@@ -30,11 +30,12 @@
     "zod": "4.6.1"
   },
   "devDependencies": {
-    "vite": "8.3.0",
-    "@vitejs/plugin-react": "6.1.1",
-    "tailwindcss": "4.3.3",
     "@tailwindcss/vite": "4.3.3",
     "@types/react": "19.3.0",
-    "@types/react-dom": "19.3.0"
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "happy-dom": "^20.14.3",
+    "tailwindcss": "4.3.3",
+    "vite": "8.3.0"
   }
 }
