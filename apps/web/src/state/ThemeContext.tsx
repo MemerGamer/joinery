@@ -100,39 +100,31 @@ export function ThemeProvider({ children }: { children: React.ReactNode }): Reac
   const [state, setState] = useState<ThemeState>(initialThemeState);
   const applyCoordinated = useCoordinatedThemeChange();
 
-  const setChromeMode = useCallback(
-    (mode: ChromeMode) => {
-      document.documentElement.dataset['theme'] = mode;
-      setState((s) => {
-        const next = { ...s, chromeMode: mode };
-        applyCoordinated({ diffTheme: activeDiffThemeName(next) });
-        return next;
-      });
-    },
-    [applyCoordinated],
-  );
-
-  const setDiffTheme = useCallback(
-    (theme: { dark: string; light: string }) => {
-      setState((s) => {
-        const next = { ...s, diffTheme: theme };
-        applyCoordinated({ diffTheme: activeDiffThemeName(next) });
-        return next;
-      });
-    },
-    [applyCoordinated],
-  );
-
-  // Sync the worker pool's initial render options (created from the module-
-  // scope `highlighterOptions.theme` pair in workerPool.tsx, before this
-  // provider — and therefore any stored/system preference — could apply) to
-  // the actually-active single theme name, once, on mount.
-  useEffect(() => {
-    applyCoordinated({ diffTheme: activeDiffThemeName(state) });
-    // Deliberately run once: subsequent changes flow through the setters
-    // above, which already send the coordinated update themselves.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  const setChromeMode = useCallback((mode: ChromeMode) => {
+    document.documentElement.dataset['theme'] = mode;
+    setState((s) => ({ ...s, chromeMode: mode }));
   }, []);
+
+  const setDiffTheme = useCallback((theme: { dark: string; light: string }) => {
+    setState((s) => ({ ...s, diffTheme: theme }));
+  }, []);
+
+  // Drives the coordinated worker-pool theme change from the resolved
+  // *active* theme name rather than from inside the state updaters above
+  // (state updaters must stay pure — React StrictMode double-invokes them,
+  // which would double-fire the side effect). Keyed on the resolved name
+  // itself, not on `state`, so flipping chrome mode or picking a diff theme
+  // that happens to resolve to the same active name doesn't re-trigger the
+  // debounced worker call. This also covers the initial mount: the effect
+  // fires once with the module-scope `initialThemeState`'s active name,
+  // syncing the worker pool's initial render options (created from the
+  // module-scope `highlighterOptions.theme` pair in workerPool.tsx, before
+  // this provider — and therefore any stored/system preference — could
+  // apply) to the actually-active single theme name.
+  const activeName = activeDiffThemeName(state);
+  useEffect(() => {
+    applyCoordinated({ diffTheme: activeName });
+  }, [activeName, applyCoordinated]);
 
   useEffect(() => {
     persistThemeState(state);

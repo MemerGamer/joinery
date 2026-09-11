@@ -8,10 +8,10 @@ export function App(): React.JSX.Element {
   const route = useRoute();
 
   return (
-    <ThemeProvider>
-      <DiffWorkerPoolProvider>
+    <DiffWorkerPoolProvider>
+      <ThemeProvider>
         {route.name === 'homebase' ? <Homebase /> : <ReviewWindow reviewId={route.reviewId} />}
-      </DiffWorkerPoolProvider>
-    </ThemeProvider>
+      </ThemeProvider>
+    </DiffWorkerPoolProvider>
   );
 }

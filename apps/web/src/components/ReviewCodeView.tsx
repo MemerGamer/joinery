@@ -21,6 +21,7 @@ import {
   useReview,
   type ThreadAnnotationMeta,
 } from '../state/ReviewContext.tsx';
+import { useTheme } from '../state/ThemeContext.tsx';
 import { CommentComposer } from './CommentComposer.tsx';
 import { ThreadArticle } from './ThreadArticle.tsx';
 import { StepHeaderCard } from './StepHeaderCard.tsx';
@@ -41,6 +42,7 @@ export function ReviewCodeView(): React.JSX.Element {
     codeViewRef,
     toggleFileCollapsed,
   } = useReview();
+  const { chromeMode } = useTheme();
 
   const loadDiffFiles = useMemo(
     () => makeLoadDiffFiles(review?.id ?? '', reviewState?.currentRevision),
@@ -50,6 +52,12 @@ export function ReviewCodeView(): React.JSX.Element {
   const options = useMemo<CodeViewReactOptions<ThreadAnnotationMeta, undefined>>(
     () => ({
       diffStyle,
+      // `CodeView` renders into its own shadow root and sets `:host {
+      // color-scheme }` from `themeType`, which defaults to 'system' — i.e.
+      // it follows the OS preference, NOT this app's chrome toggle. Without
+      // this, flipping the app to light on a dark-mode machine leaves the
+      // diff's own chrome (gutters, scrollbars, form controls) dark.
+      themeType: chromeMode,
       hunkSeparators: 'line-info',
       enableGutterUtility: true,
       stickyHeaders: true,
@@ -65,7 +73,7 @@ export function ReviewCodeView(): React.JSX.Element {
         });
       },
     }),
-    [diffStyle, loadDiffFiles, startDraftThread],
+    [chromeMode, diffStyle, loadDiffFiles, startDraftThread],
   );
 
   const currentStep = useMemo(() => {

@@ -2,14 +2,26 @@
  * Left pane: the changed-files tree (SPEC §6). Static — never reordered by
  * the reading order — with git-status decorations and per-file "viewed"
  * checks in the row.
+ *
+ * `@pierre/trees` renders `<FileTree>` into a shadow root, so it never
+ * inherits the app's `data-theme` attribute or `--chrome-*` custom
+ * properties — its own stylesheet only understands its `--trees-theme-*`
+ * variables (with a `--trees-*-override → --trees-theme-* → default`
+ * fallback chain; see the `--trees-density-override` comment below for the
+ * same mechanism used for density). `themeToTreeStyles` maps a resolved
+ * Shiki/VS Code-shaped theme onto that variable set, so the tree is told
+ * the active theme explicitly, in step with the diff theme shown in
+ * `CodeView`, rather than trying (and failing) to inherit chrome mode.
  */
 import { FileTree, useFileTree } from '@pierre/trees/react';
-import { preparePresortedFileTreeInput } from '@pierre/trees';
-import type { GitStatusEntry, FileTreeRowDecoration } from '@pierre/trees';
-import { useEffect, useMemo } from 'react';
+import { preparePresortedFileTreeInput, themeToTreeStyles } from '@pierre/trees';
+import type { GitStatusEntry, FileTreeRowDecoration, TreeThemeStyles } from '@pierre/trees';
+import { resolveTheme } from '@pierre/diffs';
+import { useEffect, useMemo, useState } from 'react';
 import type { FileStatus } from '@review/core';
 import { compareFileEntries } from '@review/core';
 import { useReview } from '../state/ReviewContext.tsx';
+import { useTheme } from '../state/ThemeContext.tsx';
 
 const STATUS_MAP: Record<FileStatus, GitStatusEntry['status']> = {
   added: 'added',
@@ -21,6 +33,9 @@ const STATUS_MAP: Record<FileStatus, GitStatusEntry['status']> = {
 
 export function FileTreePane(): React.JSX.Element {
   const { fileList, isViewed, selectedPath, setSelectedPath, expandFileForNavigation } = useReview();
+  const { chromeMode, diffTheme } = useTheme();
+  const activeThemeName = chromeMode === 'dark' ? diffTheme.dark : diffTheme.light;
+  const [treeStyles, setTreeStyles] = useState<TreeThemeStyles | undefined>(undefined);
   const byPath = useMemo(() => new Map(fileList.map((f) => [f.path, f])), [fileList]);
 
   const sorted = useMemo(() => [...fileList].sort(compareFileEntries), [fileList]);
@@ -56,6 +71,23 @@ export function FileTreePane(): React.JSX.Element {
     if (selectedPath !== null) model.scrollToPath(selectedPath, { offset: 'nearest' });
   }, [selectedPath, model]);
 
+  // Resolve the active theme's colours and hand them to the tree's shadow
+  // root explicitly (see the file-top comment). Guarded against out-of-order
+  // resolution when `activeThemeName` changes again before this resolves.
+  useEffect(() => {
+    let cancelled = false;
+    resolveTheme(activeThemeName)
+      .then((resolved) => {
+        if (!cancelled) setTreeStyles(themeToTreeStyles(resolved));
+      })
+      .catch(() => {
+        // Best-effort: the tree just keeps its previous/default styles.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeThemeName]);
+
   return (
     // `--trees-density-override` widens the library's own row height/padding
     // (see @pierre/trees' style.js: row height and radius both scale off
@@ -65,7 +97,7 @@ export function FileTreePane(): React.JSX.Element {
       aria-label="Changed files"
       className="flex h-full w-full flex-col overflow-hidden [--trees-density-override:1.15]"
     >
-      <FileTree model={model} />
+      <FileTree model={model} style={treeStyles} />
     </nav>
   );
 }

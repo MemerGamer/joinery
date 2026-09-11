@@ -3,7 +3,7 @@
  * order — plus the header, divergence banner, staged-refresh pill, and the
  * global keymap + command palette.
  */
-import { useCallback, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ReviewProvider, useReview } from '../state/ReviewContext.tsx';
 import { useGlobalKeymap } from '../lib/keymap.ts';
 import { goHomebase } from '../lib/router.ts';
@@ -27,11 +27,21 @@ function ReviewWindowInner(): React.JSX.Element {
   const review = useReview();
   const [paletteOpen, setPaletteOpen] = useState(false);
 
-  const nextHunk = useCallback(() => {
-    const top = review.codeViewRef.current?.getInstance();
-    void top; // Hunk-level navigation lives inside Pierre's own scroll model;
-    // exposed here as a no-op hook point until a hunk index API is wired up.
-  }, [review.codeViewRef]);
+  // Bug 4 fix (keymap audit, 2026-09-11): "go to steps" must OPEN the right
+  // panel and focus it, not toggle it — `ReviewContext` only exposes
+  // `toggleRightPanel()` (no direct setter/opener), so the minimal correct
+  // fix within the files this task owns is to only call it when the panel
+  // is currently closed, and to focus the panel afterwards. See
+  // IMPROVEMENTS.md for the limitation this works around.
+  const rightPanelRef = useRef<HTMLDivElement | null>(null);
+  const focusRightPanelOnOpen = useRef(false);
+
+  useEffect(() => {
+    if (review.rightPanelOpen && focusRightPanelOnOpen.current) {
+      focusRightPanelOnOpen.current = false;
+      rightPanelRef.current?.focus();
+    }
+  }, [review.rightPanelOpen]);
 
   useGlobalKeymap({
     toggleLeftPanel: review.toggleLeftPanel,
@@ -45,9 +55,23 @@ function ReviewWindowInner(): React.JSX.Element {
     setRevisionHead: () => void review.setRevision('head'),
     setRevisionPr: () => void review.setRevision('pr'),
     goHomebase: () => goHomebase(),
-    goSteps: () => review.toggleRightPanel(),
+    goSteps: () => {
+      if (!review.rightPanelOpen) {
+        focusRightPanelOnOpen.current = true;
+        review.toggleRightPanel();
+      } else {
+        rightPanelRef.current?.focus();
+      }
+    },
     openPalette: () => setPaletteOpen(true),
-    nextHunk,
+    // `nextHunk` (bound to `j` in SPEC §11) has no implementation yet —
+    // hunk-level navigation lives inside Pierre's own scroll model and
+    // there's no hunk index API wired up. Deliberately not passed here:
+    // binding `j` to a handler that only calls `preventDefault()` and does
+    // nothing would be worse than not binding it at all (it would eat the
+    // keystroke — including inside the guard's allowance for plain letters
+    // outside text fields — while doing nothing visible). Leaving it
+    // unbound means `j` is simply inert until hunk navigation exists.
     toggleFocusedFileCollapsed: () => {
       if (review.selectedPath !== null) review.toggleFileCollapsed(review.selectedPath);
     },
@@ -90,7 +114,7 @@ function ReviewWindowInner(): React.JSX.Element {
           <ReviewCodeView />
         </div>
         {review.rightPanelOpen && (
-          <div className="w-80 shrink-0 border-l border-chrome-border">
+          <div ref={rightPanelRef} tabIndex={-1} className="w-80 shrink-0 border-l border-chrome-border outline-none">
             <ReadingOrderPane />
           </div>
         )}

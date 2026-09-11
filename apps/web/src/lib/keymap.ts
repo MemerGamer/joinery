@@ -5,7 +5,8 @@
  * the one platform-specific piece left for us to swap.
  */
 import { tinykeys } from 'tinykeys';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import { shouldIgnoreGlobalShortcut } from './keymapGuard.ts';
 
 const MOD = {
   primary: '$mod', // Cmd on macOS, Ctrl elsewhere — tinykeys resolves this.
@@ -41,48 +42,95 @@ export interface KeymapActions {
 }
 
 /**
+ * Static chord table: `tinykeys` binds once (see below) and each handler
+ * reads the *current* action through the latest-actions ref, so this table
+ * never needs to change shape across renders.
+ *
+ * Bug 1 fix (keymap audit, 2026-09-11): `tinykeys` matches a bound key
+ * against `event.key` OR `event.code` — see `matchKeybindingPress` in
+ * `node_modules/tinykeys/dist/tinykeys.mjs`:
+ * `key.toUpperCase() !== event.key.toUpperCase() && key !== event.code`.
+ * On macOS, holding Option remaps `event.key` (Option+B → "∫", not "b"),
+ * and a plain letter like `"b"` doesn't equal `event.code` ("KeyB") either,
+ * so a bound chord that combines `Alt` with a *character* key can never
+ * match on a Mac. Every other chord in this table either has no `Alt`
+ * modifier or (like this one) has been switched to bind the physical key
+ * code instead. Audited: `${MOD.primary}+${MOD.opt}+KeyB` is the only
+ * `Alt`+letter chord in this file.
+ */
+function buildKeymap(actionsRef: { current: KeymapActions }): Record<string, (e: KeyboardEvent) => void> {
+  const bind = <K extends keyof KeymapActions>(chord: string, key: K): Record<string, (e: KeyboardEvent) => void> => {
+    return {
+      [chord]: (e: KeyboardEvent) => {
+        const fn = actionsRef.current[key];
+        if (fn === undefined) return;
+        e.preventDefault();
+        fn();
+      },
+    };
+  };
+
+  return {
+    ...bind('j', 'nextHunk'),
+    ...bind('k', 'prevHunk'),
+    ...bind('n', 'nextStep'),
+    ...bind('p', 'prevStep'),
+    ...bind(']', 'nextThread'),
+    ...bind('[', 'prevThread'),
+    ...bind('c', 'commentOnSelection'),
+    ...bind('Enter', 'submitComment'),
+    ...bind(`${MOD.primary}+Enter`, 'submitCommentAskAgent'),
+    ...bind('r', 'resolveThread'),
+    ...bind(`${MOD.primary}+b`, 'toggleLeftPanel'),
+    // Bug 1 fix: bind the physical key code (`KeyB`), not the character
+    // (`b`) — see the doc comment above.
+    ...bind(`${MOD.primary}+${MOD.opt}+KeyB`, 'toggleRightPanel'),
+    ...bind('t', 'toggleThreadsPanel'),
+    ...bind('u', 'toggleUnifiedSplit'),
+    ...bind('e', 'expandHunk'),
+    ...bind('Shift+e', 'expandWholeFile'),
+    // Not in SPEC §11's table (no key was assigned to per-file
+    // collapse/expand there); `z` is free and mirrors vim's fold mnemonic.
+    ...bind('z', 'toggleFocusedFileCollapsed'),
+    ...bind('v', 'markViewed'),
+    ...bind('1', 'setRevisionWorking'),
+    ...bind('2', 'setRevisionHead'),
+    ...bind('3', 'setRevisionPr'),
+    ...bind('g h', 'goHomebase'),
+    ...bind('g s', 'goSteps'),
+    ...bind(`${MOD.primary}+k`, 'openPalette'),
+    ...bind('?', 'showHelp'),
+  };
+}
+
+/**
  * Global keymap for the review window (SPEC §11 table). `Cmd+W/T/N/Q` are
  * deliberately absent — a browser tab can never yield them, so nothing is
  * bound there.
+ *
+ * Bug 3 fix (keymap audit, 2026-09-11): `actions` is a fresh object literal
+ * from the caller on every render. Previously the effect depended on
+ * `[actions]`, so `tinykeys` tore down and rebound its listener on every
+ * single render. Instead, the latest `actions` is kept in a ref (updated
+ * after every render) and `tinykeys` is subscribed exactly once — handlers
+ * read through the ref, so they always see the current actions without
+ * needing to resubscribe.
+ *
+ * Bug 2 fix: single-key (unmodified) chords are suppressed while the event
+ * target is a text field / contenteditable / open dialog, via the `ignore`
+ * option — see `./keymapGuard.ts`. `$mod` chords keep working there.
  */
 export function useGlobalKeymap(actions: KeymapActions): void {
+  const actionsRef = useRef(actions);
+
   useEffect(() => {
-    const bind = (chord: string, fn: (() => void) | undefined) => {
-      if (fn === undefined) return {};
-      return { [chord]: (e: KeyboardEvent) => (e.preventDefault(), fn()) };
-    };
+    actionsRef.current = actions;
+  });
 
-    const unsubscribe = tinykeys(window, {
-      ...bind('j', actions.nextHunk),
-      ...bind('k', actions.prevHunk),
-      ...bind('n', actions.nextStep),
-      ...bind('p', actions.prevStep),
-      ...bind(']', actions.nextThread),
-      ...bind('[', actions.prevThread),
-      ...bind('c', actions.commentOnSelection),
-      ...bind('Enter', actions.submitComment),
-      ...bind(`${MOD.primary}+Enter`, actions.submitCommentAskAgent),
-      ...bind('r', actions.resolveThread),
-      ...bind(`${MOD.primary}+b`, actions.toggleLeftPanel),
-      ...bind(`${MOD.primary}+${MOD.opt}+b`, actions.toggleRightPanel),
-      ...bind('t', actions.toggleThreadsPanel),
-      ...bind('u', actions.toggleUnifiedSplit),
-      ...bind('e', actions.expandHunk),
-      ...bind('Shift+e', actions.expandWholeFile),
-      // Not in SPEC §11's table (no key was assigned to per-file
-      // collapse/expand there); `z` is free and mirrors vim's fold mnemonic.
-      ...bind('z', actions.toggleFocusedFileCollapsed),
-      ...bind('v', actions.markViewed),
-      ...bind('1', actions.setRevisionWorking),
-      ...bind('2', actions.setRevisionHead),
-      ...bind('3', actions.setRevisionPr),
-      ...bind('g h', actions.goHomebase),
-      ...bind('g s', actions.goSteps),
-      ...bind(`${MOD.primary}+k`, actions.openPalette),
-      ...bind('?', actions.showHelp),
+  useEffect(() => {
+    const unsubscribe = tinykeys(window, buildKeymap(actionsRef), {
+      ignore: shouldIgnoreGlobalShortcut,
     });
-
     return unsubscribe;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [actions]);
+  }, []);
 }

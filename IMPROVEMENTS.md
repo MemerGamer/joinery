@@ -563,3 +563,251 @@
   catch it. Worth a visual check in a browser (not available for this task)
   to confirm the loosened spacing actually reads as intended in both split
   and unified, and both themes, before relying on it further.
+
+## theme switching (2026-09-11)
+
+- **Bug 1 fixed — provider nesting.** `App.tsx` had `ThemeProvider` outside
+  `DiffWorkerPoolProvider`. `ThemeProvider` calls `useCoordinatedThemeChange()`
+  → `useWorkerPool()` → `useContext(WorkerPoolContext)`
+  (`node_modules/@pierre/diffs/dist/react/WorkerPoolContext.js`), whose
+  context is created with `createContext(void 0)` and is only ever given a
+  real value by `WorkerPoolContextProvider` (`DiffWorkerPoolProvider`). Since
+  `ThemeProvider` rendered outside that provider, `useContext` always
+  resolved to the module's default `undefined`, so
+  `useCoordinatedThemeChange`'s returned setter's `if (pool === undefined)
+  return;` guard (`lib/workerPool.tsx`) fired every time and
+  `pool.setRenderOptions({ theme })` was never called — confirmed by reading
+  both sources rather than adding throwaway instrumentation. Fixed by
+  swapping the nesting in `App.tsx` so `DiffWorkerPoolProvider` is outer;
+  `App.tsx` is the only place that renders either provider, so nothing else
+  depended on the old order.
+
+- **Bug 2 fixed — impure state updaters.** `ThemeContext.tsx`'s
+  `setChromeMode`/`setDiffTheme` called `applyCoordinated(...)` (a side
+  effect) from inside their `setState(s => ...)` updater functions.
+  Restructured so the updaters are pure (`setState((s) => ({ ...s, ... }))`)
+  and a single `useEffect` keyed on `activeDiffThemeName(state)` drives
+  `applyCoordinated`. This also subsumed the old mount-only
+  `eslint-disable`d effect: the new effect fires once on mount with the
+  module-scope `initialThemeState`'s active name, which was that effect's
+  whole purpose, so it was removed rather than kept alongside the general
+  one.
+
+- **Bug 3 — `--chrome-shadow` fixed.** It was defined only in the light
+  `:root` block; added a dark-appropriate value (heavier alpha, same
+  offsets) to both the `prefers-color-scheme: dark` block and the
+  `:root[data-theme='dark']` block in `styles/index.css`.
+
+- **Bug 3 — `FileTreePane.tsx` (`@pierre/trees`) fixed.** `<FileTree>` mounts
+  its own shadow root and never inherits `data-theme` or `--chrome-*`; its
+  stylesheet only reads its own `--trees-theme-*` custom properties (with a
+  `--trees-*-override → --trees-theme-* → default` fallback chain — the same
+  mechanism the existing `--trees-density-override` usage relies on).
+  `@pierre/trees`' `themeToTreeStyles(resolvedTheme)` (from
+  `node_modules/@pierre/trees/dist/utils/themeToTreeStyles.d.ts`) maps a
+  resolved Shiki/VS Code-shaped theme onto that variable set. Wired it up:
+  `FileTreePane` now resolves the active diff theme name via `@pierre/diffs`'
+  `resolveTheme()` in an effect keyed on `chromeMode`/`diffTheme` and passes
+  the result as `style={treeStyles}` on `<FileTree>`, so the tree tracks the
+  same active theme as `CodeView` instead of silently keeping its internal
+  defaults across a chrome-mode flip.
+
+- **Bug 3 — hardcoded colors.** Searched all of `apps/web/src/**/*.{ts,tsx}`
+  for hex literals and `rgba(`/`rgb(` outside `styles/index.css`; there were
+  none. Nothing to move to tokens.
+
+- **Bug 3 — `CodeView`'s own light/dark signal: found, NOT fixed (out of
+  ownership).** `@pierre/diffs`' `CodeView`/`BaseCodeOptions` has a
+  `themeType?: 'system' | 'light' | 'dark'` option (`dist/types.d.ts`,
+  default `'system'` per `dist/components/CodeView.js`'s
+  `previousOptions.themeType ?? "system"` check) that is **not** part of the
+  worker pool's `setRenderOptions`/`WorkerRenderingOptions`
+  (`dist/worker/WorkerPoolManager.d.ts`) — it's a per-`CodeView` prop, not
+  pool-owned. It feeds directly into `wrapThemeCSS`
+  (`dist/utils/cssWrappers.js`): `themeType !== 'system'` emits
+  `:host { color-scheme: <themeType>; }` inside the CodeView's shadow root;
+  left at the default `'system'`, the shadow host's `color-scheme` follows
+  the OS preference rather than the app's in-app chrome-mode toggle. That
+  means UA-drawn chrome scoped to that shadow root (native scrollbars, form
+  control theming, default selection colors, etc. that key off
+  `color-scheme`) can visibly disagree with the rest of the app whenever the
+  user's chosen chrome mode differs from their OS preference — a real
+  instance of "not all the UI updates" on flip. The fix is one line:
+  `<CodeView options={{ ..., themeType: chromeMode }} />`. **Not fixed here**
+  because it lives in `components/ReviewCodeView.tsx`, which is outside this
+  task's owned file list (`App.tsx`, `state/ThemeContext.tsx`,
+  `lib/workerPool.tsx`, `lib/themes.ts`, `styles/index.css`,
+  `components/ThemePicker.tsx`, `components/FileTreePane.tsx`). Whoever owns
+  `ReviewCodeView.tsx` should thread `chromeMode` from `useTheme()` into its
+  `options.themeType`.
+
+- **Verification.** `bun run typecheck`, `bun test` (223 pass / 0 fail —
+  two printed stack traces in `apps/server` tests are expected
+  error-path output, not failures), and `cd apps/web && bun run build` all
+  pass. Did not launch a browser to visually confirm the fix (no browser
+  tooling available in this task's environment) — recommend a manual
+  chrome-mode + diff-theme flip check, including with OS dark/light
+  preference set opposite to the in-app choice, to specifically exercise the
+  `themeType` gap noted above once that's wired up.
+
+## keymap (2026-09-11)
+
+- **Bug 1 (root cause, fixed): `Alt`+letter chords can never match on
+  macOS.** Confirmed by reading `matchKeybindingPress` in
+  `node_modules/tinykeys/dist/tinykeys.mjs`: a bound key matches only if
+  `key.toUpperCase() === event.key.toUpperCase()` OR `key === event.code`.
+  Holding Option on macOS remaps `event.key` (Option+B → `"∫"`), and a plain
+  character binding like `"b"` never equals `event.code` (`"KeyB"`) either,
+  so `$mod+Alt+b` (the right-panel toggle) could never fire. Fixed in
+  `apps/web/src/lib/keymap.ts` by binding the physical key code instead:
+  `` `${MOD.primary}+${MOD.opt}+KeyB` ``. Audited every other chord in the
+  table for the same class of bug — `${MOD.primary}+${MOD.opt}+KeyB` was the
+  only `Alt`+letter combination; nothing else needed changing.
+
+- **Bug 2 (fixed): single-key shortcuts fired while typing.** Added
+  `apps/web/src/lib/keymapGuard.ts` (`shouldIgnoreGlobalShortcut`,
+  `isEditableTarget`, `resolveEventTarget`) as `tinykeys`'s `ignore` option.
+  It suppresses unmodified/`Shift`-only chords when the event's real target
+  (resolved via `event.composedPath()[0]`, piercing the diff view's shadow
+  DOM) is an `<input>`/`<textarea>`/`<select>`, a contenteditable region, or
+  inside an element matching `[role="dialog"]` (covers `cmdk`'s
+  `Command.Dialog`, which the command palette uses). `$mod` (Cmd/Ctrl)
+  chords always fire, so `Cmd+Enter` keeps submitting-and-asking-the-agent
+  from inside the comment composer. Unit tests in
+  `apps/web/test/keymapGuard.test.ts` (14 cases) cover the guard directly
+  with plain mock objects — `apps/web` has no jsdom/happy-dom test
+  environment wired up, so the guard's helpers are typed structurally
+  (`TargetLike`, not `Element`) specifically so they're testable without one.
+  Consider adding a real DOM test environment to `apps/web` if more
+  component-level (not just pure-helper) tests are wanted later.
+
+- **Bug 3 (fixed): the keymap effect re-subscribed on every render.**
+  `useGlobalKeymap` now keeps the latest `actions` in a ref (updated in a
+  no-dependency-array `useEffect` after every render) and binds `tinykeys`
+  exactly once (`useEffect(..., [])`); each chord handler reads the action
+  through the ref at fire time. The `eslint-disable-next-line
+  react-hooks/exhaustive-deps` that used to suppress the `[actions]`
+  dependency warning is gone — the effect's own deps array is now honestly
+  empty.
+
+- **Bug 4 (fixed within owned files; noted limitation): "go to steps" (`g
+  s`) toggled the right panel closed if it was already open**, because it
+  called the same `review.toggleRightPanel()` as the panel-toggle shortcut.
+  `ReviewContext` (not owned by this task) only exposes a `toggleRightPanel`
+  action — no direct `setRightPanelOpen`/opener. The minimal correct fix
+  within `apps/web/src/components/ReviewWindow.tsx` (owned): `goSteps` now
+  calls `toggleRightPanel()` only when `review.rightPanelOpen` is currently
+  `false`, and additionally focuses the right-panel container (a new
+  `tabIndex={-1}` wrapper `div` around `<ReadingOrderPane />`, ref-tracked)
+  once it's open — either immediately if it was already open, or via a
+  pending-focus ref resolved in a `useEffect` keyed on `rightPanelOpen`
+  once the panel actually mounts. **Limitation:** this focuses the panel's
+  outer container, not a specific interactive element inside
+  `ReadingOrderPane` (e.g. the current step) — if `ReadingOrderPane` grows
+  its own focus-management API later, wiring `goSteps` to it directly would
+  be more precise. Also worth adding a real `setRightPanelOpen`/`openRightPanel`
+  action to `ReviewContext` itself so future callers don't need this
+  open-only-if-closed workaround.
+
+- **`nextHunk` (bound to `j`) is a documented no-op** (hunk-level navigation
+  isn't wired up — no hunk index API exists yet in `@pierre/diffs` usage
+  here). Per the task's own guidance that a no-op binding can be worse than
+  no binding (it silently eats the keystroke with `preventDefault()` and
+  does nothing visible), `ReviewWindow.tsx` no longer passes a `nextHunk`
+  action to `useGlobalKeymap` at all, so `j` is simply unbound/inert rather
+  than registered-but-inert. `keymap.ts` still has a `nextHunk` slot in
+  `KeymapActions` and a `j` chord wired to it generically — once hunk
+  navigation exists, wiring the real action back in `ReviewWindow.tsx` is
+  the only change needed.
+
+- Not changed / out of scope: `SPEC.md` §11's table wasn't updated to
+  reflect binding by key code (`KeyB`) instead of character (`b`) for the
+  right-panel toggle — worth a follow-up doc pass if `SPEC.md` is meant to
+  double as the literal binding spec rather than a human-readable summary.
+
+## command palette (2026-09-11)
+
+Rebuilt `apps/web/src/components/CommandPalette.tsx`. Interaction model:
+mode-scoped, VS-Code/Linear style, chosen directly off the task's own hint
+(`>` commands, `#` themes) rather than a single flat ranked list, because the
+palette's content is genuinely heterogeneous (file/thread/step navigation vs.
+rare chrome actions vs. a 75-entry theme list vs. a review switcher) and a
+single ranked corpus would either bury navigation under themes or force an
+arbitrary cutoff again.
+
+- **Root mode** (no prefix): bounded (`ROOT_CAP = 6`) groups for Files,
+  Steps, and open Threads — only rendered when non-empty — plus a fixed
+  "More" group with three entry points (`All commands…`, `Switch theme…`,
+  `Switch review…`). Typing narrows Files/Steps/Threads across the *full*
+  corpus (the cap only applies to the empty-query idle state) via cmdk's
+  built-in `defaultFilter`.
+- **`>` command mode**: generate reading order, switch revision (with a
+  check mark on the active one), toggle left/right/threads panels, toggle
+  diff style, expand/collapse all files.
+- **`#` theme mode**: all 75 themes (no slice), split into "Colorblind-safe"
+  and "All themes" groups mirroring `ThemePicker.tsx`'s own grouping, each
+  item showing a CB badge and a check mark on the active theme.
+- **`@` review mode**: full review list from `listReviews`, check mark on
+  the currently open review.
+- The trigger character lives in the actual (controlled) search string, so
+  "back" is just Backspace deleting it — no separate page/navigation-stack
+  state to keep in sync with the input. `Escape` clears the query first
+  (collapsing a sub-mode back to root) and only closes the dialog once the
+  query is already empty.
+
+Fixes applied against the defect list:
+1. Group headings are now styled on the `heading` node itself (cmdk accepts
+   `React.ReactNode` there) instead of via `className` on `Command.Group`,
+   so the heading style can no longer bleed onto the items beneath it —
+   `Command.Group` itself never receives a `className` anywhere in the file.
+2. Replaced the single dump-everything list with the mode model above.
+3. `themeOptions.slice(0, 30)` is gone; all 75 themes are reachable via `#`.
+4. `listThemeOptions()` is now `useMemo`'d once per mount.
+5. Every group in root mode is conditionally rendered only when its
+   underlying array is non-empty (`files.length > 0 && <Group>…`, etc.), so
+   an empty "Threads" heading can no longer show up with zero rows.
+6. The search string resets to `''` in a `useEffect` keyed on `open`, so
+   reopening the palette always starts clean at root.
+7. The doc comment's "ask agent" lie is corrected: `packages/core/src/api.ts`
+   has no standalone ask-agent endpoint — `askAgent` is only a boolean flag
+   on `createThread`/`reply`, meaningful in the context of a specific draft
+   comment. The palette has no draft-thread context, so it doesn't expose a
+   fake global action; the new file-top comment says this explicitly instead
+   of promising a command that doesn't exist.
+8. Keyboard: visible `kbd`-style shortcut hints on the three mode entry
+   points (matching `Header.tsx`'s existing `⌘K` hint styling), `loop` passed
+   to `Command.Dialog` for wraparound arrow navigation, Escape-to-back before
+   Escape-to-close. Scroll-into-view for the selected item turned out to
+   already be handled internally by cmdk itself (`dist/index.mjs`'s
+   `scrollIntoView({ block: 'nearest' })` on selection change) — no app code
+   needed for that part.
+9. Icons added throughout via `lucide-react`, reusing the same icons other
+   components already use for the same concepts (`FileText`, `MessageSquare`,
+   `GitBranch`, `Palette`, `PanelLeft`/`PanelRight`, `ChevronsDownUp`/
+   `ChevronsUpDown`, `Columns2`/`Rows2`, `Sparkles`, `Check`) plus `Terminal`
+   and `ListOrdered` for the two concepts (all-commands, steps) that didn't
+   have an existing precedent in this codebase.
+
+`prefers-reduced-motion`: no new animation was added (the palette has none,
+matching every other dialog/menu in this app — `ThemePicker.tsx`'s dropdown
+is also animation-free), so there was nothing to guard; the existing global
+rule in `styles/index.css` already covers it if that changes later.
+
+Left undone / out of scope:
+- No virtualization of the Files/Threads lists in `>` non-empty-query search
+  — cmdk mounts every matching `Command.Item` it filters, same as the
+  original implementation. For a repo with hundreds of changed files this is
+  a real cost or a large PR; scoping the search to `> `/`# `/root sub-modes
+  reduces how often the full file list is mounted at once but doesn't cap it
+  during an active root-mode search. Worth a virtualized `Command.List` (cmdk
+  supports `asChild` + a virtualizer) if this becomes visible in practice.
+- The revision entries in `>` command mode always render all three
+  (`working`/`head`/`pr`) rather than hiding a revision that doesn't apply to
+  this review (e.g. a `(repo, sha)` review with no `working` revision, per
+  SPEC §4). `ReviewContext` doesn't currently expose which revisions are
+  valid for the open review, only the current one — plumbing that through is
+  outside `CommandPalette.tsx`'s owned files.
+- No dedicated `Dialog.Description` for the Radix dialog underlying
+  `Command.Dialog` (cmdk doesn't render one) — a pre-existing dev-console a11y
+  warning from Radix, not a regression from this change, not fixed here since
+  it's inside `cmdk`'s own `Dialog` wrapper.
