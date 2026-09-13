@@ -13,7 +13,13 @@ import { callApi } from './apiClient.ts';
 
 const patchCache = new Map<string, Promise<FileDiffMetadata>>();
 
-function blobPairKey(entry: Pick<FileEntry, 'oldBlob' | 'newBlob'>): string {
+/**
+ * The identity of a file's *content*, not its path. A loaded `FileDiffMetadata`
+ * carries this as its `cacheKey`, so comparing it against the blob pair of the
+ * current `FileEntry` is how callers tell "this item's diff is up to date" from
+ * "this item is showing a patch from before the last live update".
+ */
+export function blobPairKey(entry: Pick<FileEntry, 'oldBlob' | 'newBlob'>): string {
   return `${entry.oldBlob}:${entry.newBlob}`;
 }
 
@@ -112,7 +118,11 @@ export function makeLoadDiffFiles(
   revision: Revision | undefined,
 ): (fileDiff: FileDiffMetadata) => Promise<FileDiffLoadedFiles> {
   return async (fileDiff: FileDiffMetadata): Promise<FileDiffLoadedFiles> => {
-    const key = `${reviewId}:${fileDiff.name}:${revision ?? ''}`;
+    // Keyed by the diff's own `cacheKey` (the blob pair, set by `loadFileDiff`)
+    // and not just the path: when a live update changes a file, the new patch
+    // has a new blob pair, and a path-only key would serve the contents from
+    // before the update when the user expands unchanged context.
+    const key = `${reviewId}:${fileDiff.name}:${revision ?? ''}:${fileDiff.cacheKey}`;
     const cached = contentsCache.get(key);
     if (cached !== undefined) return cached;
 

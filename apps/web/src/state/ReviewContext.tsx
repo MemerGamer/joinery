@@ -54,7 +54,7 @@ import {
   useState,
 } from 'react';
 import { ApiError, callApi } from '../lib/apiClient.ts';
-import { loadFileDiff, placeholderFileDiff } from '../lib/diffLoader.ts';
+import { blobPairKey, loadFileDiff, placeholderFileDiff } from '../lib/diffLoader.ts';
 import { localRun } from '../lib/runState.ts';
 import { eventsClient } from '../lib/wsClient.ts';
 
@@ -257,6 +257,15 @@ export function ReviewProvider({
   // handled by the per-item `version` counter Pierre reconciles on).
   const itemsRef = useRef<Map<string, ItemRecord>>(new Map());
   const [itemsVersion, setItemsVersion] = useState(0);
+  // Bumped by every `rebuildOrder` call (regardless of membership change) to
+  // schedule the placeholder-patch-loading effect below. Patch fetches must
+  // start from that effect, not from inside `rebuildOrder` itself: a fetch
+  // that resolves fast (cache hit) calls back into `notifyItemMutated`, which
+  // requires the item already be registered with `CodeView` — true only
+  // once the render triggered by this rebuild has committed and `CodeView`'s
+  // own layout effect has run, which is guaranteed by the time *any* effect
+  // (including this one) fires.
+  const [loadTick, setLoadTick] = useState(0);
   const orderRef = useRef<string[]>([]);
 
   // Explicit per-file collapse choices (path -> collapsed), persisted to
@@ -319,7 +328,11 @@ export function ReviewProvider({
         itemsRef.current.set(entry.path, { entry, item });
         return true;
       }
-      // Same content, but the thread set for this path may have changed.
+      // The path is the same, but this may be a *new* `FileEntry` for it —
+      // a live update re-delivers changed files with new blob SHAs. Adopt it,
+      // or `rec.entry` keeps the pre-update blobs and the patch-loading effect
+      // below has no way to tell the rendered diff is stale.
+      existing.entry = entry;
       existing.item.annotations = annotations;
       existing.item.version = (existing.item.version ?? 0) + 1;
       notifyItemMutated(existing.item);
@@ -362,14 +375,27 @@ export function ReviewProvider({
     if (orderRef.current.join('\0') !== nextIds.join('\0')) changedMembership = true;
     orderRef.current = nextIds;
     if (changedMembership) setItemsVersion((v) => v + 1);
-    // Load patches for files without one yet, in file-list order.
-    for (const entry of fileList) {
-      const rec = itemsRef.current.get(entry.path);
-      if (rec?.item.fileDiff.isPartial === true && rec.item.fileDiff.hunks.length === 0) {
-        loadPatchInto(entry);
+    setLoadTick((v) => v + 1);
+  }, [ensureItem]);
+
+  // Load patches for any item whose diff isn't the one its current `FileEntry`
+  // describes, deferred to an effect so it always runs after the render
+  // `rebuildOrder` triggered has committed (see the `loadTick` comment above)
+  // — never inline inside `rebuildOrder`.
+  //
+  // The test is the blob pair rather than "is this still a placeholder": that
+  // covers the first load (a placeholder's `cacheKey` is deliberately suffixed
+  // so it never matches) *and* the live-update case, where a file that already
+  // has a real patch was changed on disk and needs a fresh one. Checking only
+  // for placeholders left `changed` files rendering their pre-update diff
+  // forever, since the refresh gave them new blobs but never refetched.
+  useEffect(() => {
+    for (const rec of itemsRef.current.values()) {
+      if (rec.item.fileDiff.cacheKey !== blobPairKey(rec.entry)) {
+        loadPatchInto(rec.entry);
       }
     }
-  }, [ensureItem, loadPatchInto]);
+  }, [loadTick, loadPatchInto]);
 
   const load = useCallback(async () => {
     setState((s) => ({ ...s, loading: true, error: null }));
@@ -569,6 +595,7 @@ export function ReviewProvider({
           ...s,
           fileList: filesRes.list.files,
           viewed: new Map(filesRes.viewed.map((v) => [v.path, v.blobSha] as const)),
+          pendingDelta: null,
         }));
         itemsRef.current = new Map();
         rebuildOrder(filesRes.list.files, state.threads);

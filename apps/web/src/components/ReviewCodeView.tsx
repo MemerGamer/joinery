@@ -26,6 +26,34 @@ import { CommentComposer } from './CommentComposer.tsx';
 import { ThreadArticle } from './ThreadArticle.tsx';
 import { StepHeaderCard } from './StepHeaderCard.tsx';
 
+/**
+ * Diff density, in one place. These are *both* the `@pierre/diffs` CSS custom
+ * properties we override and the `itemMetrics` we hand `CodeView` — they must
+ * be the same numbers, which is why they are not written down twice.
+ *
+ * `CodeView` virtualizes the file list and computes every item's height
+ * analytically from `itemMetrics`; `reconcileHeights()` only re-measures the
+ * DOM for items that carry line annotations (see `VirtualizedFileDiff.js`,
+ * the `overflow === 'scroll' && lineAnnotations.length === 0` early return),
+ * so for an ordinary file these numbers are never corrected by measurement.
+ * Overriding the density CSS without matching `itemMetrics` therefore
+ * mis-sizes the whole scroll range — upstream says as much on
+ * `VirtualFileMetrics.spacing` ("You should not change this from the default
+ * if you aren't applying custom CSS"). The error is per-line and per-file, so
+ * it accumulates downward and strands the *last* file: the scroll container
+ * stops short of content that is laid out but unreachable.
+ */
+const DIFF_LINE_HEIGHT = 22;
+/** Mirrors `--chrome-space-3` (src/styles/index.css); `--diffs-gap-block`. */
+const DIFF_GAP_BLOCK = 12;
+/**
+ * Upstream's own header sizing is `min-height: calc(1lh + (gap * 3))` (see
+ * `[data-diffs-header="default"]` in `@pierre/diffs/dist/style.js`), and its
+ * default metric is exactly `20 + 8 * 3 = 44`. Deriving it the same way keeps
+ * the two in step if the density above is ever retuned.
+ */
+const DIFF_HEADER_HEIGHT = DIFF_LINE_HEIGHT + DIFF_GAP_BLOCK * 3;
+
 export function ReviewCodeView(): React.JSX.Element {
   const {
     review,
@@ -59,6 +87,17 @@ export function ReviewCodeView(): React.JSX.Element {
       // diff's own chrome (gutters, scrollbars, form controls) dark.
       themeType: chromeMode,
       hunkSeparators: 'line-info',
+      // Must agree with the CSS custom properties set on the host element
+      // below — see the DIFF_* constants above for why.
+      itemMetrics: {
+        lineHeight: DIFF_LINE_HEIGHT,
+        spacing: DIFF_GAP_BLOCK,
+        diffHeaderHeight: DIFF_HEADER_HEIGHT,
+      },
+      // Logs an error whenever an item's reconciled height disagrees with its
+      // real DOM height, i.e. exactly the drift above. Upstream gates this to
+      // its own dev build too, since it measures on every reconcile.
+      __devOnlyValidateItemHeights: import.meta.env.DEV,
       enableGutterUtility: true,
       stickyHeaders: true,
       disableVirtualizationBuffers: false,
@@ -113,8 +152,18 @@ export function ReviewCodeView(): React.JSX.Element {
       // `--trees-density-override` does for `@pierre/trees` (FileTreePane.tsx),
       // so nudging them here loosens hunk/line spacing to match the rest of
       // the chrome's density pass without touching internals we don't own.
-      className="h-full w-full [--diffs-gap-block:var(--chrome-space-3)] [--diffs-line-height:22px]"
-      style={{ height: '100%', overflow: 'auto' }}
+      // They live here rather than in a Tailwind arbitrary-property class so
+      // they and `options.itemMetrics` come from the same constants: the two
+      // must never drift (see the DIFF_* constants above).
+      className="h-full w-full"
+      style={
+        {
+          height: '100%',
+          overflow: 'auto',
+          '--diffs-gap-block': `${DIFF_GAP_BLOCK}px`,
+          '--diffs-line-height': `${DIFF_LINE_HEIGHT}px`,
+        } as React.CSSProperties
+      }
       renderCodeViewHeader={() => <StepHeaderCard step={currentStep} />}
       renderHeaderPrefix={(item: CodeViewItem<ThreadAnnotationMeta>) => (
         <button
