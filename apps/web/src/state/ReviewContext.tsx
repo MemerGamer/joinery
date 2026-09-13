@@ -132,6 +132,14 @@ interface ReviewEngineState {
   readingOrder: ReadingOrder | null;
   pendingDelta: FileListDelta | null;
   /**
+   * The revision the user has asked for while its file list is still in
+   * flight, or `null` when what's painted matches what's selected. The
+   * picker paints this as the selected button immediately (SPEC §4) so a
+   * click acknowledges itself without waiting for the round trip;
+   * `reviewState.currentRevision` stays the server's truth.
+   */
+  pendingRevision: Revision | null;
+  /**
    * The latest known run for this review's reading-order generation (SPEC
    * §9) — drives the Generate button's pending/error feedback. `null` means
    * no generation is in flight and none has failed since the last success.
@@ -234,6 +242,7 @@ export function ReviewProvider({
     threads: [],
     readingOrder: null,
     pendingDelta: null,
+    pendingRevision: null,
     readingOrderRun: null,
   });
 
@@ -421,6 +430,7 @@ export function ReviewProvider({
         threads: threadsRes.threads,
         readingOrder: readingOrderRes.readingOrder,
         pendingDelta: null,
+        pendingRevision: null,
         readingOrderRun: null,
       });
       rebuildOrder(filesRes.list.files, threadsRes.threads);
@@ -585,29 +595,72 @@ export function ReviewProvider({
     }
   }, [rebuildOrder]);
 
+  // Read inside `setRevision`'s loop, which spans awaits and so must not
+  // rebuild the reading order from a thread list captured before them.
+  const threadsRef = useRef(state.threads);
+  threadsRef.current = state.threads;
+
+  /**
+   * The revision the user last asked for, and whether a switch is already
+   * working through it. Together these serialize switching: clicking
+   * faster than the round trip never interleaves two switches, and only the
+   * newest selection's file list is ever painted (see `setRevision`).
+   */
+  const revisionTargetRef = useRef<Revision | null>(null);
+  const revisionRunningRef = useRef(false);
+
   const setRevision = useCallback(
     async (nextRevision: Revision) => {
+      // Acknowledge the click immediately — the picker paints `pendingRevision`
+      // as selected, so the button doesn't wait on the round trip to light up.
+      revisionTargetRef.current = nextRevision;
+      setState((s) => ({ ...s, pendingRevision: nextRevision }));
+
+      // A switch is already in flight: it re-reads the target after each
+      // await, so it will pick this one up. Starting a second loop here is
+      // exactly the race we're avoiding — `POST /revision` mutates server
+      // state, so two concurrent switches can land out of order and leave
+      // the server on a revision the user already clicked away from.
+      if (revisionRunningRef.current) return;
+      revisionRunningRef.current = true;
       try {
-        const res = await callApi('setRevision', {
-          params: [reviewId],
-          body: { revision: nextRevision },
-        });
-        setState((s) => ({ ...s, reviewState: res.state }));
-        const filesRes = await callApi('getFiles', { params: [reviewId] });
-        setState((s) => ({
-          ...s,
-          fileList: filesRes.list.files,
-          viewed: new Map(filesRes.viewed.map((v) => [v.path, v.blobSha] as const)),
-          pendingDelta: null,
-        }));
-        itemsRef.current = new Map();
-        rebuildOrder(filesRes.list.files, state.threads);
-      } catch {
-        // Surfaced via reviewState staying unchanged; a banner-level retry
-        // affordance is left to the header component.
+        while (revisionTargetRef.current !== null) {
+          const target: Revision = revisionTargetRef.current;
+          try {
+            const res = await callApi('setRevision', {
+              params: [reviewId],
+              body: { revision: target },
+            });
+            // Superseded mid-flight — loop around for the newer target
+            // rather than paying for a file list nobody will look at. The
+            // `continue` deliberately leaves the target set.
+            if (revisionTargetRef.current !== target) continue;
+            setState((s) => ({ ...s, reviewState: res.state }));
+            const filesRes = await callApi('getFiles', { params: [reviewId] });
+            if (revisionTargetRef.current !== target) continue;
+            setState((s) => ({
+              ...s,
+              fileList: filesRes.list.files,
+              viewed: new Map(filesRes.viewed.map((v) => [v.path, v.blobSha] as const)),
+              pendingDelta: null,
+              pendingRevision: null,
+            }));
+            itemsRef.current = new Map();
+            rebuildOrder(filesRes.list.files, threadsRef.current);
+          } catch {
+            if (revisionTargetRef.current !== target) continue;
+            // Surfaced via reviewState staying unchanged; a banner-level retry
+            // affordance is left to the header component. The pending mark has
+            // to clear either way, or the picker sweeps forever.
+            setState((s) => ({ ...s, pendingRevision: null }));
+          }
+          revisionTargetRef.current = null;
+        }
+      } finally {
+        revisionRunningRef.current = false;
       }
     },
-    [reviewId, rebuildOrder, state.threads],
+    [reviewId, rebuildOrder],
   );
 
   const isViewed = useCallback(

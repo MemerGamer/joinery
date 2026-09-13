@@ -176,3 +176,45 @@ select {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/**
+ * A left-to-right sweep over a control's own background, marking "this is
+ * the selection you just made and its content is still loading" — used by
+ * the revision picker (SPEC §4), where the click and the painted diff are
+ * separated by a round trip.
+ *
+ * The sweep rides in an ::after overlay rather than animating the element's
+ * `background`, so the resting and loading states are the same box: turning
+ * it on mid-interaction can't shift layout or fight the `transition-colors`
+ * on the button underneath. The global `prefers-reduced-motion` rule above
+ * already parks the animation on its first frame; the pending control still
+ * reads as selected because selection is carried by the button's own
+ * background, not by this overlay.
+ */
+@keyframes chrome-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.chrome-sweep {
+  position: relative;
+  overflow: hidden;
+}
+
+.chrome-sweep::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--chrome-accent) 26%, transparent) 50%,
+    transparent 100%
+  );
+  animation: chrome-sweep 1.1s ease-in-out infinite;
+  pointer-events: none;
+}
