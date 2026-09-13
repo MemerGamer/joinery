@@ -26,6 +26,7 @@ import {
   CatFile,
   detectInProgressOperation,
   divergence,
+  findOpenPrNumberForBranch,
   getFileContents,
   git,
   gitCommonDir,
@@ -40,6 +41,7 @@ import {
   getThreadWithComments,
   listThreadsByReview,
   renamePaths,
+  setPrNumber,
   updateAnchors,
   type Db,
   type Rename,
@@ -52,6 +54,9 @@ const FOCUSED_POLL_MS = 15_000;
 const BLURRED_POLL_MS = 120_000;
 const DEBOUNCE_MS = 150;
 const DEBOUNCE_CEILING_MS = 1_000;
+// PR discovery hits the GitHub API (via `gh`), not a local ref — polled far
+// less often than the local remote-tracking fetch.
+const PR_DETECT_POLL_MS = 300_000;
 
 export type ReviewEngineParams = {
   readonly db: Db;
@@ -90,6 +95,7 @@ export class ReviewEngine {
   #firstSignalAt: number | null = null;
 
   #pollTimer: ReturnType<typeof setInterval> | null = null;
+  #lastPrCheckAt: number | null = null;
   #focused = false;
   #disposed = false;
   #subscriberCount = 0;
@@ -317,15 +323,38 @@ export class ReviewEngine {
     } catch {
       return;
     }
+    if (review.prNumber === null && review.branch !== null) {
+      await this.#detectPr(review.branch, cwd);
+    }
     if (moved) this.#scheduleTick();
+  }
+
+  /**
+   * Discover a PR for `branch` via `gh` (SPEC §5, "Detectors") — checked at
+   * most once per `PR_DETECT_POLL_MS`, and never again once found, since
+   * `#remotePoll` only calls this while `review.prNumber` is still null.
+   */
+  async #detectPr(branch: string, cwd: string): Promise<void> {
+    const now = Date.now();
+    if (this.#lastPrCheckAt !== null && now - this.#lastPrCheckAt < PR_DETECT_POLL_MS) return;
+    this.#lastPrCheckAt = now;
+    const prNumber = await findOpenPrNumberForBranch(branch, { cwd });
+    if (prNumber === null || this.#disposed) return;
+    this.#review = await setPrNumber(this.#db, this.#review.id, prNumber);
+    this.#scheduleTick();
   }
 
   // --- the tick (SPEC §5, "The tick") ---
 
   async #tickOnce(): Promise<void> {
+    const previousPrNumber = this.#review.prNumber;
     const reloaded = await getReview(this.#db, this.#review.id);
     if (reloaded === null) return; // review deleted; registry disposes separately
     this.#review = reloaded;
+    // Newly discovered/changed independently of the file list (e.g. `#detectPr`)
+    // — the early-outs below only skip `#emitState` for an unchanged file list,
+    // and this must not get swallowed by them the same way root/operation don't.
+    const prNumberChanged = reloaded.prNumber !== previousPrNumber;
 
     await this.#maybeAdoptBranch();
 
@@ -342,7 +371,7 @@ export class ReviewEngine {
 
     if (operation !== null) {
       // Mid-operation states (SPEC §5): hold the last good snapshot.
-      if (rootChanged || operationChanged) await this.#emitState();
+      if (rootChanged || operationChanged || prNumberChanged) await this.#emitState();
       return;
     }
 
@@ -361,7 +390,7 @@ export class ReviewEngine {
     }
 
     if (effectiveRevision !== 'working' && targetRef === undefined) {
-      if (rootChanged || operationChanged) await this.#emitState();
+      if (rootChanged || operationChanged || prNumberChanged) await this.#emitState();
       return;
     }
 
@@ -375,7 +404,7 @@ export class ReviewEngine {
     // equal to itself, so storing one silently disables that check.
     const headSha = await revParse(headRef, { cwd });
     if (headSha === null) {
-      if (rootChanged || operationChanged) await this.#emitState();
+      if (rootChanged || operationChanged || prNumberChanged) await this.#emitState();
       return;
     }
 
@@ -394,7 +423,7 @@ export class ReviewEngine {
       );
     } catch {
       // A git error mid-tick — hold the last good snapshot rather than crash the actor.
-      if (rootChanged || operationChanged) await this.#emitState();
+      if (rootChanged || operationChanged || prNumberChanged) await this.#emitState();
       return;
     }
 
@@ -407,7 +436,7 @@ export class ReviewEngine {
       // key off these shas, so keep them current even though there is nothing
       // for the client to redraw.
       this.#snapshot = { ...this.#snapshot, baseSha, headSha };
-      if (rootChanged || operationChanged) await this.#emitState();
+      if (rootChanged || operationChanged || prNumberChanged) await this.#emitState();
       return;
     }
 
@@ -436,7 +465,7 @@ export class ReviewEngine {
     };
 
     this.#emit({ type: 'files.changed', reviewId: review.id, list: this.#snapshot });
-    if (rootChanged || operationChanged) await this.#emitState();
+    if (rootChanged || operationChanged || prNumberChanged) await this.#emitState();
   }
 
   /**
