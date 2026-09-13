@@ -583,12 +583,18 @@ describe('engine tick', () => {
     await setCurrentRevision(ctx.db, ctx.review.id, 'head');
     await engine.tick();
 
+    // A pure revision switch is not a live file change — it must never
+    // surface as `files.changed` (that would stage a bogus "N files
+    // updated" refresh prompt on the client for every switch). The caller
+    // gets the new revision's list synchronously via `getFileList()`, the
+    // same accessor the `POST /revision` route reads from.
     const changedEvents = events.filter((e) => e.type === 'files.changed');
-    expect(changedEvents.length).toBe(1);
-    const list = changedEvents[0]?.type === 'files.changed' ? changedEvents[0].list : undefined;
-    expect(list?.revision).toBe('head');
+    expect(changedEvents.length).toBe(0);
+
+    const list = engine.getFileList();
+    expect(list.revision).toBe('head');
     // `head` renders the committed blob, not the uncommitted working edit.
-    const headBlob = list?.files.find((f) => f.path === 'feature.txt')?.newBlob;
+    const headBlob = list.files.find((f) => f.path === 'feature.txt')?.newBlob;
     expect(headBlob).not.toBe(workingBlob);
   });
 });

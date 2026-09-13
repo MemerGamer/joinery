@@ -464,7 +464,18 @@ export class ReviewEngine {
       files: newFiles,
     };
 
-    this.#emit({ type: 'files.changed', reviewId: review.id, list: this.#snapshot });
+    // `delta` above is a genuine content change only when the revision held
+    // steady — across a revision switch it's just the structural difference
+    // between two different revisions' file lists (used above for thread
+    // re-anchoring), not a live edit, so it must never reach the client as a
+    // `files.changed` event: the switch's own request/response already
+    // carries the new list, and firing this too stages a bogus "N files
+    // updated" pill on every switch (SPEC §5, *the delta — the contract with
+    // the UI*: this event means "the file list changed under you", not
+    // "you changed what you're looking at").
+    if (!revisionChanged) {
+      this.#emit({ type: 'files.changed', reviewId: review.id, list: this.#snapshot });
+    }
     if (rootChanged || operationChanged || prNumberChanged) await this.#emitState();
   }
 
