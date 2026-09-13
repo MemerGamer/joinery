@@ -158,7 +158,10 @@ export interface ReviewEngine extends ReviewEngineState {
   selectedPath: string | null;
   setSelectedPath: (path: string | null) => void;
   setRevision: (revision: Revision) => Promise<void>;
-  markViewed: (path: string) => Promise<void>;
+  /** Set a file's "viewed" check explicitly. */
+  setViewed: (path: string, viewed: boolean) => Promise<void>;
+  /** Flip a file's "viewed" check — what the `v` key and the header box do. */
+  toggleViewed: (path: string) => Promise<void>;
   isViewed: (entry: FileEntry) => boolean;
   applyPendingRefresh: () => void;
   pendingCount: number;
@@ -607,13 +610,30 @@ export function ReviewProvider({
     [reviewId, rebuildOrder, state.threads],
   );
 
-  const markViewed = useCallback(
-    async (path: string) => {
+  const isViewed = useCallback(
+    (entry: FileEntry) => state.viewed.get(entry.path) === entry.newBlob,
+    [state.viewed],
+  );
+
+  // The check is keyed by `(path, blob)` (§7), so unchecking deletes the row
+  // for the blob the user is actually looking at rather than clearing the
+  // path outright — a stale check for some older blob was already not a match
+  // and must stay that way.
+  const setViewed = useCallback(
+    async (path: string, viewed: boolean) => {
       const entry = state.fileList.find((f) => f.path === path);
       if (entry === undefined) return;
-      setState((s) => ({ ...s, viewed: new Map(s.viewed).set(path, entry.newBlob) }));
+      setState((s) => {
+        const next = new Map(s.viewed);
+        if (viewed) next.set(path, entry.newBlob);
+        else next.delete(path);
+        return { ...s, viewed: next };
+      });
       try {
-        await callApi('markViewed', { params: [reviewId], body: { path, viewed: true } });
+        await callApi('markViewed', {
+          params: [reviewId],
+          body: { path, blobSha: entry.newBlob, viewed },
+        });
       } catch {
         // Optimistic; a reconcile pass on next load corrects drift (§5).
       }
@@ -621,9 +641,13 @@ export function ReviewProvider({
     [reviewId, state.fileList],
   );
 
-  const isViewed = useCallback(
-    (entry: FileEntry) => state.viewed.get(entry.path) === entry.newBlob,
-    [state.viewed],
+  const toggleViewed = useCallback(
+    async (path: string) => {
+      const entry = state.fileList.find((f) => f.path === path);
+      if (entry === undefined) return;
+      await setViewed(path, !isViewed(entry));
+    },
+    [setViewed, isViewed, state.fileList],
   );
 
   const reloadThreads = useCallback(async () => {
@@ -787,7 +811,8 @@ export function ReviewProvider({
     selectedPath,
     setSelectedPath,
     setRevision,
-    markViewed,
+    setViewed,
+    toggleViewed,
     isViewed,
     applyPendingRefresh,
     pendingCount:

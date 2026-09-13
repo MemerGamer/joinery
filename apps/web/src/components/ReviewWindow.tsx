@@ -47,8 +47,10 @@ function ReviewWindowInner(): React.JSX.Element {
     toggleRightPanel: review.toggleRightPanel,
     toggleThreadsPanel: review.toggleThreadsPanel,
     toggleUnifiedSplit: () => review.setDiffStyle(review.diffStyle === 'split' ? 'unified' : 'split'),
+    // GitHub's `v` toggles rather than only marks, and the header checkbox
+    // it mirrors is a checkbox — so this has to clear the check too.
     markViewed: () => {
-      if (review.selectedPath !== null) void review.markViewed(review.selectedPath);
+      if (review.selectedPath !== null) void review.toggleViewed(review.selectedPath);
     },
     setRevisionWorking: () => void review.setRevision('working'),
     setRevisionHead: () => void review.setRevision('head'),

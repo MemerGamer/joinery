@@ -13,7 +13,7 @@ import type {
   SelectedLineRange,
   CodeViewItem,
 } from '@pierre/diffs';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight } from 'lucide-react';
 import { useMemo } from 'react';
 import { makeLoadDiffFiles } from '../lib/diffLoader.ts';
 import {
@@ -58,6 +58,9 @@ export function ReviewCodeView(): React.JSX.Element {
   const {
     review,
     reviewState,
+    fileList,
+    isViewed,
+    toggleViewed,
     items,
     diffStyle,
     threads,
@@ -115,6 +118,8 @@ export function ReviewCodeView(): React.JSX.Element {
     [chromeMode, diffStyle, loadDiffFiles, startDraftThread],
   );
 
+  const byPath = useMemo(() => new Map(fileList.map((f) => [f.path, f])), [fileList]);
+
   const currentStep = useMemo(() => {
     if (readingOrder === null) return null;
     if (selectedPath !== null) {
@@ -165,6 +170,43 @@ export function ReviewCodeView(): React.JSX.Element {
         } as React.CSSProperties
       }
       renderCodeViewHeader={() => <StepHeaderCard step={currentStep} />}
+      // The right-hand side of each file's title bar: the GitHub-style
+      // "viewed" check (SPEC §6). Kept to a single compact row so it stays
+      // inside the header's `1lh + gap * 3` min-height — a taller control
+      // here would silently invalidate DIFF_HEADER_HEIGHT above.
+      renderHeaderMetadata={(item: CodeViewItem<ThreadAnnotationMeta>) => {
+        const entry = byPath.get(item.id);
+        if (entry === undefined) return null;
+        const viewed = isViewed(entry);
+        return (
+          <label
+            className="flex shrink-0 cursor-pointer select-none items-center gap-1.5 text-xs text-chrome-fg-muted"
+            title={
+              viewed
+                ? 'Viewed — unchecks itself when this file changes'
+                : 'Mark as viewed'
+            }
+          >
+            <input
+              type="checkbox"
+              checked={viewed}
+              onChange={() => void toggleViewed(entry.path)}
+              className="peer sr-only"
+            />
+            <span
+              aria-hidden
+              className={`flex size-4 items-center justify-center rounded border transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-chrome-accent ${
+                viewed
+                  ? 'border-chrome-accent bg-chrome-accent text-chrome-accent-fg'
+                  : 'border-chrome-border'
+              }`}
+            >
+              {viewed && <Check size={12} strokeWidth={3} />}
+            </span>
+            Viewed
+          </label>
+        );
+      }}
       renderHeaderPrefix={(item: CodeViewItem<ThreadAnnotationMeta>) => (
         <button
           type="button"
