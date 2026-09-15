@@ -56,6 +56,7 @@ import {
 } from '../git/index.ts';
 import type { EngineRegistry } from '../engine/index.ts';
 import { captureContext } from '../engine/anchor.ts';
+import { projectThreads } from '../engine/threadProjection.ts';
 import { generateReadingOrder, requestThreadReply } from '../agent/runs.ts';
 import { badRequest, conflict, notFound } from './errors.ts';
 import { parseBody, parseQuery } from './validate.ts';
@@ -67,7 +68,10 @@ export type RoutesDeps = {
 
 const diffQuerySchema = z.object({ path: z.string().min(1), rev: z.enum(['working', 'head', 'pr']).optional() });
 const filesQuerySchema = z.object({ rev: revisionSchema.optional() });
-const threadsQuerySchema = z.object({ status: z.enum(['open', 'resolved']).optional() });
+const threadsQuerySchema = z.object({
+  status: z.enum(['open', 'resolved']).optional(),
+  rev: revisionSchema.optional(),
+});
 const feedbackQuerySchema = z.object({
   format: z.literal('markdown').optional(),
   unresolved: z.enum(['true', 'false']).optional(),
@@ -298,7 +302,20 @@ export function buildRoutes(deps: RoutesDeps): Hono {
         : query.status === 'resolved'
           ? (await listThreadsByReview(deps.db, id)).filter((t) => t.status === 'resolved')
           : await listThreadsByReview(deps.db, id);
-    return c.json({ threads });
+
+    const engine = await requireEngine(deps, id);
+    const renderCtx = engine.getRenderContext();
+    if (query.rev === undefined || query.rev === renderCtx.revision) {
+      return c.json({ threads });
+    }
+    // A different revision than the one thread rows are persisted against —
+    // project positions for display, without writing anything back.
+    const projected = await projectThreads(threads, engine.getFileList(query.rev).files, {
+      cwd: renderCtx.cwd,
+      revision: query.rev,
+      catFile: engine.getCatFile(),
+    });
+    return c.json({ threads: projected });
   });
 
   app.post('/api/reviews/:id/threads', async (c) => {

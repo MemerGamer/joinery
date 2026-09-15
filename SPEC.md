@@ -740,6 +740,22 @@ Threads carry `anchor_blob_sha` and `anchor_context_hash`. On each delta:
 simply fails to match and the check clears itself. There is no invalidation
 code.
 
+**Cross-revision projection.** A thread row is re-anchored and written back
+only against the review's *persisted* revision — the one `currentRevision`
+names — never against whichever revision a given tab happens to be viewing
+(see *Revisions within one review* and *Transport*: two tabs can watch
+different revisions independently). Writing from two revisions in the same
+tick would race the one shared row, and the two revisions can legitimately
+disagree on a blob (`working` has an uncommitted edit `head` doesn't, say).
+
+A tab on a non-persisted revision instead gets its thread positions
+**projected at read time**: `GET /threads?rev=<revision>` runs the same
+`anchorBlobSha` fast-path and `relocate()` context search the persisted path
+uses, but returns the result without writing it back — recomputed from the
+current blob on every fetch, so there is nothing to invalidate by
+construction, same as everywhere else in this section. The persisted row
+(`outdated`, `anchorBlobSha`, `startLine`/`endLine`) is unaffected either way.
+
 ### Every case, and what the engine does
 
 **This table is a test plan, not a design.** The engine has no branch per row —

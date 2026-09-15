@@ -204,7 +204,13 @@ export const api = {
     method: 'GET',
     path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/threads`,
     body: undefined,
-    query: z.object({ status: z.enum(['open', 'resolved']).optional() }),
+    /**
+     * `rev` scopes the returned line positions to a revision other than the
+     * review's persisted current one — projected at read time, never
+     * persisted (SPEC §5 "Threads across snapshots"). Omitted means the
+     * persisted revision's stored positions, as before.
+     */
+    query: z.object({ status: z.enum(['open', 'resolved']).optional(), rev: revisionSchema.optional() }),
     response: z.object({ threads: z.array(threadSchema) }),
   }),
   createThread: def({

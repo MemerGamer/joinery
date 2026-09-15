@@ -621,11 +621,6 @@ export function ReviewProvider({
     }
   }, [rebuildOrder]);
 
-  // Read inside `setRevision`'s loop, which spans awaits and so must not
-  // rebuild the reading order from a thread list captured before them.
-  const threadsRef = useRef(state.threads);
-  threadsRef.current = state.threads;
-
   /**
    * The revision the user last asked for, and whether a switch is already
    * working through it. Together these serialize switching: clicking
@@ -666,15 +661,26 @@ export function ReviewProvider({
             // rather than painting a file list nobody will look at. The
             // `continue` deliberately leaves the target set.
             if (revisionTargetRef.current !== target) continue;
+            // Thread positions are only persisted against the review's
+            // default revision — switching away from it needs a projected
+            // re-fetch (SPEC §5 "Threads across snapshots"), since the
+            // threads this tab was holding may be positioned for whichever
+            // revision it was on before.
+            const threadsRes = await callApi('listThreads', {
+              params: [reviewId],
+              query: { rev: target },
+            });
+            if (revisionTargetRef.current !== target) continue;
             setState((s) => ({
               ...s,
               reviewState: res.state,
               fileList: res.list.files,
+              threads: threadsRes.threads,
               pendingDelta: null,
               pendingRevision: null,
             }));
             itemsRef.current = new Map();
-            rebuildOrder(res.list.files, threadsRef.current);
+            rebuildOrder(res.list.files, threadsRes.threads);
           } catch {
             if (revisionTargetRef.current !== target) continue;
             // Surfaced via reviewState staying unchanged; a banner-level retry
@@ -732,7 +738,14 @@ export function ReviewProvider({
   );
 
   const reloadThreads = useCallback(async () => {
-    const res = await callApi('listThreads', { params: [reviewId] });
+    // Scoped to this tab's own revision — positions for any revision other
+    // than the review's persisted one are projected server-side at read
+    // time, never persisted (SPEC §5).
+    const rev = revisionRef.current;
+    const res = await callApi('listThreads', {
+      params: [reviewId],
+      query: rev === undefined ? {} : { rev },
+    });
     setState((s) => ({ ...s, threads: res.threads }));
   }, [reviewId]);
 
