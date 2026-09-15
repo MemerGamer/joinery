@@ -87,6 +87,17 @@ export class ReviewEngine {
   #snapshots: Record<Revision, FileList>;
   #built = new Set<Revision>();
   /**
+   * The expensive, git-derived half of `ReviewState` — `divergence` and
+   * `basesMismatched` — recomputed only inside the tick path (`#emitState`)
+   * and reused by every `getState()` call in between. Every input to these
+   * two fields (HEAD, the PR ref `refs/review/pr/<id>`, `baseRef`) only moves
+   * via a detector signal that already schedules a tick, so a revision
+   * *switch* (which does not go through the tick path) can never invalidate
+   * this cache. `null` until the first computation, so `getState()` falls
+   * back to computing it lazily rather than serving a placeholder.
+   */
+  #cachedRevisionState: Pick<ReviewState, 'divergence' | 'basesMismatched'> | null = null;
+  /**
    * Which detector(s) fired since the last tick, so a tick only rebuilds the
    * revision(s) that detector actually invalidates rather than all three.
    * `remote-default` invalidates every revision's `baseSha` (shared
@@ -154,8 +165,16 @@ export class ReviewEngine {
     return this.#snapshots[revision ?? this.#resolveEffectiveRevision()];
   }
 
+  /**
+   * The cheap fields (`currentRevision`, `operationInProgress`, ...) are
+   * always rebuilt fresh, since `setCurrentRevisionHint()` and the operation
+   * detector can change them without a tick. The expensive git-derived
+   * fields come from `#cachedRevisionState`, computed lazily here on first
+   * access if no tick has populated it yet.
+   */
   async getState(): Promise<ReviewState> {
-    return this.#computeState();
+    if (this.#cachedRevisionState === null) return this.#computeState();
+    return this.#buildState();
   }
 
   /**
@@ -415,15 +434,22 @@ export class ReviewEngine {
     this.#operationInProgress = operation;
 
     if (operation !== null) {
-      // Mid-operation states (SPEC §5): hold the last good snapshot.
-      if (rootChanged || operationChanged || prNumberChanged) await this.#emitState();
+      // Mid-operation states (SPEC §5): hold the last good snapshot. The
+      // cached `divergence`/`basesMismatched` can still be stale though — a
+      // commit or remote move that landed mid-operation still moved them —
+      // so the same signal check as below applies here too, against the
+      // signals accumulated so far (not yet snapshotted/cleared at this
+      // point in the tick).
+      if (rootChanged || operationChanged || prNumberChanged || this.#stateSignalsFired(this.#pendingSources)) {
+        await this.#emitState();
+      }
       return;
     }
 
     const review = this.#review;
     const effectiveRevision = this.#resolveEffectiveRevision();
     const cwd = this.#attachedPath ?? this.#repo.rootPath;
-    const available = this.#availableRevisions();
+    const available = this.availableRevisions();
 
     // Snapshot and clear the accumulated signals for this tick. Anything that
     // arrives while this tick is running lands in a fresh set the *next* tick
@@ -534,11 +560,25 @@ export class ReviewEngine {
       this.#emit({ type: 'files.changed', reviewId: review.id, list: this.#snapshots[rev] });
     }
 
-    if (rootChanged || operationChanged || prNumberChanged) await this.#emitState();
+    // `#cachedRevisionState` (divergence, basesMismatched) is only ever
+    // refreshed here, inside `#emitState`. `root`/`operation`/`prNumber`
+    // changing are not the only things that can move it: `git` (HEAD moved),
+    // `remote-pr` (the PR ref moved), and `remote-default` (`baseRef`'s
+    // merge-base moved) all feed `divergence`/`basesMismatched` directly and
+    // must also force a refresh, or the cache would keep serving values from
+    // the last root/operation/pr-number change indefinitely.
+    if (rootChanged || operationChanged || prNumberChanged || this.#stateSignalsFired(sources)) {
+      await this.#emitState();
+    }
+  }
+
+  /** Whether any of `sources` can move `divergence`/`basesMismatched` (see `#cachedRevisionState`). */
+  #stateSignalsFired(sources: ReadonlySet<'root' | 'git' | 'remote-default' | 'remote-pr'>): boolean {
+    return sources.has('git') || sources.has('remote-pr') || sources.has('remote-default');
   }
 
   /** Revisions that actually exist right now (SPEC §4's picker). */
-  #availableRevisions(): Revision[] {
+  availableRevisions(): Revision[] {
     const available: Revision[] = [];
     if (this.#attachedPath !== null) available.push('working');
     available.push('head');
@@ -655,7 +695,20 @@ export class ReviewEngine {
 
       for (const t of pathThreads) {
         const sideBlob = t.side === 'old' ? c.after.oldBlob : c.after.newBlob;
-        if (sideBlob === t.anchorBlobSha) continue; // this thread's side didn't change — free
+        if (sideBlob === t.anchorBlobSha) {
+          if (!t.outdated) continue; // this thread's side didn't change — free
+          // The file was reverted back to this thread's anchor blob: the
+          // original startLine/endLine are valid again by definition.
+          updates.push({
+            id: t.id,
+            startLine: t.startLine,
+            endLine: t.endLine,
+            anchorBlobSha: t.anchorBlobSha,
+            outdated: false,
+            changedSinceComment: true,
+          });
+          continue;
+        }
 
         const text = t.side === 'old' ? (contents?.oldContents ?? null) : (contents?.newContents ?? null);
         if (text === null) {
@@ -691,9 +744,15 @@ export class ReviewEngine {
     }
   }
 
+  /**
+   * Recomputes the expensive git-derived half of the state (`divergence`,
+   * `basesMismatched`), stores it in `#cachedRevisionState`, and returns the
+   * full `ReviewState` built from that plus the always-fresh cheap fields.
+   * Only called from the tick path (`#emitState`) and, lazily, the first
+   * `getState()` before any tick has run.
+   */
   async #computeState(): Promise<ReviewState> {
     const review = this.#review;
-    const available = this.#availableRevisions();
 
     let divergenceValue: Divergence | null = null;
     let basesMismatched = false;
@@ -705,22 +764,34 @@ export class ReviewEngine {
           ? 'HEAD'
           : (review.branch !== null ? `refs/heads/${review.branch}` : (review.pinnedSha ?? 'HEAD'));
       try {
-        divergenceValue = await divergence(headRef, prRef, { cwd });
-        const baseHead = await mergeBase(review.baseRef, headRef, { cwd });
-        const basePr = await mergeBase(review.baseRef, prRef, { cwd });
+        // Independent git calls — run them concurrently rather than serially.
+        const [d, baseHead, basePr] = await Promise.all([
+          divergence(headRef, prRef, { cwd }),
+          mergeBase(review.baseRef, headRef, { cwd }),
+          mergeBase(review.baseRef, prRef, { cwd }),
+        ]);
+        divergenceValue = d;
         basesMismatched = baseHead !== null && basePr !== null && baseHead !== basePr;
       } catch {
+        // Any of the three throwing leaves both fields at their defaults.
         divergenceValue = null;
       }
     }
 
+    this.#cachedRevisionState = { divergence: divergenceValue, basesMismatched };
+    return this.#buildState();
+  }
+
+  /** Assembles a `ReviewState` from `#cachedRevisionState` plus the cheap fields, all computed fresh. */
+  #buildState(): ReviewState {
+    const review = this.#review;
     return {
       reviewId: review.id,
-      availableRevisions: available,
+      availableRevisions: this.availableRevisions(),
       currentRevision: this.#resolveEffectiveRevision(),
       root: { attachedPath: this.#attachedPath, detachedReason: this.#detachedReason },
-      divergence: divergenceValue,
-      basesMismatched,
+      divergence: this.#cachedRevisionState?.divergence ?? null,
+      basesMismatched: this.#cachedRevisionState?.basesMismatched ?? false,
       operationInProgress: this.#operationInProgress,
       prNumber: review.prNumber,
     };

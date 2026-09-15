@@ -418,8 +418,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     await requireReview(deps, id);
     const body = await parseBody(setRevisionBodySchema, c);
     const engine = await requireEngine(deps, id);
-    const stateBefore = await engine.getState();
-    if (!stateBefore.availableRevisions.includes(body.revision)) {
+    if (!engine.availableRevisions().includes(body.revision)) {
       throw conflict(`revision "${body.revision}" is not available for this review right now`);
     }
     await setCurrentRevision(deps.db, id, body.revision);

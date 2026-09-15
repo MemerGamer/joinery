@@ -39,7 +39,9 @@ export async function projectThread(
   }
 
   const sideBlob = thread.side === 'old' ? entry.oldBlob : entry.newBlob;
-  if (sideBlob === thread.anchorBlobSha) return thread; // exact match, free
+  // Exact match, free — but don't pass through a stale persisted `outdated`;
+  // the blob matching the anchor means the original lines are valid again.
+  if (sideBlob === thread.anchorBlobSha) return { ...thread, outdated: false };
 
   let contents;
   try {

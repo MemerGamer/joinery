@@ -20,6 +20,14 @@ export function ThreadArticle({
 }): React.JSX.Element {
   const [replying, setReplying] = useState(false);
   const [collapsedOutdated, setCollapsedOutdated] = useState(thread.outdated);
+  // Re-sync the collapse state whenever `thread.outdated` flips (e.g. the
+  // file is reverted and the thread stops being outdated), while still
+  // letting the user toggle it manually in between.
+  const [prevOutdated, setPrevOutdated] = useState(thread.outdated);
+  if (thread.outdated !== prevOutdated) {
+    setPrevOutdated(thread.outdated);
+    setCollapsedOutdated(thread.outdated);
+  }
 
   const resolve = async (resolved: boolean) => {
     await callApi('resolveThread', { params: [thread.id], body: { resolved } });
