@@ -13,6 +13,7 @@ import {
   markViewedBodySchema,
   readingOrderPlanSchema,
   replyBodySchema,
+  revisionSchema,
   setRevisionBodySchema,
   NULL_BLOB,
   type ServerEvent,
@@ -65,6 +66,7 @@ export type RoutesDeps = {
 };
 
 const diffQuerySchema = z.object({ path: z.string().min(1), rev: z.enum(['working', 'head', 'pr']).optional() });
+const filesQuerySchema = z.object({ rev: revisionSchema.optional() });
 const threadsQuerySchema = z.object({ status: z.enum(['open', 'resolved']).optional() });
 const feedbackQuerySchema = z.object({
   format: z.literal('markdown').optional(),
@@ -193,8 +195,9 @@ export function buildRoutes(deps: RoutesDeps): Hono {
 
   app.get('/api/reviews/:id/files', async (c) => {
     const id = c.req.param('id');
+    const query = parseQuery(filesQuerySchema, c);
     const engine = await requireEngine(deps, id);
-    const list = engine.getFileList();
+    const list = engine.getFileList(query.rev);
     const viewedRows = await listViewed(deps.db, id);
     const viewed = viewedRows.map((v) => ({ path: v.path, blobSha: v.blobSha }));
     return c.json({ list, viewed });
@@ -403,12 +406,14 @@ export function buildRoutes(deps: RoutesDeps): Hono {
       throw conflict(`revision "${body.revision}" is not available for this review right now`);
     }
     await setCurrentRevision(deps.db, id, body.revision);
-    // This is the user's own keystroke (SPEC §5 "Never auto-switch
-    // revision" is about the *engine* changing it on its own) — force a
-    // synchronous recompute so the response reflects the new revision.
-    await engine.tick();
+    // No tick needed: every available revision's file list is kept warm in
+    // the background (reviewEngine.ts), so switching is a cache read. The
+    // engine's in-memory review row still needs to know the new choice
+    // immediately, since it isn't reloaded from sqlite until the next tick.
+    engine.setCurrentRevisionHint(body.revision);
     const state = await engine.getState();
-    return c.json({ state });
+    const list = engine.getFileList(body.revision);
+    return c.json({ state, list });
   });
 
   app.post('/api/reviews/:id/viewed', async (c) => {

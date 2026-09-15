@@ -197,7 +197,20 @@ mock.module('../src/lib/apiClient.ts', () => ({
           await new Promise<void>((resolve) => heldSwitches?.push(resolve));
         }
         servedRevision = next;
-        return { state: { ...reviewState, currentRevision: next } };
+        // The file list now rides along with the switch response (no more
+        // separate `getFiles` round trip) — this is what "pays for" a file
+        // list from the client's point of view now.
+        fileCalls.push(next);
+        return {
+          state: { ...reviewState, currentRevision: next },
+          list: {
+            reviewId: REVIEW_ID,
+            revision: next,
+            baseSha: 'base',
+            headSha: 'head',
+            files: filesByRevision[next] ?? fileList,
+          },
+        };
       }
       case 'getFiles':
         fileCalls.push(servedRevision);
@@ -407,8 +420,11 @@ describe('switching revisions', () => {
     await settle();
 
     expect(revisionCalls).toEqual(['head', 'working']);
-    // Only the surviving switch pays for a file list, and it's the last one.
-    expect(fileCalls).toEqual(['working']);
+    // The file list now rides along with every `setRevision` response (a
+    // cheap cache read, not a separate fetch), so both calls carry one —
+    // the invariant that matters is that only the *last* one is ever
+    // painted, checked below via `engine.items`.
+    expect(fileCalls).toEqual(['head', 'working']);
     expect(engine.pendingRevision).toBeNull();
     expect(engine.reviewState?.currentRevision).toBe('working');
     expect(engine.items.map((i) => i.id).sort()).toEqual(fileList.map((f) => f.path).sort());

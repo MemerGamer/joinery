@@ -105,9 +105,15 @@ describe('engine tick', () => {
     await engine.tick();
 
     // `working` file list (path/blob identity) is unchanged post-commit.
-    expect(engine.getFileList().files.map((f) => f.newBlob)).toEqual(workingList.files.map((f) => f.newBlob));
-    // No files.changed should have fired since the working-tree list is identical.
-    expect(events.filter((e) => e.type === 'files.changed')).toHaveLength(0);
+    expect(engine.getFileList('working').files.map((f) => f.newBlob)).toEqual(
+      workingList.files.map((f) => f.newBlob),
+    );
+    // `working`'s list is identical, so it fires no event — but `head` is
+    // kept warm proactively too (SPEC §5's table: "head updates" on commit),
+    // and it genuinely changed (headSha moved), so it does.
+    const changed = events.filter((e) => e.type === 'files.changed');
+    expect(changed).toHaveLength(1);
+    expect(changed[0]?.type === 'files.changed' ? changed[0].list.revision : undefined).toBe('head');
   });
 
   test('an untracked file appears as an add', async () => {

@@ -83,7 +83,21 @@ export class ReviewEngine {
   #attachedPath: string | null = null;
   #detachedReason: RootBinding['detachedReason'] = 'not-checked-out';
   #operationInProgress: GitOperation | null = null;
-  #snapshot: FileList;
+  /** One cached snapshot per revision — kept warm proactively so a revision switch is a cache read, not a recompute. */
+  #snapshots: Record<Revision, FileList>;
+  #built = new Set<Revision>();
+  /**
+   * Which detector(s) fired since the last tick, so a tick only rebuilds the
+   * revision(s) that detector actually invalidates rather than all three.
+   * `remote-default` invalidates every revision's `baseSha` (shared
+   * `merge-base(baseRef, ...)`), so it always forces a full rebuild.
+   */
+  #pendingSources = new Set<'root' | 'git' | 'remote-default' | 'remote-pr'>([
+    'root',
+    'git',
+    'remote-default',
+    'remote-pr',
+  ]);
 
   #rootWatcher: FSWatcher | null = null;
   #gitWatcher: FSWatcher | null = null;
@@ -106,12 +120,17 @@ export class ReviewEngine {
     this.#review = params.review;
     this.#emit = params.emit;
     this.#catFile = new CatFile(params.repo.rootPath);
-    this.#snapshot = {
+    const placeholder = (revision: Revision): FileList => ({
       reviewId: params.review.id,
-      revision: params.review.currentRevision ?? 'head',
+      revision,
       baseSha: '',
       headSha: '',
       files: [],
+    });
+    this.#snapshots = {
+      working: placeholder('working'),
+      head: placeholder('head'),
+      pr: placeholder('pr'),
     };
   }
 
@@ -130,8 +149,9 @@ export class ReviewEngine {
     return this.#review.id;
   }
 
-  getFileList(): FileList {
-    return this.#snapshot;
+  /** The cached snapshot for `revision`, or the review's current revision when omitted. */
+  getFileList(revision?: Revision): FileList {
+    return this.#snapshots[revision ?? this.#resolveEffectiveRevision()];
   }
 
   async getState(): Promise<ReviewState> {
@@ -145,12 +165,23 @@ export class ReviewEngine {
    * IMPROVEMENTS.md).
    */
   getRenderContext(): { cwd: string; revision: Revision; baseSha: string; headSha: string } {
+    const snapshot = this.#snapshots[this.#resolveEffectiveRevision()];
     return {
       cwd: this.#attachedPath ?? this.#repo.rootPath,
-      revision: this.#snapshot.revision,
-      baseSha: this.#snapshot.baseSha,
-      headSha: this.#snapshot.headSha,
+      revision: snapshot.revision,
+      baseSha: snapshot.baseSha,
+      headSha: snapshot.headSha,
     };
+  }
+
+  /**
+   * Updates the in-memory "current revision" immediately after an HTTP
+   * switch, without waiting for a tick to reload the review row — the switch
+   * itself already persisted it (routes.ts), and the target revision's
+   * snapshot is already warm, so there is nothing left to recompute.
+   */
+  setCurrentRevisionHint(revision: Revision): void {
+    this.#review = { ...this.#review, currentRevision: revision };
   }
 
   getCatFile(): CatFile {
@@ -180,8 +211,10 @@ export class ReviewEngine {
     this.#restartPoll();
   }
 
-  /** Call after any HTTP-side mutation that should be reflected promptly (e.g. revision switch). */
+  /** Call after any HTTP-side mutation that should be reflected promptly. */
   notifyExternalChange(): void {
+    this.#pendingSources.add('root');
+    this.#pendingSources.add('git');
     this.#scheduleTick();
   }
 
@@ -197,7 +230,13 @@ export class ReviewEngine {
 
   // --- signal handling / debounce ---
 
-  #onSignal = (): void => {
+  #onRootSignal = (): void => {
+    this.#pendingSources.add('root');
+    this.#scheduleTick();
+  };
+
+  #onGitSignal = (): void => {
+    this.#pendingSources.add('git');
     this.#scheduleTick();
   };
 
@@ -246,7 +285,7 @@ export class ReviewEngine {
       this.#rootWatcher = null;
       if (attachedPath !== null) {
         try {
-          this.#rootWatcher = watch(attachedPath, { recursive: true }, this.#onSignal);
+          this.#rootWatcher = watch(attachedPath, { recursive: true }, this.#onRootSignal);
         } catch {
           this.#rootWatcher = null;
         }
@@ -267,7 +306,7 @@ export class ReviewEngine {
     this.#gitWatcher = null;
     if (shouldWatch && gitDir !== null) {
       try {
-        this.#gitWatcher = watch(gitDir, { recursive: true }, this.#onSignal);
+        this.#gitWatcher = watch(gitDir, { recursive: true }, this.#onGitSignal);
       } catch {
         this.#gitWatcher = null;
       }
@@ -295,7 +334,8 @@ export class ReviewEngine {
     const review = this.#review;
     const cwd = this.#attachedPath ?? this.#repo.rootPath;
     const defaultBranchName = this.#repo.defaultBranch;
-    let moved = false;
+    let defaultMoved = false;
+    let prMoved = false;
     try {
       const beforeDefault = await revParse(`refs/remotes/origin/${defaultBranchName}`, { cwd });
       await git(
@@ -308,7 +348,7 @@ export class ReviewEngine {
         { cwd },
       );
       const afterDefault = await revParse(`refs/remotes/origin/${defaultBranchName}`, { cwd });
-      if (beforeDefault !== afterDefault) moved = true;
+      if (beforeDefault !== afterDefault) defaultMoved = true;
 
       if (review.prNumber !== null) {
         const prRef = `refs/review/pr/${review.id}`;
@@ -318,7 +358,7 @@ export class ReviewEngine {
           { cwd },
         );
         const afterPr = await revParse(prRef, { cwd });
-        if (beforePr !== afterPr) moved = true;
+        if (beforePr !== afterPr) prMoved = true;
       }
     } catch {
       return;
@@ -326,7 +366,11 @@ export class ReviewEngine {
     if (review.prNumber === null && review.branch !== null) {
       await this.#detectPr(review.branch, cwd);
     }
-    if (moved) this.#scheduleTick();
+    // `defaultMoved` invalidates every revision's shared merge-base; `prMoved`
+    // only invalidates the `pr` snapshot.
+    if (defaultMoved) this.#pendingSources.add('remote-default');
+    if (prMoved) this.#pendingSources.add('remote-pr');
+    if (defaultMoved || prMoved) this.#scheduleTick();
   }
 
   /**
@@ -341,6 +385,7 @@ export class ReviewEngine {
     const prNumber = await findOpenPrNumberForBranch(branch, { cwd });
     if (prNumber === null || this.#disposed) return;
     this.#review = await setPrNumber(this.#db, this.#review.id, prNumber);
+    this.#pendingSources.add('remote-pr');
     this.#scheduleTick();
   }
 
@@ -378,105 +423,127 @@ export class ReviewEngine {
     const review = this.#review;
     const effectiveRevision = this.#resolveEffectiveRevision();
     const cwd = this.#attachedPath ?? this.#repo.rootPath;
+    const available = this.#availableRevisions();
 
-    let targetRef: string | undefined;
-    if (effectiveRevision === 'head') {
-      targetRef =
-        this.#attachedPath !== null
-          ? 'HEAD'
-          : (review.branch !== null ? `refs/heads/${review.branch}` : (review.pinnedSha ?? undefined));
-    } else if (effectiveRevision === 'pr') {
-      targetRef = `refs/review/pr/${review.id}`;
+    // Snapshot and clear the accumulated signals for this tick. Anything that
+    // arrives while this tick is running lands in a fresh set the *next* tick
+    // reads — see the `#dirty` loop in `tick()`, which guarantees there is a
+    // next tick whenever a signal arrives mid-run.
+    const sources = new Set(this.#pendingSources);
+    this.#pendingSources.clear();
+
+    // 2-5, per revision: only the revision(s) an actual detector invalidated
+    // get rebuilt — a worktree edit only touches `working`, a commit only
+    // touches `head`, the PR ref moving only touches `pr`. `root` changing
+    // (the attached directory itself moved or vanished) can change how every
+    // revision resolves, so it forces all of them. `remote-default` moving
+    // the base is the one case that must invalidate every revision even
+    // though only one detector fired, because `merge-base(baseRef, ...)` is
+    // shared across all three.
+    for (const rev of available) {
+      const needsRebuild =
+        rootChanged ||
+        !this.#built.has(rev) ||
+        sources.has('remote-default') ||
+        (rev === 'working' && sources.has('root')) ||
+        (rev === 'head' && sources.has('git')) ||
+        (rev === 'pr' && sources.has('remote-pr'));
+      if (!needsRebuild) continue;
+
+      let targetRef: string | undefined;
+      if (rev === 'head') {
+        targetRef =
+          this.#attachedPath !== null
+            ? 'HEAD'
+            : (review.branch !== null ? `refs/heads/${review.branch}` : (review.pinnedSha ?? undefined));
+      } else if (rev === 'pr') {
+        targetRef = `refs/review/pr/${review.id}`;
+      }
+      if (rev !== 'working' && targetRef === undefined) continue;
+
+      const headRef = rev === 'working' ? 'HEAD' : (targetRef as string);
+
+      // Resolve the ref to a commit, once, before anything reads it.
+      //
+      // Everything downstream has to agree on a single commit even if the ref
+      // moves mid-tick, and `headSha` is what a later tick compares against to
+      // decide whether head actually moved — a ref *name* would always compare
+      // equal to itself, so storing one silently disables that check.
+      const headSha = await revParse(headRef, { cwd });
+      if (headSha === null) continue;
+
+      // No merge base means `baseRef` is unknown to this repo (a deleted or
+      // never-fetched branch): fall back to head, i.e. an empty diff, rather
+      // than showing the whole history as changed.
+      const baseSha = (await mergeBase(review.baseRef, headSha, { cwd })) ?? headSha;
+
+      // Build the file list (includes the one `hash-object` spawn for working).
+      let newFiles;
+      try {
+        newFiles = await buildFileList(
+          rev === 'working' ? { cwd, revision: rev, baseSha } : { cwd, revision: rev, baseSha, targetSha: headSha },
+        );
+      } catch {
+        // A git error mid-tick — hold this revision's last good snapshot rather than crash the actor.
+        continue;
+      }
+
+      this.#built.add(rev);
+      const previous = this.#snapshots[rev];
+
+      // The early-out: list identical -> stop. Zero UI work.
+      const delta = diffFileLists(previous.files, newFiles);
+      if (isEmptyDelta(delta)) {
+        // The *files* are unchanged, but head may still have moved under them
+        // (an amend, a rebase that preserved the tree). Per-file patch fetches
+        // key off these shas, so keep them current even though there is nothing
+        // for the client to redraw.
+        this.#snapshots[rev] = { ...previous, baseSha, headSha };
+        continue;
+      }
+
+      // Renames are derived from *this build's* rename detection (git diff -M
+      // against `baseSha`), not from `delta.renamed` — a file that was
+      // unmodified relative to base was never in the previous snapshot at all,
+      // so the client-facing delta has nothing to call a "rename" for it, but
+      // a thread anchored to its old path still needs to follow (SPEC §6).
+      const renames: Rename[] = [];
+      for (const f of newFiles) {
+        if (f.oldPath !== null) renames.push({ from: f.oldPath, to: f.path });
+      }
+      // Thread anchors are re-derived only against the review's persisted
+      // (default) revision. A non-default revision's file list can genuinely
+      // differ from the default's — e.g. `working` has an uncommitted change
+      // `head` doesn't — and re-anchoring the one shared thread row against
+      // two different revisions' deltas in the same tick would race. Cross-
+      // revision thread positions are handled separately at render time.
+      if (rev === effectiveRevision) {
+        if (renames.length > 0) {
+          await renamePaths(this.#db, review.id, renames);
+        }
+        await this.#reanchorThreads(delta, renames, rev, cwd);
+      }
+
+      this.#snapshots[rev] = {
+        reviewId: review.id,
+        revision: rev,
+        baseSha,
+        headSha,
+        files: newFiles,
+      };
+      this.#emit({ type: 'files.changed', reviewId: review.id, list: this.#snapshots[rev] });
     }
 
-    if (effectiveRevision !== 'working' && targetRef === undefined) {
-      if (rootChanged || operationChanged || prNumberChanged) await this.#emitState();
-      return;
-    }
-
-    const headRef = effectiveRevision === 'working' ? 'HEAD' : (targetRef as string);
-
-    // 2. Resolve the ref to a commit, once, before anything reads it.
-    //
-    // Everything downstream has to agree on a single commit even if the ref
-    // moves mid-tick, and `headSha` is what a later tick compares against to
-    // decide whether head actually moved — a ref *name* would always compare
-    // equal to itself, so storing one silently disables that check.
-    const headSha = await revParse(headRef, { cwd });
-    if (headSha === null) {
-      if (rootChanged || operationChanged || prNumberChanged) await this.#emitState();
-      return;
-    }
-
-    // No merge base means `baseRef` is unknown to this repo (a deleted or
-    // never-fetched branch): fall back to head, i.e. an empty diff, rather
-    // than showing the whole history as changed.
-    const baseSha = (await mergeBase(review.baseRef, headSha, { cwd })) ?? headSha;
-
-    // 3. Build the file list (includes the one `hash-object` spawn for working).
-    let newFiles;
-    try {
-      newFiles = await buildFileList(
-        effectiveRevision === 'working'
-          ? { cwd, revision: effectiveRevision, baseSha }
-          : { cwd, revision: effectiveRevision, baseSha, targetSha: headSha },
-      );
-    } catch {
-      // A git error mid-tick — hold the last good snapshot rather than crash the actor.
-      if (rootChanged || operationChanged || prNumberChanged) await this.#emitState();
-      return;
-    }
-
-    // 4. The early-out: list identical -> stop. Zero UI work.
-    const delta = diffFileLists(this.#snapshot.files, newFiles);
-    const revisionChanged = effectiveRevision !== this.#snapshot.revision;
-    if (isEmptyDelta(delta) && !revisionChanged) {
-      // The *files* are unchanged, but head may still have moved under them
-      // (an amend, a rebase that preserved the tree). Per-file patch fetches
-      // key off these shas, so keep them current even though there is nothing
-      // for the client to redraw.
-      this.#snapshot = { ...this.#snapshot, baseSha, headSha };
-      if (rootChanged || operationChanged || prNumberChanged) await this.#emitState();
-      return;
-    }
-
-    // 5. Push the difference.
-    //
-    // Renames are derived from *this build's* rename detection (git diff -M
-    // against `baseSha`), not from `delta.renamed` — a file that was
-    // unmodified relative to base was never in the previous snapshot at all,
-    // so the client-facing delta has nothing to call a "rename" for it, but
-    // a thread anchored to its old path still needs to follow (SPEC §6).
-    const renames: Rename[] = [];
-    for (const f of newFiles) {
-      if (f.oldPath !== null) renames.push({ from: f.oldPath, to: f.path });
-    }
-    if (renames.length > 0) {
-      await renamePaths(this.#db, review.id, renames);
-    }
-    await this.#reanchorThreads(delta, renames, effectiveRevision, cwd);
-
-    this.#snapshot = {
-      reviewId: review.id,
-      revision: effectiveRevision,
-      baseSha,
-      headSha,
-      files: newFiles,
-    };
-
-    // `delta` above is a genuine content change only when the revision held
-    // steady — across a revision switch it's just the structural difference
-    // between two different revisions' file lists (used above for thread
-    // re-anchoring), not a live edit, so it must never reach the client as a
-    // `files.changed` event: the switch's own request/response already
-    // carries the new list, and firing this too stages a bogus "N files
-    // updated" pill on every switch (SPEC §5, *the delta — the contract with
-    // the UI*: this event means "the file list changed under you", not
-    // "you changed what you're looking at").
-    if (!revisionChanged) {
-      this.#emit({ type: 'files.changed', reviewId: review.id, list: this.#snapshot });
-    }
     if (rootChanged || operationChanged || prNumberChanged) await this.#emitState();
+  }
+
+  /** Revisions that actually exist right now (SPEC §4's picker). */
+  #availableRevisions(): Revision[] {
+    const available: Revision[] = [];
+    if (this.#attachedPath !== null) available.push('working');
+    available.push('head');
+    if (this.#review.prNumber !== null) available.push('pr');
+    return available;
   }
 
   /**
@@ -626,10 +693,7 @@ export class ReviewEngine {
 
   async #computeState(): Promise<ReviewState> {
     const review = this.#review;
-    const available: Revision[] = [];
-    if (this.#attachedPath !== null) available.push('working');
-    available.push('head');
-    if (review.prNumber !== null) available.push('pr');
+    const available = this.#availableRevisions();
 
     let divergenceValue: Divergence | null = null;
     let basesMismatched = false;

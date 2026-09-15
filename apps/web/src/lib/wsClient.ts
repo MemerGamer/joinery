@@ -8,14 +8,21 @@
  * every review currently subscribed to.
  */
 import { getAuthToken } from './apiClient.ts';
-import { clientMessageSchema, serverEventSchema, type ClientMessage, type ServerEvent } from '@review/core';
+import {
+  clientMessageSchema,
+  serverEventSchema,
+  type ClientMessage,
+  type Revision,
+  type ServerEvent,
+} from '@review/core';
 
 type Listener = (event: ServerEvent) => void;
 
 export class EventsClient {
   private ws: WebSocket | null = null;
   private readonly listeners = new Set<Listener>();
-  private readonly subscribed = new Set<string>();
+  /** reviewId -> the revision this connection last asked to watch. */
+  private readonly subscribed = new Map<string, Revision | undefined>();
   private reconnectDelay = 500;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private closedByUser = false;
@@ -37,7 +44,9 @@ export class EventsClient {
 
     ws.addEventListener('open', () => {
       this.reconnectDelay = 500;
-      for (const reviewId of this.subscribed) this.sendRaw({ type: 'subscribe', reviewId });
+      for (const [reviewId, revision] of this.subscribed) {
+        this.sendRaw({ type: 'subscribe', reviewId, ...(revision === undefined ? {} : { revision }) });
+      }
     });
 
     ws.addEventListener('message', (ev: MessageEvent<string>) => {
@@ -75,9 +84,14 @@ export class EventsClient {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(parsed));
   }
 
-  subscribe(reviewId: string): void {
-    this.subscribed.add(reviewId);
-    this.sendRaw({ type: 'subscribe', reviewId });
+  /**
+   * Subscribe, or — if already subscribed — update the revision this
+   * connection watches for `reviewId`. Safe to call again on every revision
+   * switch: the server treats a repeat `subscribe` as an upsert.
+   */
+  subscribe(reviewId: string, revision?: Revision): void {
+    this.subscribed.set(reviewId, revision);
+    this.sendRaw({ type: 'subscribe', reviewId, ...(revision === undefined ? {} : { revision }) });
   }
 
   unsubscribe(reviewId: string): void {

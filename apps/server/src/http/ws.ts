@@ -7,7 +7,7 @@
  */
 import { createBunWebSocket } from 'hono/bun';
 import type { Hono } from 'hono';
-import { clientMessageSchema, type ServerEvent } from '@review/core';
+import { clientMessageSchema, type Revision, type ServerEvent } from '@review/core';
 import type { EngineRegistry } from '../engine/index.ts';
 
 export type { BunWebSocketHandler } from 'hono/bun';
@@ -22,6 +22,12 @@ export function mountWebSocket(app: Hono, registry: EngineRegistry) {
       // One connection may subscribe to several reviews; each has its own
       // unsubscribe function and last-known-focus state.
       const unsubscribers = new Map<string, () => void>();
+      // Which revision each subscribed review is filtered to on this
+      // connection — lets two tabs on the same review each watch a different
+      // revision without a `files.changed` for one leaking into the other.
+      // `undefined` means "no filter, forward everything" (a client that
+      // never sent a revision).
+      const subscribedRevision = new Map<string, Revision | undefined>();
       let focusedReviewId: string | null = null;
 
       const send = (ws: { send: (data: string) => void }, event: ServerEvent): void => {
@@ -42,13 +48,24 @@ export function mountWebSocket(app: Hono, registry: EngineRegistry) {
 
           switch (message.type) {
             case 'subscribe': {
-              if (unsubscribers.has(message.reviewId)) return;
-              const unsubscribe = await registry.subscribe(message.reviewId, (event) => send(ws, event));
-              if (unsubscribe === null) return; // review doesn't exist; silently ignore
-              unsubscribers.set(message.reviewId, unsubscribe);
+              // Update (or set) this connection's revision filter for the
+              // review even if already subscribed — this is also how a tab
+              // switches what it's watching without a fresh subscription.
+              subscribedRevision.set(message.reviewId, message.revision);
+              if (!unsubscribers.has(message.reviewId)) {
+                const unsubscribe = await registry.subscribe(message.reviewId, (event) => {
+                  if (event.type === 'files.changed' && event.reviewId === message.reviewId) {
+                    const wanted = subscribedRevision.get(message.reviewId);
+                    if (wanted !== undefined && event.list.revision !== wanted) return;
+                  }
+                  send(ws, event);
+                });
+                if (unsubscribe === null) return; // review doesn't exist; silently ignore
+                unsubscribers.set(message.reviewId, unsubscribe);
+              }
               const engine = await registry.get(message.reviewId);
               if (engine !== null) {
-                send(ws, { type: 'files.changed', reviewId: message.reviewId, list: engine.getFileList() });
+                send(ws, { type: 'files.changed', reviewId: message.reviewId, list: engine.getFileList(message.revision) });
                 send(ws, { type: 'root.rebound', reviewId: message.reviewId, state: await engine.getState() });
               }
               break;
@@ -56,6 +73,7 @@ export function mountWebSocket(app: Hono, registry: EngineRegistry) {
             case 'unsubscribe': {
               unsubscribers.get(message.reviewId)?.();
               unsubscribers.delete(message.reviewId);
+              subscribedRevision.delete(message.reviewId);
               break;
             }
             case 'focus': {

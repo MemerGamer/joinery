@@ -6,7 +6,7 @@
  * version negotiation — reconnect is "send me the list".
  */
 import { z } from 'zod';
-import { divergenceSchema, fileListSchema, reviewStateSchema } from './domain/files.ts';
+import { divergenceSchema, fileListSchema, revisionSchema, reviewStateSchema } from './domain/files.ts';
 import { agentRunSchema, threadSchema } from './domain/review.ts';
 
 export const serverEventSchema = z.discriminatedUnion('type', [
@@ -76,8 +76,15 @@ export type ServerEvent = z.infer<typeof serverEventSchema>;
 export type ServerEventType = ServerEvent['type'];
 
 export const clientMessageSchema = z.discriminatedUnion('type', [
-  /** Start receiving events for a review, and get the current list back. */
-  z.object({ type: z.literal('subscribe'), reviewId: z.string() }),
+  /**
+   * Start receiving events for a review, and get its file list back. `revision`
+   * scopes which revision this connection cares about: `files.changed` for any
+   * other revision is filtered out server-side, so two tabs on the same review
+   * can each watch a different revision independently. Sending `subscribe`
+   * again for a review already subscribed to just updates the revision filter
+   * (used when switching what this tab is looking at).
+   */
+  z.object({ type: z.literal('subscribe'), reviewId: z.string(), revision: revisionSchema.optional() }),
   z.object({ type: z.literal('unsubscribe'), reviewId: z.string() }),
   /** Window focus: the engine ticks and refetches the remote (§5). */
   z.object({ type: z.literal('focus'), reviewId: z.string() }),

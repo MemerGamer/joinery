@@ -462,6 +462,11 @@ export function ReviewProvider({
       switch (event.type) {
         case 'files.changed': {
           setState((s) => {
+            // Another tab may be watching a different revision of this same
+            // review — the server tags every list with its revision rather
+            // than filtering perfectly on its own, so this tab only ever
+            // applies updates for the revision it's actually showing.
+            if (s.reviewState !== null && event.list.revision !== s.reviewState.currentRevision) return s;
             const delta = diffFileLists(s.fileList, event.list.files);
             if (isEmptyDelta(delta)) return s;
             return { ...s, pendingDelta: delta };
@@ -469,7 +474,19 @@ export function ReviewProvider({
           break;
         }
         case 'root.rebound': {
-          setState((s) => ({ ...s, reviewState: event.state }));
+          // `event.state` is a global, server-wide snapshot — but
+          // `currentRevision` on it reflects the review's persisted default,
+          // not necessarily what *this* tab is looking at (another tab may
+          // have switched it). Keep every other field fresh; preserve this
+          // tab's own revision choice so a background broadcast never yanks
+          // the view out from under a tab that picked something else.
+          setState((s) => ({
+            ...s,
+            reviewState:
+              s.reviewState === null
+                ? event.state
+                : { ...event.state, currentRevision: s.reviewState.currentRevision },
+          }));
           break;
         }
         case 'remote.moved': {
@@ -530,6 +547,15 @@ export function ReviewProvider({
       window.removeEventListener('blur', onBlur);
     };
   }, [reviewId]);
+
+  // Keep this connection's revision filter in sync with what this tab is
+  // actually showing — re-sent as an upsert (see `EventsClient.subscribe`)
+  // whenever it changes, including the first time it becomes known after
+  // `load()` resolves. Independent of the mount/unmount effect above so it
+  // doesn't tear down and recreate the subscription on every switch.
+  useEffect(() => {
+    if (revision !== undefined) eventsClient.subscribe(reviewId, revision);
+  }, [reviewId, revision]);
 
   // Re-derive annotations whenever the thread list (or the draft) changes —
   // but touch only the paths that could actually be affected: the ones with
@@ -627,26 +653,28 @@ export function ReviewProvider({
         while (revisionTargetRef.current !== null) {
           const target: Revision = revisionTargetRef.current;
           try {
+            // The target revision's file list rides along in the response —
+            // every available revision is kept warm server-side, so there's
+            // no need for a second `getFiles` round trip here. `viewed` isn't
+            // revision-scoped (keyed by path+blob, compared per-entry by
+            // `isViewed`), so it carries over unchanged.
             const res = await callApi('setRevision', {
               params: [reviewId],
               body: { revision: target },
             });
             // Superseded mid-flight — loop around for the newer target
-            // rather than paying for a file list nobody will look at. The
+            // rather than painting a file list nobody will look at. The
             // `continue` deliberately leaves the target set.
-            if (revisionTargetRef.current !== target) continue;
-            setState((s) => ({ ...s, reviewState: res.state }));
-            const filesRes = await callApi('getFiles', { params: [reviewId] });
             if (revisionTargetRef.current !== target) continue;
             setState((s) => ({
               ...s,
-              fileList: filesRes.list.files,
-              viewed: new Map(filesRes.viewed.map((v) => [v.path, v.blobSha] as const)),
+              reviewState: res.state,
+              fileList: res.list.files,
               pendingDelta: null,
               pendingRevision: null,
             }));
             itemsRef.current = new Map();
-            rebuildOrder(filesRes.list.files, threadsRef.current);
+            rebuildOrder(res.list.files, threadsRef.current);
           } catch {
             if (revisionTargetRef.current !== target) continue;
             // Surfaced via reviewState staying unchanged; a banner-level retry

@@ -661,6 +661,21 @@ ceiling). A tick is:
    subprocesses, zero UI work.
 5. Otherwise set-diff old against new and push the difference.
 
+**All three revisions are kept warm, not just the one currently selected.**
+The engine caches one `FileList` per revision (`working`/`head`/`pr`) and each
+detector only rebuilds the revision(s) it can actually invalidate: the root
+watch only `working`, the git watch only `head`, the PR-ref half of the remote
+poll only `pr`. The default-branch half of the remote poll rebuilds all three,
+since `merge-base(baseRef, ...)` is shared across them. A revision switch
+(`POST /revision`) is therefore a cache read — no tick, no git spawn — rather
+than a recompute triggered by the click.
+
+Because each connection can watch a different revision (see *Transport*,
+below), thread re-anchoring below still only runs against the review's
+persisted revision, to avoid two revisions racing to mutate the same thread
+row; other revisions project a thread's position at render time instead of
+writing it back (see *Threads across snapshots*).
+
 ### The delta — the contract with the UI
 
 There is no delta protocol and no snapshot handshake. The server sends the
@@ -791,13 +806,26 @@ review out from under you:
 
 ### Transport
 
-`WS /api/events` pushes `files.changed` (the current list), `root.rebound`,
+`WS /api/events` pushes `files.changed` (a revision's list), `root.rebound`,
 `remote.moved`,
 `thread.relocated`, and `run.*`. The browser never polls. The client holds the
 current file list; on reconnect it simply asks for the list again and set-diffs
 it — there is no handshake and no version negotiation. Locally-initiated actions
 (posting a comment, marking viewed) apply optimistically and are reconciled
 against the authoritative row.
+
+`subscribe` carries an optional `revision`, scoping which revision's
+`files.changed` events that connection receives — sending `subscribe` again
+with a different revision both updates the filter and is how a tab switches
+what it's watching, without affecting any other tab. `root.rebound`'s `state`
+is still one global, review-wide snapshot (root binding, divergence, available
+revisions, etc.); its `currentRevision` field reflects the review's *persisted*
+choice, not necessarily what a given tab is looking at — a client that has
+switched locally keeps its own choice rather than adopting the broadcast one.
+This is what makes two tabs on the same review able to sit on different
+revisions independently: nothing server-side is "the" current revision except
+the one written by the last `POST /revision`, used only as the default the
+next freshly opened tab starts from.
 
 ---
 

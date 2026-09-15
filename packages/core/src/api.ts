@@ -158,7 +158,8 @@ export const api = {
     method: 'GET',
     path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/files`,
     body: undefined,
-    query: undefined,
+    /** Omitted means the review's current revision. */
+    query: z.object({ rev: revisionSchema.optional() }),
     response: z.object({
       list: fileListSchema,
       viewed: z.array(z.object({ path: z.string(), blobSha: z.string() })),
@@ -249,7 +250,10 @@ export const api = {
     path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/revision`,
     body: setRevisionBodySchema,
     query: undefined,
-    response: z.object({ state: reviewStateSchema }),
+    // `list` rides along with the switch response — the target revision's
+    // snapshot is already warm (kept fresh in the background), so this is a
+    // cache read, not a second round trip via GET /files.
+    response: z.object({ state: reviewStateSchema, list: fileListSchema }),
   }),
   markViewed: def({
     method: 'POST',

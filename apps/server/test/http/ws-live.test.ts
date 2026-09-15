@@ -198,7 +198,7 @@ describe('WS /api/events: subscribe', () => {
     }
   });
 
-  test('subscribing twice to the same review is a no-op the second time (no duplicate initial push)', async () => {
+  test('subscribing again re-sends the current list (an upsert, not a no-op — it is how a tab switches revision)', async () => {
     const fixture = await setupHttpWithReview();
     const server = startLiveServer(fixture);
     const client = await connect(server.wsUrl());
@@ -208,8 +208,13 @@ describe('WS /api/events: subscribe', () => {
       await client.next(); // root.rebound
 
       client.send({ type: 'subscribe', reviewId: fixture.review.id });
-      // No second files.changed/root.rebound pair should arrive.
-      await client.expectSilence();
+      // A repeat subscribe re-pushes rather than no-oping: it's the same
+      // message a tab sends to switch which revision it's watching, and the
+      // server can't tell "same revision again" from "a different one"
+      // without doing exactly this push (cheap — a cache read, not a tick).
+      const msg1 = (await client.next()) as ServerEvent;
+      const msg2 = (await client.next()) as ServerEvent;
+      expect([msg1.type, msg2.type].sort()).toEqual(['files.changed', 'root.rebound']);
     } finally {
       client.close();
       server.stop();
