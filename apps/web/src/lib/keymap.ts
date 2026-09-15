@@ -38,6 +38,10 @@ export interface KeymapActions {
   goHomebase?: () => void;
   goSteps?: () => void;
   openPalette?: () => void;
+  /** `Cmd+P`: opens the command palette straight into its file-jump view. */
+  openPaletteFiles?: () => void;
+  /** `Cmd+Shift+P`: opens the command palette straight into its `>` commands view. */
+  openPaletteCommands?: () => void;
   showHelp?: () => void;
 }
 
@@ -99,6 +103,19 @@ function buildKeymap(actionsRef: { current: KeymapActions }): Record<string, (e:
     ...bind('g h', 'goHomebase'),
     ...bind('g s', 'goSteps'),
     ...bind(`${MOD.primary}+k`, 'openPalette'),
+    // Plain `p` is already bound to `prevStep` above — these are both
+    // `$mod` chords, so neither collides with it.
+    //
+    // Shift chords need the modifier spelled exactly `Shift` (capital S):
+    // `matchKeybindingPress` requires every held modifier to appear in the
+    // chord's own modifier list, checked via `event.getModifierState(mod)`,
+    // and that DOM API is case-sensitive — `getModifierState('shift')`
+    // silently returns `false`. Unlike the Alt+letter bug above, this one
+    // isn't about `event.key` getting remapped (Shift doesn't do that, it's
+    // Option/Alt), so binding the plain letter `p` here is fine; matching
+    // is case-insensitive between the chord's key and `event.key`.
+    ...bind(`${MOD.primary}+p`, 'openPaletteFiles'),
+    ...bind(`${MOD.primary}+Shift+p`, 'openPaletteCommands'),
     ...bind('?', 'showHelp'),
   };
 }

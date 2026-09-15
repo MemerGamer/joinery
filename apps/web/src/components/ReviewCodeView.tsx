@@ -1,7 +1,8 @@
 /**
  * The centre pane: one `CodeView` for the whole review (SPEC §6) — never one
  * `FileDiff` per file. Items are the file list, in reading-order-adjacent
- * sequence. `renderCodeViewHeader` shows the current step; `lineAnnotations`
+ * sequence. The current step's title + explanation live in the reading-order
+ * pane instead of a header here (see ReadingOrderPane.tsx); `lineAnnotations`
  * + `renderAnnotation` render inline comment threads; `enableGutterUtility`
  * + `onGutterUtilityClick` drive the hover `+` for starting a new thread.
  */
@@ -24,7 +25,6 @@ import {
 import { useTheme } from '../state/ThemeContext.tsx';
 import { CommentComposer } from './CommentComposer.tsx';
 import { ThreadArticle } from './ThreadArticle.tsx';
-import { StepHeaderCard } from './StepHeaderCard.tsx';
 
 /**
  * Diff density, in one place. These are *both* the `@pierre/diffs` CSS custom
@@ -44,8 +44,8 @@ import { StepHeaderCard } from './StepHeaderCard.tsx';
  * stops short of content that is laid out but unreachable.
  */
 const DIFF_LINE_HEIGHT = 22;
-/** Mirrors `--chrome-space-3` (src/styles/index.css); `--diffs-gap-block`. */
-const DIFF_GAP_BLOCK = 12;
+/** Mirrors `--chrome-space-2` (src/styles/index.css); `--diffs-gap-block`. */
+const DIFF_GAP_BLOCK = 8;
 /**
  * Upstream's own header sizing is `min-height: calc(1lh + (gap * 3))` (see
  * `[data-diffs-header="default"]` in `@pierre/diffs/dist/style.js`), and its
@@ -64,8 +64,6 @@ export function ReviewCodeView(): React.JSX.Element {
     items,
     diffStyle,
     threads,
-    readingOrder,
-    selectedPath,
     startDraftThread,
     cancelDraftThread,
     submitDraftThread,
@@ -120,18 +118,9 @@ export function ReviewCodeView(): React.JSX.Element {
 
   const byPath = useMemo(() => new Map(fileList.map((f) => [f.path, f])), [fileList]);
 
-  const currentStep = useMemo(() => {
-    if (readingOrder === null) return null;
-    if (selectedPath !== null) {
-      const step = readingOrder.steps.find((s) => s.files.some((f) => f.path === selectedPath));
-      if (step !== undefined) return step;
-    }
-    return readingOrder.steps[0] ?? null;
-  }, [readingOrder, selectedPath]);
-
   if (review === null) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-chrome-fg-muted">
+      <div className="flex h-full items-center justify-center text-body text-chrome-fg-muted">
         Loading review…
       </div>
     );
@@ -139,7 +128,7 @@ export function ReviewCodeView(): React.JSX.Element {
 
   if (items.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-chrome-fg-muted">
+      <div className="flex h-full items-center justify-center text-body text-chrome-fg-muted">
         No changed files in this revision.
       </div>
     );
@@ -154,9 +143,10 @@ export function ReviewCodeView(): React.JSX.Element {
       // density knobs (see `dist/style.js`: `padding-block: var(--diffs-gap-block,
       // var(--diffs-gap-fallback))` at 8px, `line-height: var(--diffs-line-height, 20px)`)
       // — custom properties inherit through the shadow root the same way
-      // `--trees-density-override` does for `@pierre/trees` (FileTreePane.tsx),
-      // so nudging them here loosens hunk/line spacing to match the rest of
-      // the chrome's density pass without touching internals we don't own.
+      // `chromeToTreeStyles` feeds `--trees-theme-*` into `@pierre/trees`
+      // (FileTreePane.tsx), so nudging them here loosens hunk/line spacing to
+      // match the rest of the chrome's density pass without touching
+      // internals we don't own.
       // They live here rather than in a Tailwind arbitrary-property class so
       // they and `options.itemMetrics` come from the same constants: the two
       // must never drift (see the DIFF_* constants above).
@@ -169,7 +159,6 @@ export function ReviewCodeView(): React.JSX.Element {
           '--diffs-line-height': `${DIFF_LINE_HEIGHT}px`,
         } as React.CSSProperties
       }
-      renderCodeViewHeader={() => <StepHeaderCard step={currentStep} />}
       // The right-hand side of each file's title bar: the GitHub-style
       // "viewed" check (SPEC §6). Kept to a single compact row so it stays
       // inside the header's `1lh + gap * 3` min-height — a taller control

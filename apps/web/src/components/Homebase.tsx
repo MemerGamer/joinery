@@ -46,12 +46,12 @@ export function Homebase(): React.JSX.Element {
   return (
     <div className="mx-auto flex h-full max-w-4xl flex-col gap-4 overflow-y-auto p-6">
       <header className="flex items-center justify-between">
-        <h1 className="text-[15px] font-medium text-chrome-fg">Homebase</h1>
+        <h1 className="text-body font-semibold text-chrome-fg">Homebase</h1>
         <button
           type="button"
           onClick={() => void load()}
           aria-label="Refresh"
-          className="flex items-center gap-1.5 rounded-md border border-chrome-border px-2.5 py-1.5 text-xs text-chrome-fg-muted transition-colors hover:bg-chrome-bg-raised"
+          className="flex items-center gap-1.5 rounded-md border border-chrome-border px-2.5 py-1 text-xs text-chrome-fg-muted transition-colors hover:bg-chrome-bg-raised"
         >
           <RefreshCw size={16} strokeWidth={1.5} aria-hidden />
           Refresh
@@ -61,7 +61,7 @@ export function Homebase(): React.JSX.Element {
       {error !== null && (
         <div
           role="alert"
-          className="flex flex-col gap-1 rounded-md border border-chrome-danger bg-chrome-danger-bg p-3 text-sm text-chrome-fg"
+          className="flex flex-col gap-1 rounded-md border border-chrome-danger bg-chrome-danger-bg p-3 text-body text-chrome-fg"
         >
           <span className="font-medium">{error}</span>
           <span className="text-chrome-fg-muted">
@@ -71,7 +71,7 @@ export function Homebase(): React.JSX.Element {
       )}
 
       {!loading && error === null && reviews.length === 0 && (
-        <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-chrome-border p-10 text-center text-sm text-chrome-fg-muted">
+        <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-chrome-border p-10 text-center text-body text-chrome-fg-muted">
           <GitBranch size={20} strokeWidth={1.5} aria-hidden />
           <p>No reviews yet. Register a repo and create a review from the CLI.</p>
           <code className="rounded bg-chrome-bg-sunken px-2 py-1 text-xs">
@@ -88,14 +88,14 @@ export function Homebase(): React.JSX.Element {
               <button
                 type="button"
                 onClick={() => goReview(review.id)}
-                className="flex w-full items-center justify-between gap-3 rounded-md border border-chrome-border bg-chrome-bg-raised px-3 py-2.5 text-left transition-colors hover:border-chrome-border-strong"
+                className="flex w-full items-center justify-between gap-3 rounded-md border border-chrome-border bg-chrome-bg-raised px-3 py-2 text-left transition-colors hover:border-chrome-border-strong"
               >
                 <div className="flex min-w-0 items-center gap-2">
                   <GitBranch size={16} strokeWidth={1.5} className="shrink-0 text-chrome-fg-subtle" aria-hidden />
-                  <span className="truncate text-sm text-chrome-fg">
+                  <span className="truncate text-body text-chrome-fg">
                     {review.branch ?? review.pinnedSha?.slice(0, 10) ?? 'detached'}
                   </span>
-                  <span className="truncate text-xs text-chrome-fg-subtle">
+                  <span className="truncate text-micro text-chrome-fg-subtle">
                     {repo?.rootPath ?? review.repoId}
                   </span>
                 </div>

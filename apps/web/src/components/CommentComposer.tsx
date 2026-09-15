@@ -27,7 +27,7 @@ export function CommentComposer({
   };
 
   return (
-    <div className="flex flex-col gap-1.5 rounded-md border border-chrome-border-strong bg-chrome-bg-raised p-2">
+    <div className="flex flex-col gap-1.5 rounded-md border border-chrome-border-strong bg-chrome-bg-raised p-1.5">
       <textarea
         ref={ref}
         autoFocus={autoFocus}
@@ -51,11 +51,11 @@ export function CommentComposer({
         // page-wide `:focus-visible` rule in styles/index.css; the
         // `focus-visible:border-chrome-accent` here is a second, same-hue
         // cue on the textarea's own border, not a competing treatment.
-        className="w-full resize-none rounded border border-chrome-border bg-chrome-bg p-1.5 text-[13px] text-chrome-fg outline-hidden focus-visible:border-chrome-accent"
+        className="w-full resize-none rounded border border-chrome-border bg-chrome-bg p-1.5 text-body text-chrome-fg outline-hidden focus-visible:border-chrome-accent"
         aria-label="Comment body"
       />
       <div className="flex items-center justify-between">
-        <span className="text-[11px] text-chrome-fg-subtle">Markdown supported</span>
+        <span className="text-micro text-chrome-fg-subtle">Markdown supported</span>
         <div className="flex items-center gap-1">
           {onCancel !== undefined && (
             <button

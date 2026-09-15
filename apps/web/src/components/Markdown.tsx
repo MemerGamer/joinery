@@ -44,15 +44,20 @@ function CodeBlock({
     return <div className="thread-code-block text-xs" dangerouslySetInnerHTML={{ __html: html }} />;
   }
   return (
-    <pre className="overflow-x-auto rounded bg-chrome-bg-sunken p-2 text-xs">
+    <pre className="overflow-x-auto rounded bg-chrome-bg-sunken p-1.5 text-xs">
       <code>{code}</code>
     </pre>
   );
 }
 
+// Body-scale prose (13px) with secondary-scale (12px) inline/fenced code, per
+// the shared type scale — this renders both in the narrow reading-order
+// panel (as step explanations, sized down to `text-xs` by that caller) and
+// in thread bodies, so it needs to look right at both its own default size
+// and when a caller overrides it smaller.
 export function Markdown({ children }: { children: string }): React.JSX.Element {
   return (
-    <div className="prose-sm max-w-none text-[13px] leading-relaxed text-chrome-fg [&_a]:text-chrome-accent [&_code]:text-[12px] [&_p]:my-1">
+    <div className="prose-sm max-w-none text-body leading-snug text-chrome-fg [&_a]:text-chrome-accent [&_code]:text-xs [&_p]:my-1">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{

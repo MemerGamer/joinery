@@ -57,7 +57,7 @@ export function RevisionPicker(): React.JSX.Element | null {
             // switch is in flight either way, and the animation is decorative.
             aria-busy={pending}
             onClick={() => void setRevision(rev)}
-            className={`cursor-pointer rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+            className={`cursor-pointer rounded px-2.5 py-1 text-xs font-medium transition-colors ${
               active
                 ? 'bg-chrome-bg text-chrome-fg shadow-[var(--chrome-shadow)]'
                 : 'text-chrome-fg-muted hover:text-chrome-fg'
