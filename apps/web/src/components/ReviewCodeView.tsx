@@ -262,6 +262,7 @@ export function ReviewCodeView(): React.JSX.Element {
           type="button"
           onClick={() => toggleFileCollapsed(item.id)}
           aria-label={item.collapsed === true ? `Expand ${item.id}` : `Collapse ${item.id}`}
+          title={item.collapsed === true ? `Expand ${item.id}` : `Collapse ${item.id}`}
           aria-expanded={item.collapsed !== true}
           className="chrome-icon-btn -ml-1 size-6 text-chrome-fg-subtle"
         >

@@ -740,15 +740,6 @@ export function ReviewProvider({
     [reviewId, state.fileList],
   );
 
-  const toggleViewed = useCallback(
-    async (path: string) => {
-      const entry = state.fileList.find((f) => f.path === path);
-      if (entry === undefined) return;
-      await setViewed(path, !isViewed(entry));
-    },
-    [setViewed, isViewed, state.fileList],
-  );
-
   const reloadThreads = useCallback(async () => {
     // Scoped to this tab's own revision — positions for any revision other
     // than the review's persisted one are projected server-side at read
@@ -832,6 +823,19 @@ export function ReviewProvider({
       setItemCollapsed(path, !(rec.item.collapsed ?? false), true);
     },
     [setItemCollapsed],
+  );
+
+  const toggleViewed = useCallback(
+    async (path: string) => {
+      const entry = state.fileList.find((f) => f.path === path);
+      if (entry === undefined) return;
+      const nextViewed = !isViewed(entry);
+      await setViewed(path, nextViewed);
+      // Marking a file viewed collapses it out of the way; unmarking it
+      // brings it back so it reads as "still needs a look" again.
+      setItemCollapsed(path, nextViewed, true);
+    },
+    [setViewed, isViewed, state.fileList, setItemCollapsed],
   );
 
   const expandFileForNavigation = useCallback(
