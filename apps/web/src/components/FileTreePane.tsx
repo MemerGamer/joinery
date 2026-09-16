@@ -51,12 +51,17 @@ function chromeToTreeStyles(): TreeThemeStyles {
     '--trees-theme-sidebar-fg': chrome('--chrome-fg'),
     '--trees-theme-sidebar-header-fg': chrome('--chrome-fg-muted'),
     '--trees-theme-sidebar-border': chrome('--chrome-border'),
-    '--trees-theme-list-hover-bg': chrome('--chrome-bg-sunken'),
-    '--trees-theme-list-active-selection-bg': chrome('--chrome-accent'),
-    '--trees-theme-list-active-selection-fg': chrome('--chrome-accent-fg'),
+    '--trees-theme-list-hover-bg': chrome('--chrome-bg-hover'),
+    // Tint rather than a solid accent block — see `chrome-row-selected` in
+    // styles/index.css; the tree can't use that utility (shadow root) so the
+    // same treatment is spelled out here.
+    '--trees-theme-list-active-selection-bg': chrome('--chrome-accent-soft'),
+    '--trees-theme-list-active-selection-fg': chrome('--chrome-fg'),
     '--trees-theme-input-bg': chrome('--chrome-bg'),
     '--trees-theme-input-fg': chrome('--chrome-fg'),
-    '--trees-theme-focus-ring': chrome('--chrome-focus-ring'),
+    // No outline on the focused/selected row: the tint alone marks it,
+    // matching the reading-order rows.
+    '--trees-theme-focus-ring': 'transparent',
     '--trees-theme-scrollbar-thumb': chrome('--chrome-border-strong'),
     '--trees-theme-git-added-fg': chrome('--chrome-success'),
     '--trees-theme-git-modified-fg': chrome('--chrome-accent'),
@@ -87,9 +92,9 @@ function collectDirectoryPaths(paths: readonly string[]): string[] {
 }
 
 export function FileTreePane(): React.JSX.Element {
-  const { fileList, viewed, isViewed, selectedPath, setSelectedPath, expandFileForNavigation } =
+  const { fileList, viewed, isViewed, selectedPath, setSelectedPath, expandFileForNavigation, codeViewRef } =
     useReview();
-  const { chromeMode } = useTheme();
+  const { chromeMode, chromeVersion } = useTheme();
   const byPath = useMemo(() => new Map(fileList.map((f) => [f.path, f])), [fileList]);
 
   const sorted = useMemo(() => [...fileList].sort(compareFileEntries), [fileList]);
@@ -107,8 +112,8 @@ export function FileTreePane(): React.JSX.Element {
   // forever: they read live data through this ref instead of closing over it,
   // or the tree renders whatever the first render happened to see (which is
   // why the "viewed" check never appeared).
-  const liveRef = useRef({ byPath, isViewed, setSelectedPath, expandFileForNavigation });
-  liveRef.current = { byPath, isViewed, setSelectedPath, expandFileForNavigation };
+  const liveRef = useRef({ byPath, isViewed, setSelectedPath, expandFileForNavigation, codeViewRef });
+  liveRef.current = { byPath, isViewed, setSelectedPath, expandFileForNavigation, codeViewRef };
 
   const { model } = useFileTree({
     preparedInput,
@@ -158,6 +163,10 @@ export function FileTreePane(): React.JSX.Element {
         liveRef.current.setSelectedPath(first);
         // Navigating to a file should never land on a collapsed diff.
         liveRef.current.expandFileForNavigation(first);
+        // Selection only fires from clicks/keys inside the tree (nothing
+        // pushes `selectedPath` back into the model), so scrolling here
+        // can't loop with the reading-order pane's own jump.
+        liveRef.current.codeViewRef.current?.scrollTo({ type: 'item', id: first, align: 'start' });
       }
     },
   });
@@ -218,7 +227,10 @@ export function FileTreePane(): React.JSX.Element {
   // `chromeMode`'s setter writes `documentElement`'s `data-theme` attribute
   // synchronously before the state update that re-renders this component, so
   // by the time this runs, `getComputedStyle` already sees the new value.
-  const treeStyles = useMemo(() => chromeToTreeStyles(), [chromeMode]);
+  // `chromeVersion` bumps after `lib/deriveChrome.ts` rewrites the palette
+  // from the active diff theme, which is the other time these change.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const treeStyles = useMemo(() => chromeToTreeStyles(), [chromeMode, chromeVersion]);
 
   return (
     // `pt-4 pb-2`, not padding inside the tree itself: `@pierre/trees` renders
@@ -237,10 +249,11 @@ export function FileTreePane(): React.JSX.Element {
     // stylesheet) — the tree's own internal scroll math never sees it, so
     // scrolling/virtualization behave exactly as before, just inside a
     // slightly smaller, better-inset box.
-    <nav
-      aria-label="Changed files"
-      className="flex h-full w-full flex-col overflow-hidden pt-4 pb-2"
-    >
+    <nav aria-label="Changed files" className="flex h-full w-full flex-col overflow-hidden pb-2">
+      <div className="flex h-10 shrink-0 items-center gap-2 px-4">
+        <h2 className="text-body font-medium text-chrome-fg">Files</h2>
+        <span className="text-micro tabular-nums text-chrome-fg-subtle">{fileList.length}</span>
+      </div>
       <FileTree model={model} style={treeStyles} />
     </nav>
   );

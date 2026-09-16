@@ -27,6 +27,7 @@ export interface KeymapActions {
   toggleLeftPanel?: () => void;
   toggleRightPanel?: () => void;
   toggleThreadsPanel?: () => void;
+  toggleComments?: () => void;
   toggleUnifiedSplit?: () => void;
   expandHunk?: () => void;
   expandWholeFile?: () => void;
@@ -36,7 +37,6 @@ export interface KeymapActions {
   setRevisionHead?: () => void;
   setRevisionPr?: () => void;
   goHomebase?: () => void;
-  goSteps?: () => void;
   openPalette?: () => void;
   /** `Cmd+P`: opens the command palette straight into its file-jump view. */
   openPaletteFiles?: () => void;
@@ -90,6 +90,8 @@ function buildKeymap(actionsRef: { current: KeymapActions }): Record<string, (e:
     // (`b`) — see the doc comment above.
     ...bind(`${MOD.primary}+${MOD.opt}+KeyB`, 'toggleRightPanel'),
     ...bind('t', 'toggleThreadsPanel'),
+    // Not in SPEC §11: `c` starts a comment, so `Shift+c` hides/shows them.
+    ...bind('Shift+c', 'toggleComments'),
     ...bind('u', 'toggleUnifiedSplit'),
     ...bind('e', 'expandHunk'),
     ...bind('Shift+e', 'expandWholeFile'),
@@ -101,7 +103,6 @@ function buildKeymap(actionsRef: { current: KeymapActions }): Record<string, (e:
     ...bind('2', 'setRevisionHead'),
     ...bind('3', 'setRevisionPr'),
     ...bind('g h', 'goHomebase'),
-    ...bind('g s', 'goSteps'),
     ...bind(`${MOD.primary}+k`, 'openPalette'),
     // Plain `p` is already bound to `prevStep` above — these are both
     // `$mod` chords, so neither collides with it.

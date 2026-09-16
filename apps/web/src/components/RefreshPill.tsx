@@ -14,10 +14,13 @@ export function RefreshPill(): React.JSX.Element | null {
     <button
       type="button"
       onClick={applyPendingRefresh}
-      className="fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-chrome-border-strong bg-chrome-bg-raised px-3 py-2 text-xs font-medium text-chrome-fg shadow-[var(--chrome-shadow)] transition-colors hover:bg-chrome-bg-sunken active:bg-chrome-bg"
+      className="fixed bottom-5 left-1/2 z-30 flex h-8 -translate-x-1/2 items-center gap-2 rounded-full bg-chrome-bg-raised ring-1 ring-chrome-fg/10 pl-3 pr-3.5 text-xs font-medium text-chrome-fg shadow-chrome transition-colors hover:bg-chrome-bg-hover"
     >
-      <RefreshCw size={14} strokeWidth={1.5} aria-hidden />
-      {pendingCount} file{pendingCount === 1 ? '' : 's'} updated · Refresh
+      <RefreshCw size={13} strokeWidth={1.75} aria-hidden />
+      <span className="text-chrome-fg-muted">
+        {pendingCount} file{pendingCount === 1 ? '' : 's'} updated
+      </span>
+      <span className="text-chrome-accent">Refresh</span>
     </button>
   );
 }

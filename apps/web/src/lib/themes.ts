@@ -14,6 +14,8 @@ import { pierreThemes, shikiThemes, themes as allThemes } from '@pierre/theming/
 
 export interface ThemeOption {
   name: string;
+  /** Human label from the collection (e.g. "Pierre Dark"); falls back to `name`. */
+  displayName: string;
   colorScheme: 'light' | 'dark' | undefined;
   collection: 'pierre' | 'shiki';
   /** Colorblind-safe Pierre variant — surfaced directly, not buried (§3, §6). */
@@ -26,6 +28,7 @@ function toOption(name: string, collection: 'pierre' | 'shiki'): ThemeOption {
   const descriptor = allThemes.getTheme(name);
   return {
     name,
+    displayName: descriptor?.displayName ?? name,
     colorScheme: descriptor?.colorScheme,
     collection,
     colorblindSafe: collection === 'pierre' && COLORBLIND_RE.test(name),

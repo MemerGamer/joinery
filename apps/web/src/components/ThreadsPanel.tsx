@@ -7,6 +7,7 @@ import { Check, MessageSquare, X } from 'lucide-react';
 import { useState } from 'react';
 import type { Thread } from '@review/core';
 import { useReview } from '../state/ReviewContext.tsx';
+import { threadSummary } from '../lib/threadSummary.ts';
 
 export function ThreadsPanel(): React.JSX.Element {
   const { threads, toggleThreadsPanel, setSelectedPath, codeViewRef } = useReview();
@@ -30,38 +31,38 @@ export function ThreadsPanel(): React.JSX.Element {
       aria-label="Threads"
       className="absolute inset-0 z-10 flex flex-col bg-chrome-bg"
     >
-      <div className="flex items-center justify-between border-b border-chrome-border px-2 py-1.5">
+      <div className="flex h-10 items-center justify-between pl-4 pr-2">
         {/* Quieter than a section micro-header: this label's only job is to
             tell you the reading order is covered by the threads panel, not
             to title self-evident content, so it takes the same weight as a
             step title rather than the shoutier uppercase treatment. */}
-        <h2 className="text-body font-semibold text-chrome-fg-muted">Threads</h2>
+        <h2 className="text-body font-medium text-chrome-fg">Threads</h2>
         <button
           type="button"
           onClick={toggleThreadsPanel}
           aria-label="Close threads panel"
-          className="rounded-md p-1 text-chrome-fg-muted transition-colors hover:bg-chrome-bg-raised hover:text-chrome-fg"
+          className="chrome-icon-btn"
         >
           <X size={15} strokeWidth={1.5} aria-hidden />
         </button>
       </div>
-      <div className="flex gap-1 border-b border-chrome-border p-1.5">
+      <div className="flex gap-1 px-4 pb-1.5">
         <button
           type="button"
           onClick={() => setFilter('open')}
-          className={`flex-1 rounded px-2 py-1 text-xs font-medium transition-colors ${filter === 'open' ? 'bg-chrome-bg-sunken text-chrome-fg' : 'text-chrome-fg-muted hover:text-chrome-fg'}`}
+          className={`h-6 rounded-md px-2.5 text-xs font-medium transition-colors ${filter === 'open' ? 'bg-chrome-bg-active text-chrome-fg' : 'text-chrome-fg-muted hover:bg-chrome-bg-hover hover:text-chrome-fg'}`}
         >
           Open
         </button>
         <button
           type="button"
           onClick={() => setFilter('resolved')}
-          className={`flex-1 rounded px-2 py-1 text-xs font-medium transition-colors ${filter === 'resolved' ? 'bg-chrome-bg-sunken text-chrome-fg' : 'text-chrome-fg-muted hover:text-chrome-fg'}`}
+          className={`h-6 rounded-md px-2.5 text-xs font-medium transition-colors ${filter === 'resolved' ? 'bg-chrome-bg-active text-chrome-fg' : 'text-chrome-fg-muted hover:bg-chrome-bg-hover hover:text-chrome-fg'}`}
         >
           Resolved
         </button>
       </div>
-      <ul className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
+      <ul className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-4 pb-4 pt-1">
         {visible.length === 0 && (
           <li className="p-2 text-center text-xs text-chrome-fg-muted">No {filter} threads.</li>
         )}
@@ -70,9 +71,9 @@ export function ThreadsPanel(): React.JSX.Element {
             <button
               type="button"
               onClick={() => jumpTo(thread)}
-              className="flex w-full flex-col gap-1 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-chrome-bg-raised"
+              className="flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-chrome-bg-hover"
             >
-              <span className="flex items-center gap-1.5 text-micro text-chrome-fg-subtle">
+              <span className="flex items-center gap-1.5 font-mono text-micro text-chrome-fg-subtle">
                 {thread.status === 'resolved' ? (
                   <Check size={12} strokeWidth={1.5} className="shrink-0" aria-hidden />
                 ) : (
@@ -83,7 +84,7 @@ export function ThreadsPanel(): React.JSX.Element {
                 </span>
               </span>
               <span className="truncate text-body text-chrome-fg">
-                {thread.comments[0]?.bodyMd ?? '(empty)'}
+                {threadSummary(thread.comments[0]?.bodyMd ?? '') || '(empty)'}
               </span>
             </button>
           </li>

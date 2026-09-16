@@ -42,7 +42,7 @@ export function RevisionPicker(): React.JSX.Element | null {
     <div
       role="radiogroup"
       aria-label="Revision"
-      className="flex items-center gap-0.5 rounded-md bg-chrome-bg-sunken p-1"
+      className="flex items-center gap-1"
     >
       {reviewState.availableRevisions.map((rev) => {
         const active = rev === selected;
@@ -57,10 +57,10 @@ export function RevisionPicker(): React.JSX.Element | null {
             // switch is in flight either way, and the animation is decorative.
             aria-busy={pending}
             onClick={() => void setRevision(rev)}
-            className={`cursor-pointer rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+            className={`h-7 rounded-md px-2.5 text-xs font-medium transition-colors ${
               active
-                ? 'bg-chrome-bg text-chrome-fg shadow-[var(--chrome-shadow)]'
-                : 'text-chrome-fg-muted hover:text-chrome-fg'
+                ? 'bg-chrome-bg-active text-chrome-fg'
+                : 'text-chrome-fg-muted hover:bg-chrome-bg-hover hover:text-chrome-fg'
             } ${pending && sweeping ? 'chrome-sweep' : ''}`}
           >
             {LABELS[rev]}

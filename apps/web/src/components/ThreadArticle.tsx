@@ -1,15 +1,68 @@
 /**
- * One comment thread, rendered inline in the diff through Pierre's
- * annotation slot (SPEC §6, §8). `<article>`-level landmark so a screen
- * reader can walk threads (§3). Outdated threads get a badge and stay put,
- * shown collapsed at their last known position with the captured context.
+ * One inline comment thread (SPEC §8), rendered as a `CodeView` line
+ * annotation. Outdated threads collapse to their anchor context by default;
+ * "changed since you commented" is a softer warning that keeps the thread
+ * open. Resolve/reopen and reply round-trip through the API and then ask the
+ * parent to reload threads.
  */
-import { AlertTriangle, Check, History } from 'lucide-react';
+import { AlertTriangle, Bot, Check, ChevronDown, History, MessageSquare, User } from 'lucide-react';
 import { useState } from 'react';
 import type { Thread } from '@review/core';
 import { callApi } from '../lib/apiClient.ts';
 import { CommentComposer } from './CommentComposer.tsx';
 import { Markdown } from './Markdown.tsx';
+import { threadSummary } from '../lib/threadSummary.ts';
+
+/**
+ * `createdAt` comes from SQLite's `unixepoch()` (seconds); anything that
+ * small would render as January 1970 through `Date`. Accept both units so a
+ * millisecond timestamp from elsewhere still formats correctly.
+ */
+function toMs(createdAt: number): number {
+  return createdAt < 1e12 ? createdAt * 1000 : createdAt;
+}
+
+function formatTimestamp(createdAt: number): string {
+  const date = new Date(toMs(createdAt));
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function Badge({
+  tone,
+  icon,
+  children,
+  onClick,
+}: {
+  tone: 'warning' | 'success';
+  icon: React.ReactNode;
+  children: React.ReactNode;
+  onClick?: () => void;
+}): React.JSX.Element {
+  const cls = `flex h-5 items-center gap-1 rounded-full px-2 text-micro font-medium ${
+    tone === 'warning' ? 'bg-chrome-warning-bg text-chrome-warning' : 'bg-chrome-success-bg text-chrome-success'
+  }`;
+  if (onClick !== undefined) {
+    return (
+      <button type="button" onClick={onClick} className={`${cls} hover:brightness-110`}>
+        {icon}
+        {children}
+      </button>
+    );
+  }
+  return (
+    <span className={cls}>
+      {icon}
+      {children}
+    </span>
+  );
+}
 
 export function ThreadArticle({
   thread,
@@ -19,10 +72,16 @@ export function ThreadArticle({
   onChanged: () => void;
 }): React.JSX.Element {
   const [replying, setReplying] = useState(false);
+  // Resolved threads start collapsed; resolving/reopening re-syncs the
+  // default (same derive-from-props pattern as `collapsedOutdated` below),
+  // while a manual toggle in between is respected until the status changes.
+  const [collapsed, setCollapsed] = useState(thread.status === 'resolved');
+  const [prevStatus, setPrevStatus] = useState(thread.status);
+  if (thread.status !== prevStatus) {
+    setPrevStatus(thread.status);
+    setCollapsed(thread.status === 'resolved');
+  }
   const [collapsedOutdated, setCollapsedOutdated] = useState(thread.outdated);
-  // Re-sync the collapse state whenever `thread.outdated` flips (e.g. the
-  // file is reverted and the thread stops being outdated), while still
-  // letting the user toggle it manually in between.
   const [prevOutdated, setPrevOutdated] = useState(thread.outdated);
   if (thread.outdated !== prevOutdated) {
     setPrevOutdated(thread.outdated);
@@ -40,75 +99,136 @@ export function ThreadArticle({
     onChanged();
   };
 
+  const resolved = thread.status === 'resolved';
+  const hasBadges = thread.outdated || thread.changedSinceComment || resolved;
+  const commentCount = thread.comments.length;
+  const summary = threadSummary(thread.comments[0]?.bodyMd ?? '');
+
+  if (collapsed) {
+    // One diff line tall, no card: a collapsed thread should read as part
+    // of the code (like a hunk separator), not as a floating box.
+    return (
+      <article
+        aria-label={`Thread on ${thread.path} line ${thread.startLine} (collapsed)`}
+        className="w-full max-w-2xl font-sans"
+      >
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          aria-expanded={false}
+          title={commentCount === 1 ? '1 comment' : `${commentCount} comments`}
+          className={`flex h-[22px] w-full min-w-0 items-center gap-2 rounded-[4px] px-2 text-left text-xs transition-colors hover:bg-chrome-bg-hover ${
+            resolved ? 'text-chrome-fg-subtle' : 'text-chrome-fg-muted'
+          }`}
+        >
+          <MessageSquare
+            size={12}
+            strokeWidth={1.75}
+            className={`shrink-0 ${resolved ? 'text-chrome-success' : 'text-chrome-accent'}`}
+            aria-hidden
+          />
+          {thread.outdated && <History size={11} strokeWidth={1.75} className="shrink-0 text-chrome-warning" aria-hidden />}
+          <span className="min-w-0 flex-1 truncate">{summary}</span>
+        </button>
+      </article>
+    );
+  }
+
   return (
     <article
       aria-label={`Thread on ${thread.path} line ${thread.startLine}`}
-      className="my-1 flex w-full max-w-xl flex-col gap-1.5 rounded-md border border-chrome-border bg-chrome-bg-raised p-2 text-chrome-fg shadow-[var(--chrome-shadow)]"
+      className={`my-1.5 flex w-full max-w-2xl flex-col rounded-lg bg-chrome-bg-raised font-sans text-chrome-fg shadow-chrome ring-1 ring-chrome-fg/8 ${
+        resolved ? 'opacity-80' : ''
+      }`}
     >
-      <div className="flex items-center gap-1.5">
-        {thread.outdated && (
-          <button
-            type="button"
-            onClick={() => setCollapsedOutdated((v) => !v)}
-            className="flex items-center gap-1 rounded-full bg-chrome-warning-bg px-1.5 py-0.5 text-micro font-medium text-chrome-warning"
-          >
-            <History size={12} strokeWidth={1.5} aria-hidden />
-            Outdated
-          </button>
-        )}
-        {thread.changedSinceComment && !thread.outdated && (
-          <span className="flex items-center gap-1 rounded-full bg-chrome-warning-bg px-1.5 py-0.5 text-micro font-medium text-chrome-warning">
-            <AlertTriangle size={12} strokeWidth={1.5} aria-hidden />
-            Changed since you commented
-          </span>
-        )}
-        {thread.status === 'resolved' && (
-          <span className="flex items-center gap-1 rounded-full bg-chrome-success/10 px-1.5 py-0.5 text-micro font-medium text-chrome-success">
-            <Check size={12} strokeWidth={1.5} aria-hidden />
-            Resolved
-          </span>
-        )}
-        <div className="flex-1" />
+      <div className={`flex items-center gap-1.5 pl-2 pr-3 pt-2 ${hasBadges ? 'pb-0.5' : '-mb-1.5'}`}>
         <button
           type="button"
-          onClick={() => void resolve(thread.status !== 'resolved')}
-          className="rounded-md border border-chrome-border px-1.5 py-0.5 text-xs text-chrome-fg-muted hover:bg-chrome-bg-sunken"
+          onClick={() => setCollapsed(true)}
+          aria-expanded
+          aria-label="Collapse thread"
+          title="Collapse thread"
+          className="chrome-icon-btn size-6 text-chrome-fg-subtle"
         >
-          {thread.status === 'resolved' ? 'Reopen' : 'Resolve'}
+          <ChevronDown size={13} strokeWidth={1.75} aria-hidden />
         </button>
+        {hasBadges && (
+          <>
+          {thread.outdated && (
+            <Badge
+              tone="warning"
+              icon={<History size={11} strokeWidth={1.75} aria-hidden />}
+              onClick={() => setCollapsedOutdated((v) => !v)}
+            >
+              Outdated · {collapsedOutdated ? 'show' : 'hide'} comments
+            </Badge>
+          )}
+          {thread.changedSinceComment && !thread.outdated && (
+            <Badge tone="warning" icon={<AlertTriangle size={11} strokeWidth={1.75} aria-hidden />}>
+              Changed since you commented
+            </Badge>
+          )}
+          {resolved && (
+            <Badge tone="success" icon={<Check size={11} strokeWidth={2} aria-hidden />}>
+              Resolved
+            </Badge>
+          )}
+          </>
+        )}
       </div>
 
       {thread.outdated && collapsedOutdated ? (
-        <pre className="overflow-x-auto rounded bg-chrome-bg-sunken p-1.5 text-xs text-chrome-fg-subtle">
+        <pre className="mx-3 mb-1 mt-2 overflow-x-auto rounded-md bg-chrome-bg-sunken p-2 font-mono text-xs leading-relaxed text-chrome-fg-subtle">
           {thread.anchorContext}
         </pre>
       ) : (
-        <ul className="flex flex-col gap-1.5">
-          {thread.comments.map((comment) => (
-            <li key={comment.id} className="flex flex-col gap-0.5">
-              <div className="flex items-center gap-1.5 text-micro text-chrome-fg-subtle">
-                <span className="font-medium text-chrome-fg-muted">
-                  {comment.author === 'agent' ? 'Agent' : 'You'}
+        <ul className="flex flex-col gap-1 py-1">
+          {thread.comments.map((comment) => {
+            const agent = comment.author === 'agent';
+            return (
+              <li key={comment.id} className="flex gap-2.5 px-3 py-1.5">
+                <span
+                  className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full ${
+                    agent ? 'bg-chrome-accent-soft text-chrome-accent' : 'bg-chrome-bg-sunken text-chrome-fg-muted'
+                  }`}
+                  aria-hidden
+                >
+                  {agent ? <Bot size={12} strokeWidth={1.75} /> : <User size={12} strokeWidth={1.75} />}
                 </span>
-                <span>{new Date(comment.createdAt).toLocaleString()}</span>
-              </div>
-              <Markdown>{comment.bodyMd}</Markdown>
-            </li>
-          ))}
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <div className="flex items-baseline gap-2 text-micro">
+                    <span className="font-medium text-chrome-fg">{agent ? 'Agent' : 'You'}</span>
+                    <time className="text-chrome-fg-subtle" dateTime={new Date(toMs(comment.createdAt)).toISOString()}>
+                      {formatTimestamp(comment.createdAt)}
+                    </time>
+                  </div>
+                  <Markdown>{comment.bodyMd}</Markdown>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
 
-      {replying ? (
-        <CommentComposer onSubmit={(body, ask) => void reply(body, ask)} onCancel={() => setReplying(false)} />
-      ) : (
-        <button
-          type="button"
-          onClick={() => setReplying(true)}
-          className="self-start text-xs text-chrome-accent hover:underline"
-        >
-          Reply
-        </button>
-      )}
+      <div className="px-3 pb-2.5 pt-1">
+        {replying ? (
+          <CommentComposer
+            variant="inline"
+            placeholder="Reply…"
+            onSubmit={(body, ask) => void reply(body, ask)}
+            onCancel={() => setReplying(false)}
+          />
+        ) : (
+          <div className="flex items-center gap-1.5">
+            <button type="button" onClick={() => setReplying(true)} className="chrome-btn">
+              Reply
+            </button>
+            <button type="button" onClick={() => void resolve(!resolved)} className="chrome-btn">
+              {resolved ? 'Reopen' : 'Resolve'}
+            </button>
+          </div>
+        )}
+      </div>
     </article>
   );
 }

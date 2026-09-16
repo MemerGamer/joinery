@@ -20,6 +20,7 @@
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { DEFAULT_DIFF_THEME } from '../lib/themes.ts';
+import { DERIVE_CHROME_FROM_THEME, applyDerivedChrome, clearDerivedChrome } from '../lib/deriveChrome.ts';
 import { useCoordinatedThemeChange } from '../lib/workerPool.tsx';
 
 export type ChromeMode = 'light' | 'dark';
@@ -30,6 +31,8 @@ interface ThemeState {
 }
 
 interface ThemeCtxValue extends ThemeState {
+  /** Bumped after the chrome palette is re-derived from a diff theme; consumers that snapshot `--chrome-*` via `getComputedStyle` (the file tree) key on it. */
+  chromeVersion: number;
   setChromeMode: (mode: ChromeMode) => void;
   setDiffTheme: (theme: { dark: string; light: string }) => void;
 }
@@ -98,6 +101,7 @@ export function useTheme(): ThemeCtxValue {
 
 export function ThemeProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
   const [state, setState] = useState<ThemeState>(initialThemeState);
+  const [chromeVersion, setChromeVersion] = useState(0);
   const applyCoordinated = useCoordinatedThemeChange();
 
   const setChromeMode = useCallback((mode: ChromeMode) => {
@@ -126,13 +130,30 @@ export function ThemeProvider({ children }: { children: React.ReactNode }): Reac
     applyCoordinated({ diffTheme: activeName });
   }, [activeName, applyCoordinated]);
 
+  // Re-tint the chrome from the active diff theme (see lib/deriveChrome.ts).
+  // Cancelled on change so a slow theme load can't overwrite a newer one.
+  useEffect(() => {
+    if (!DERIVE_CHROME_FROM_THEME) return;
+    let cancelled = false;
+    applyDerivedChrome(activeName, () => cancelled)
+      .catch(() => {
+        if (!cancelled) clearDerivedChrome();
+      })
+      .finally(() => {
+        if (!cancelled) setChromeVersion((v) => v + 1);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeName]);
+
   useEffect(() => {
     persistThemeState(state);
   }, [state]);
 
   const value = useMemo<ThemeCtxValue>(
-    () => ({ ...state, setChromeMode, setDiffTheme }),
-    [state, setChromeMode, setDiffTheme],
+    () => ({ ...state, chromeVersion, setChromeMode, setDiffTheme }),
+    [state, chromeVersion, setChromeMode, setDiffTheme],
   );
 
   return <ThemeCtx.Provider value={value}>{children}</ThemeCtx.Provider>;

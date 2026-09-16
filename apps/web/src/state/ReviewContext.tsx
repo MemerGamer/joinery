@@ -157,6 +157,9 @@ export interface ReviewEngine extends ReviewEngineState {
   leftPanelOpen: boolean;
   rightPanelOpen: boolean;
   threadsPanelOpen: boolean;
+  /** Whether inline comment threads render in the diff at all. */
+  commentsVisible: boolean;
+  toggleComments: () => void;
   setLeftPanelOpen: (open: boolean) => void;
   setRightPanelOpen: (open: boolean) => void;
   setThreadsPanelOpen: (open: boolean) => void;
@@ -295,21 +298,28 @@ export function ReviewProvider({
 
   const draftRef = useRef<DraftThread | null>(null);
   draftRef.current = draftThread;
+  const [commentsVisible, setCommentsVisible] = useState(true);
+  const commentsVisibleRef = useRef(true);
+  commentsVisibleRef.current = commentsVisible;
 
   const buildAnnotationsFor = useCallback(
     (path: string, threads: Thread[]): DiffLineAnnotation<ThreadAnnotationMeta>[] => {
-      const fromThreads = threads
+      // Hidden comments drop out of the annotation set entirely (the
+      // draft composer stays, since you just asked for it).
+      const fromThreads = (commentsVisibleRef.current ? threads : [])
         .filter((t) => t.path === path)
         .map((t) => ({
           side: t.side === 'old' ? ('deletions' as const) : ('additions' as const),
-          lineNumber: t.startLine,
+          // Anchored after the *last* selected line, so the card never
+          // sits above the code it discusses.
+          lineNumber: t.endLine,
           metadata: { threadId: t.id },
         }));
       const draft = draftRef.current;
       if (draft !== null && draft.path === path) {
         fromThreads.push({
           side: draft.side === 'old' ? 'deletions' : 'additions',
-          lineNumber: draft.startLine,
+          lineNumber: draft.endLine,
           metadata: { threadId: DRAFT_THREAD_ID },
         });
       }
@@ -590,8 +600,10 @@ export function ReviewProvider({
       setAnnotationsVersion((v) => v + 1);
       setItemsVersion((v) => v + 1);
     }
+    // `commentsVisible` is read through a ref inside `buildAnnotationsFor`;
+    // it is listed here so toggling re-derives every thread path.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.threads, draftThread, notifyItemMutated]);
+  }, [state.threads, draftThread, notifyItemMutated, commentsVisible]);
 
   const applyPendingRefresh = useCallback(() => {
     // Viewport anchor (§5, *Scroll and selection stability*): capture the
@@ -902,6 +914,8 @@ export function ReviewProvider({
     toggleLeftPanel: () => setLeftPanelOpen((v) => !v),
     toggleRightPanel: () => setRightPanelOpen((v) => !v),
     toggleThreadsPanel: () => setThreadsPanelOpen((v) => !v),
+    commentsVisible,
+    toggleComments: () => setCommentsVisible((v) => !v),
     selectedPath,
     setSelectedPath,
     setRevision,

@@ -50,6 +50,7 @@ import {
   PanelLeft,
   PanelRight,
   Rows2,
+  Search,
   Sparkles,
   Sun,
   Moon,
@@ -75,7 +76,7 @@ function parseSearch(raw: string): { mode: Mode; query: string } {
 }
 
 const MODE_PLACEHOLDER: Record<Mode, string> = {
-  root: 'Jump to a file, step, or thread… (try > # or @)',
+  root: 'Search files, steps, and threads…',
   command: 'Run a command…',
   theme: 'Switch theme…',
   review: 'Switch review…',
@@ -98,8 +99,12 @@ const ROOT_CAP = 6;
 // highlight has to land on the row the instant it's selected. An animated
 // background lags visibly behind a held-down arrow key and reads as broken.
 // Do not re-add a transition here for selected/hover state.
+// Selection is a neutral fill, not the accent: the accent is reserved for
+// "this is on/active" (the checkmarks, the pressed toggles), while the
+// highlighted row is just the cursor. A solid accent bar the full width of
+// the palette was the loudest thing on screen for what is only a hover.
 const ITEM_CLASS =
-  'flex items-center gap-2 rounded-md px-2 py-1 text-body text-chrome-fg outline-hidden data-[selected=true]:bg-chrome-accent data-[selected=true]:text-chrome-accent-fg [&_svg]:shrink-0 [&_svg]:text-chrome-fg-subtle data-[selected=true]:[&_svg]:text-chrome-accent-fg';
+  'flex h-8 items-center gap-2.5 rounded-md px-2.5 text-body text-chrome-fg outline-hidden data-[selected=true]:bg-chrome-bg-active [&_svg]:shrink-0 [&_svg]:text-chrome-fg-subtle data-[selected=true]:[&_svg]:text-chrome-fg-muted';
 
 /** Builds the same `Command.Item` `value` string used for a theme option, both to render it and to look it up again from `Command`'s `onValueChange` (see the live-preview effect below). */
 function themeItemValue(opt: ThemeOption): string {
@@ -243,7 +248,14 @@ export function CommandPalette({
       open={open}
       onOpenChange={onOpenChange}
       label="Command palette"
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-[15vh]"
+      // Theme mode is a live preview: the palette gets out of the way (docked
+      // bottom-right, no dim, no blur) so the chrome and diff it's recolouring
+      // are actually visible while you arrow through the list.
+      className={
+        mode === 'theme'
+          ? 'fixed inset-0 z-50 flex items-end justify-end p-4'
+          : 'fixed inset-0 z-50 flex items-start justify-center bg-black/25 pt-[14vh] backdrop-blur-[2px]'
+      }
       // cmdk's `Command.Dialog` renders this whole backdrop (Radix Dialog's
       // `Content`, not its `Overlay`) as one full-viewport element, with our
       // actual dialog frame as its one child — so a click that lands on the
@@ -260,10 +272,16 @@ export function CommandPalette({
       onValueChange={setHighlightedValue}
       loop
     >
-      <div className="w-full max-w-lg overflow-hidden rounded-lg border border-chrome-border bg-chrome-bg-raised shadow-[var(--chrome-shadow)] focus-within:border-chrome-accent">
-        <div className="flex items-center gap-2 border-b border-chrome-border px-3 py-2">
-          {mode !== 'root' && (
-            <span className="shrink-0 rounded-md border border-chrome-border-strong bg-chrome-bg-sunken px-1.5 py-0.5 text-micro font-medium uppercase tracking-wide text-chrome-fg-subtle">
+      <div
+        className={`w-full overflow-hidden rounded-xl bg-chrome-bg-raised shadow-[0_16px_48px_-12px_rgba(0,0,0,0.35),0_0_0_0.5px_light-dark(rgba(20,22,30,0.18),rgba(255,255,255,0.1))] ${
+          mode === 'theme' ? 'max-w-sm' : 'max-w-xl'
+        }`}
+      >
+        <div className="flex h-12 items-center gap-2.5 px-3.5">
+          {mode === 'root' ? (
+            <Search size={15} strokeWidth={1.75} className="shrink-0 text-chrome-fg-subtle" aria-hidden />
+          ) : (
+            <span className="flex h-5 shrink-0 items-center rounded-md bg-chrome-accent-soft px-1.5 text-xs font-medium text-chrome-accent">
               {MODE_LABEL[mode]}
             </span>
           )}
@@ -289,11 +307,11 @@ export function CommandPalette({
             // Tailwind utility regardless of specificity or source order;
             // the frame's own `focus-within:border-chrome-accent` above is
             // the palette's real "focused" treatment instead.
-            className="w-full bg-transparent text-body text-chrome-fg outline-hidden! placeholder:text-chrome-fg-subtle"
+            className="w-full bg-transparent text-[14px] text-chrome-fg outline-hidden! placeholder:text-chrome-fg-subtle"
           />
         </div>
-        <Command.List className="max-h-96 overflow-y-auto p-1.5">
-          <Command.Empty className="p-6 text-center text-xs text-chrome-fg-muted">No results.</Command.Empty>
+        <Command.List className={`overflow-y-auto border-t border-chrome-border px-1.5 pb-1.5 pt-1 ${mode === 'theme' ? 'max-h-[50vh]' : 'max-h-[420px]'}`}>
+          <Command.Empty className="px-3 py-8 text-center text-xs text-chrome-fg-muted">No results.</Command.Empty>
 
           {mode === 'root' && (
             <>
@@ -397,7 +415,7 @@ export function CommandPalette({
                   <GitCommitHorizontal size={14} strokeWidth={1.5} aria-hidden />
                   Switch to {rev}
                   {review.reviewState?.currentRevision === rev && (
-                    <Check size={13} strokeWidth={2} className="ml-auto" aria-hidden />
+                    <Check size={13} strokeWidth={2} className="ml-auto text-chrome-accent!" aria-hidden />
                   )}
                 </Command.Item>
               ))}
@@ -548,12 +566,37 @@ export function CommandPalette({
                 >
                   <GitBranch size={14} strokeWidth={1.5} aria-hidden />
                   <span className="truncate">{r.branch ?? r.id}</span>
-                  {r.id === currentReview?.id && <Check size={13} strokeWidth={2} className="ml-auto" aria-hidden />}
+                  {r.id === currentReview?.id && <Check size={13} strokeWidth={2} className="ml-auto text-chrome-accent!" aria-hidden />}
                 </Command.Item>
               ))}
             </Group>
           )}
         </Command.List>
+        <div className="flex h-8 items-center gap-3 border-t border-chrome-border px-3.5 text-micro text-chrome-fg-subtle">
+          <span className="flex items-center gap-1">
+            <Key>↑</Key>
+            <Key>↓</Key>
+            navigate
+          </span>
+          <span className="flex items-center gap-1">
+            <Key>↵</Key>
+            select
+          </span>
+          <span className="flex items-center gap-1">
+            <Key>esc</Key>
+            {mode === 'root' ? 'close' : 'back'}
+          </span>
+          {mode === 'root' && (
+            <span className="ml-auto flex items-center gap-1">
+              <Key>&gt;</Key>
+              commands
+              <Key>#</Key>
+              themes
+              <Key>@</Key>
+              reviews
+            </span>
+          )}
+        </div>
       </div>
     </Command.Dialog>
   );
@@ -569,21 +612,29 @@ function Group({ heading, children }: { heading: string; children: React.ReactNo
   return (
     <Command.Group
       heading={
-        <span className="block px-2 pt-2 pb-1 text-micro font-medium uppercase tracking-wide text-chrome-fg-subtle">
+        <span className="block px-2.5 pb-1 pt-2.5 text-micro font-medium uppercase tracking-wider text-chrome-fg-subtle">
           {heading}
         </span>
       }
     >
-      <div className="flex flex-col gap-0.5">{children}</div>
+      <div className="flex flex-col">{children}</div>
     </Command.Group>
+  );
+}
+
+function Key({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return (
+    <kbd className="flex h-4 min-w-4 items-center justify-center rounded-[3px] bg-chrome-bg-hover px-1 font-sans text-micro text-chrome-fg-muted">
+      {children}
+    </kbd>
   );
 }
 
 function Hint({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
-    <kbd className="ml-auto rounded border border-chrome-border-strong px-1.5 py-0.5 text-micro text-chrome-fg-subtle">
-      {children}
-    </kbd>
+    <span className="ml-auto">
+      <Key>{children}</Key>
+    </span>
   );
 }
 
@@ -597,16 +648,20 @@ function ThemeItem({
   onSelect: () => void;
 }): React.JSX.Element {
   return (
-    <Command.Item value={themeItemValue(opt)} onSelect={onSelect} className={ITEM_CLASS}>
-      <Palette size={14} strokeWidth={1.5} aria-hidden />
-      <span className="truncate">{opt.name}</span>
+    <Command.Item value={themeItemValue(opt)} onSelect={onSelect} className={ITEM_CLASS} title={opt.name}>
+      {opt.colorScheme === 'light' ? (
+        <Sun size={14} strokeWidth={1.5} aria-hidden />
+      ) : (
+        <Moon size={14} strokeWidth={1.5} aria-hidden />
+      )}
+      <span className="truncate">{opt.displayName}</span>
       <span className="ml-auto flex items-center gap-1.5">
         {opt.colorblindSafe && (
-          <span className="rounded border border-chrome-border-strong px-1 py-px text-micro uppercase tracking-wide text-chrome-fg-subtle">
+          <span className="rounded-[3px] bg-chrome-bg-hover px-1 text-micro text-chrome-fg-muted" title="Colorblind-safe">
             CB
           </span>
         )}
-        {active && <Check size={13} strokeWidth={2} aria-hidden />}
+        {active && <Check size={13} strokeWidth={2} className="text-chrome-accent!" aria-hidden />}
       </span>
     </Command.Item>
   );

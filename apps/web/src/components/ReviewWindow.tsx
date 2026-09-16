@@ -3,7 +3,7 @@
  * order — plus the header, divergence banner, staged-refresh pill, and the
  * global keymap + command palette.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { ReviewProvider, useReview } from '../state/ReviewContext.tsx';
 import { useGlobalKeymap } from '../lib/keymap.ts';
 import { useResizableWidth } from '../lib/useResizableWidth.ts';
@@ -40,30 +40,16 @@ function ReviewWindowInner(): React.JSX.Element {
     setPaletteOpen(true);
   };
 
-  // "Go to steps" is an open intent, not a toggle intent: it should always
-  // land on the right panel, focused, regardless of the panel's current
-  // state. `setRightPanelOpen(true)` below is idempotent, so this effect
-  // only needs to focus once the panel is actually open — immediately if it
-  // was already open, or after it mounts if this call is what opened it.
-  const rightPanelRef = useRef<HTMLDivElement | null>(null);
-  const focusRightPanelOnOpen = useRef(false);
-
   // Widths are per-side, independently persisted, so resizing one panel
   // never disturbs the other's remembered size.
   const leftPanel = useResizableWidth('left', { defaultWidth: 256, min: 180, max: 560 });
   const rightPanel = useResizableWidth('right', { defaultWidth: 320, min: 220, max: 640 });
 
-  useEffect(() => {
-    if (review.rightPanelOpen && focusRightPanelOnOpen.current) {
-      focusRightPanelOnOpen.current = false;
-      rightPanelRef.current?.focus();
-    }
-  }, [review.rightPanelOpen]);
-
   useGlobalKeymap({
     toggleLeftPanel: review.toggleLeftPanel,
     toggleRightPanel: review.toggleRightPanel,
     toggleThreadsPanel: review.toggleThreadsPanel,
+    toggleComments: review.toggleComments,
     toggleUnifiedSplit: () => review.setDiffStyle(review.diffStyle === 'split' ? 'unified' : 'split'),
     // GitHub's `v` toggles rather than only marks, and the header checkbox
     // it mirrors is a checkbox — so this has to clear the check too.
@@ -74,14 +60,6 @@ function ReviewWindowInner(): React.JSX.Element {
     setRevisionHead: () => void review.setRevision('head'),
     setRevisionPr: () => void review.setRevision('pr'),
     goHomebase: () => goHomebase(),
-    goSteps: () => {
-      if (review.rightPanelOpen) {
-        rightPanelRef.current?.focus();
-      } else {
-        focusRightPanelOnOpen.current = true;
-        review.setRightPanelOpen(true);
-      }
-    },
     openPalette: () => openPaletteIn(undefined),
     openPaletteFiles: () => openPaletteIn('file'),
     openPaletteCommands: () => openPaletteIn('command'),
@@ -113,7 +91,7 @@ function ReviewWindowInner(): React.JSX.Element {
         <button
           type="button"
           onClick={() => void review.reloadAll()}
-          className="rounded-md border border-chrome-border px-3 py-1.5 text-xs text-chrome-fg-muted hover:bg-chrome-bg-raised"
+          className="chrome-btn"
         >
           Retry
         </button>
@@ -146,32 +124,20 @@ function ReviewWindowInner(): React.JSX.Element {
           // handle can overhang into the seam; the rounded/clipping box is
           // the inner element.
           <div className="relative shrink-0" style={{ width: leftPanel.width }}>
-            <div className="h-full overflow-hidden rounded-lg border border-chrome-border bg-chrome-bg-raised">
+            <div className="chrome-island h-full">
               <FileTreePane />
             </div>
             <ResizeHandle side="right" aria-label="Resize file tree panel" {...leftPanel.handleProps} />
           </div>
         )}
-        <div className="min-w-0 flex-1 overflow-hidden rounded-lg border border-chrome-border bg-chrome-bg-raised">
+        <div className="min-w-0 flex-1">
+          {/* No island here: each file renders as its own card (see FILE_CARD_CSS in ReviewCodeView.tsx). */}
           <ReviewCodeView />
         </div>
         {review.rightPanelOpen && (
           <div className="relative shrink-0" style={{ width: rightPanel.width }}>
             <ResizeHandle side="left" aria-label="Resize reading order panel" {...rightPanel.handleProps} />
-            <div
-              ref={rightPanelRef}
-              tabIndex={-1}
-              // No `outline-none` here: `tabIndex={-1}` keeps the panel out of
-              // normal tab order (it's a "go to steps" landing target, not a
-              // stop a Tab press should ever reach), but the global
-              // `:focus-visible` rule (styles/index.css) still needs to draw
-              // when the shortcut moves focus here — that's the only way a
-              // keyboard user can tell the shortcut did anything. It's not a
-              // "permanent box": `:focus-visible` only paints while this
-              // element actually holds focus, and clears the instant focus
-              // moves on.
-              className="h-full overflow-hidden rounded-lg border border-chrome-border bg-chrome-bg-raised"
-            >
+            <div className="chrome-island h-full">
               <ReadingOrderPane />
             </div>
           </div>

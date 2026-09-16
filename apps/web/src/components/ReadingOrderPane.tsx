@@ -6,12 +6,10 @@
  * ReviewCodeView.tsx) so the explanation stays adjacent to the step's file
  * list; regeneration is only reachable from the command palette once a
  * reading order already exists, so there is no "Generate" affordance beyond
- * the initial empty state below. No pane header: the numbered steps are
- * self-evidently a reading order, so a "Reading order" label would only be
- * restating what's already on screen — that vertical space goes to content
- * instead.
+ * the initial empty state below. The title row doubles as the home for the
+ * Threads entry point, since the threads panel slides over this pane.
  */
-import { AlertTriangle, ChevronDown, ChevronRight, FileText, Sparkles } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, MessageSquare, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { runUiState } from '../lib/runState.ts';
 import { useReview } from '../state/ReviewContext.tsx';
@@ -19,8 +17,19 @@ import { Markdown } from './Markdown.tsx';
 import { ThreadsPanel } from './ThreadsPanel.tsx';
 
 export function ReadingOrderPane(): React.JSX.Element {
-  const { review, readingOrder, readingOrderRun, selectedPath, setSelectedPath, codeViewRef, generateReadingOrder, threadsPanelOpen } =
-    useReview();
+  const {
+    review,
+    readingOrder,
+    readingOrderRun,
+    selectedPath,
+    setSelectedPath,
+    codeViewRef,
+    generateReadingOrder,
+    threadsPanelOpen,
+    toggleThreadsPanel,
+    threads,
+  } = useReview();
+  const openThreads = threads.filter((t) => t.status === 'open').length;
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   const runState = runUiState(readingOrderRun);
@@ -40,6 +49,21 @@ export function ReadingOrderPane(): React.JSX.Element {
 
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden">
+      <div className="flex h-10 shrink-0 items-center gap-2 pl-4 pr-2">
+        <h2 className="text-body font-medium text-chrome-fg">Reading order</h2>
+        <div className="flex-1" />
+        <button
+          type="button"
+          onClick={toggleThreadsPanel}
+          aria-pressed={threadsPanelOpen}
+          title="Threads (T)"
+          className="chrome-btn h-6 bg-transparent px-1.5"
+        >
+          <MessageSquare size={13} strokeWidth={1.75} aria-hidden />
+          Threads
+          {openThreads > 0 && <span className="tabular-nums text-chrome-fg-subtle">{openThreads}</span>}
+        </button>
+      </div>
       {runState.phase === 'error' && (
         // A contained, inset card rather than a full-bleed band with a
         // `border-b`: that treatment dates from when this pane had its own
@@ -58,7 +82,7 @@ export function ReadingOrderPane(): React.JSX.Element {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-2 pb-2 pt-4">
+      <div className="flex-1 overflow-y-auto px-2 pb-4 pt-1">
         {noReadingOrder ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
             <p className="text-xs leading-snug text-chrome-fg-muted">
@@ -69,7 +93,7 @@ export function ReadingOrderPane(): React.JSX.Element {
               onClick={() => void generate()}
               disabled={generating}
               aria-label="Generate reading order"
-              className="flex items-center gap-1.5 rounded-md border border-chrome-border px-3 py-1.5 text-body font-medium text-chrome-fg-muted transition-colors hover:border-chrome-border-strong hover:bg-chrome-bg-raised hover:text-chrome-fg disabled:opacity-50"
+              className="chrome-btn"
             >
               <Sparkles size={13} strokeWidth={1.5} aria-hidden />
               {generating ? 'Generating…' : 'Generate reading order'}
@@ -88,7 +112,7 @@ export function ReadingOrderPane(): React.JSX.Element {
                 the numbered title (font-medium) plus muted explanation text
                 already read as a clear hierarchy without a ruled line doing
                 the same job redundantly. */}
-            <ol className="flex flex-col gap-3">
+            <ol className="flex flex-col gap-1">
               {readingOrder.steps.map((step, idx) => {
                 const isCollapsed = collapsed.has(step.id);
                 return (
@@ -103,19 +127,24 @@ export function ReadingOrderPane(): React.JSX.Element {
                           return next;
                         })
                       }
-                      className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-body text-chrome-fg transition-colors hover:bg-chrome-bg-raised"
+                      aria-expanded={!isCollapsed}
+                      className="group flex w-full items-center gap-2 rounded-md py-1.5 pl-1.5 pr-2 text-left text-body text-chrome-fg transition-colors hover:bg-chrome-bg-hover"
                     >
-                      {isCollapsed ? (
-                        <ChevronRight size={14} strokeWidth={1.5} className="shrink-0 text-chrome-fg-subtle" aria-hidden />
-                      ) : (
-                        <ChevronDown size={14} strokeWidth={1.5} className="shrink-0 text-chrome-fg-subtle" aria-hidden />
-                      )}
-                      <span className="truncate font-medium">
-                        {idx + 1}. {step.title}
+                      <span
+                        className="w-5 shrink-0 text-right font-mono text-micro tabular-nums text-chrome-fg-subtle group-hover:text-chrome-fg-muted"
+                        aria-hidden
+                      >
+                        {String(idx + 1).padStart(2, '0')}
                       </span>
+                      <span className="min-w-0 flex-1 truncate font-medium">{step.title}</span>
+                      {isCollapsed ? (
+                        <ChevronRight size={13} strokeWidth={1.75} className="shrink-0 text-chrome-fg-subtle" aria-hidden />
+                      ) : (
+                        <ChevronDown size={13} strokeWidth={1.75} className="shrink-0 text-chrome-fg-subtle" aria-hidden />
+                      )}
                     </button>
                     {!isCollapsed && (
-                      <div className="ml-5 pl-2">
+                      <div className="mb-2 ml-[2.125rem]">
                         {/* The step's explanation used to render as a header card
                             above the diff (see ReviewCodeView.tsx); it lives here
                             now, right next to the step's own files. `prose-sm` in
@@ -124,7 +153,7 @@ export function ReadingOrderPane(): React.JSX.Element {
                             block or table blow out the panel; the trailing right
                             padding keeps its measure off the panel's edge. */}
                         {step.explanationMd.length > 0 && (
-                          <div className="min-w-0 overflow-hidden pb-1.5 pr-2 pt-0.5 text-xs leading-snug text-chrome-fg-muted [&_.prose-sm]:text-xs [&_.prose-sm]:leading-snug [&_code]:break-words [&_pre]:overflow-x-auto">
+                          <div className="min-w-0 overflow-hidden pb-2 pr-2 pt-0.5 text-xs leading-relaxed text-chrome-fg-muted [&_.prose-sm]:text-xs [&_.prose-sm]:leading-relaxed [&_code]:break-words [&_pre]:overflow-x-auto">
                             <Markdown>{step.explanationMd}</Markdown>
                           </div>
                         )}
@@ -149,9 +178,11 @@ export function ReadingOrderPane(): React.JSX.Element {
               // A peer of the numbered steps, not a subsection of the last one —
               // separated by margin rhythm alone (no border-t + border-l stack)
               // so it reads as "the next thing" rather than a fenced-off block.
-              <div className="mt-4">
-                <h3 className="px-2 py-1 text-body font-medium text-chrome-fg">Also changed</h3>
-                <ul className="ml-5 flex flex-col gap-0.5 pl-2">
+              <div className="mt-5">
+                <h3 className="px-2 pb-1 text-micro font-medium uppercase tracking-wide text-chrome-fg-subtle">
+                  Also changed
+                </h3>
+                <ul className="flex flex-col gap-0.5">
                   {readingOrder.unassignedPaths.map((path) => (
                     <FileRow
                       key={path}
@@ -193,16 +224,27 @@ function FileRow({
       <button
         type="button"
         onClick={onClick}
-        className={`flex w-full items-center gap-1.5 truncate rounded px-2 py-1 text-left text-body transition-colors ${
+        className={`flex w-full min-w-0 items-center rounded-[4px] px-2 py-[3px] text-left font-mono text-xs transition-colors ${
           selected
-            ? 'bg-chrome-accent text-chrome-accent-fg'
-            : 'text-chrome-fg-muted hover:bg-chrome-bg-raised hover:text-chrome-fg'
+            ? 'chrome-row-selected'
+            : 'text-chrome-fg-muted hover:bg-chrome-bg-hover hover:text-chrome-fg'
         }`}
-        title={title}
+        title={title ?? path}
       >
-        <FileText size={13} strokeWidth={1.5} className="shrink-0" aria-hidden />
-        <span className="truncate">{path}</span>
+        <FilePath path={path} />
       </button>
     </li>
+  );
+}
+
+/** `dir/sub/` muted, `name.ext` at full weight — the file name is what you scan for. */
+function FilePath({ path }: { path: string }): React.JSX.Element {
+  const slash = path.lastIndexOf('/');
+  if (slash === -1) return <span className="truncate">{path}</span>;
+  return (
+    <span className="flex min-w-0">
+      <span className="truncate opacity-60">{path.slice(0, slash + 1)}</span>
+      <span className="shrink-0">{path.slice(slash + 1)}</span>
+    </span>
   );
 }

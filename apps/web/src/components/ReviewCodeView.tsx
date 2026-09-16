@@ -54,6 +54,55 @@ const DIFF_GAP_BLOCK = 8;
  */
 const DIFF_HEADER_HEIGHT = DIFF_LINE_HEIGHT + DIFF_GAP_BLOCK * 3;
 
+/**
+ * Injected into every file item's shadow root. Each file becomes its own
+ * card on the sunken shell (the centre pane has no island of its own, see
+ * ReviewWindow.tsx) so file boundaries are unmistakable — previously the end
+ * of one file ran straight into the next file's header on one continuous
+ * surface. `clip-path` rather than `overflow: clip` so sticky headers keep
+ * working. The ring matches `chrome-island` in styles/index.css.
+ */
+const FILE_CARD_CSS = `
+:host {
+  border-radius: 10px;
+  clip-path: inset(0 round 10px);
+  box-shadow:
+    0 0 0 0.5px light-dark(rgba(20, 22, 30, 0.12), rgba(255, 255, 255, 0.06)),
+    0 1px 2px light-dark(rgba(20, 22, 30, 0.05), transparent),
+    0 2px 6px light-dark(rgba(20, 22, 30, 0.03), transparent);
+}
+[data-diffs-header] {
+  border-radius: 10px 10px 0 0;
+}
+/*
+ * Corner masks. While a header is stuck, the file's code scrolls up under
+ * it and shows through the two rounded top corners (the header's own
+ * background stops at its border). These paint the region *outside* each
+ * corner arc in the shell colour, so the card keeps a clean rounded top at
+ * every scroll position. Off-screen (unstuck) they sit over shell that is
+ * already that colour, so they are invisible. --chrome-bg-sunken inherits
+ * through the shadow roots like any custom property.
+ */
+[data-diffs-header]::before,
+[data-diffs-header]::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+  z-index: 3;
+}
+[data-diffs-header]::before {
+  left: 0;
+  background: radial-gradient(circle at 100% 100%, transparent 9.5px, var(--chrome-bg-sunken) 10px);
+}
+[data-diffs-header]::after {
+  right: 0;
+  background: radial-gradient(circle at 0 100%, transparent 9.5px, var(--chrome-bg-sunken) 10px);
+}
+`;
+
 export function ReviewCodeView(): React.JSX.Element {
   const {
     review,
@@ -102,14 +151,16 @@ export function ReviewCodeView(): React.JSX.Element {
       enableGutterUtility: true,
       stickyHeaders: true,
       disableVirtualizationBuffers: false,
-      layout: { paddingTop: 16, paddingBottom: 80, gap: 16 },
+      unsafeCSS: FILE_CARD_CSS,
+      // Seams between file cards match the shell's 8px island gap.
+      layout: { paddingTop: 0, paddingBottom: 80, gap: 8 },
       loadDiffFiles,
       onGutterUtilityClick(range: SelectedLineRange, context) {
         startDraftThread({
           path: context.item.id,
           side: (range.side ?? 'additions') === 'deletions' ? 'old' : 'new',
-          startLine: range.start,
-          endLine: range.end,
+          startLine: Math.min(range.start, range.end),
+          endLine: Math.max(range.start, range.end),
         });
       },
     }),
@@ -150,13 +201,34 @@ export function ReviewCodeView(): React.JSX.Element {
       // They live here rather than in a Tailwind arbitrary-property class so
       // they and `options.itemMetrics` come from the same constants: the two
       // must never drift (see the DIFF_* constants above).
-      className="h-full w-full"
+      //
+      // `outline-hidden!`: `@pierre/diffs` gives this scroll container its
+      // own `tabIndex={-1}` (so it has somewhere to send focus back to if a
+      // focused, virtualized item gets recycled out from under it) — but a
+      // plain click anywhere in here that doesn't land on a real focusable
+      // descendant also focuses this same container per the browser's
+      // nearest-focusable-ancestor fallback, and any key pressed afterwards
+      // (not just a shortcut aimed at this pane) then paints the app-wide
+      // `:focus-visible` ring around the *entire* pane. That's just noise —
+      // this container was never a Tab stop (`-1`) and isn't one of our own
+      // keyboard-shortcut landing targets, so there's no case where its own
+      // outline is informative. Real focusable descendants (e.g. the
+      // "Viewed" button below) are separate elements and keep their own
+      // ring untouched. `!` is needed to beat the unlayered `:focus-visible`
+      // rule in styles/index.css — see the identical workaround note in
+      // CommandPalette.tsx.
+      className="h-full w-full outline-hidden!"
       style={
         {
           height: '100%',
           overflow: 'auto',
           '--diffs-gap-block': `${DIFF_GAP_BLOCK}px`,
           '--diffs-line-height': `${DIFF_LINE_HEIGHT}px`,
+          // File headers are chrome, not code: they take the UI face so the
+          // path reads as a title rather than another line of monospace.
+          '--diffs-header-font-family': 'var(--chrome-font-sans)',
+          '--diffs-font-family': 'var(--chrome-font-mono)',
+          '--diffs-font-size': '12.5px',
         } as React.CSSProperties
       }
       // The right-hand side of each file's title bar: the GitHub-style
@@ -168,32 +240,21 @@ export function ReviewCodeView(): React.JSX.Element {
         if (entry === undefined) return null;
         const viewed = isViewed(entry);
         return (
-          <label
-            className="flex shrink-0 cursor-pointer select-none items-center gap-1.5 text-xs text-chrome-fg-muted"
-            title={
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={viewed}
+            onClick={() => void toggleViewed(entry.path)}
+            title={viewed ? 'Viewed — unchecks itself when this file changes' : 'Mark as viewed'}
+            className={`flex h-6 shrink-0 select-none items-center gap-1.5 rounded-md px-2 font-sans text-xs transition-colors ${
               viewed
-                ? 'Viewed — unchecks itself when this file changes'
-                : 'Mark as viewed'
-            }
+                ? 'bg-chrome-success-bg text-chrome-success'
+                : 'text-chrome-fg-muted hover:bg-chrome-bg-hover hover:text-chrome-fg'
+            }`}
           >
-            <input
-              type="checkbox"
-              checked={viewed}
-              onChange={() => void toggleViewed(entry.path)}
-              className="peer sr-only"
-            />
-            <span
-              aria-hidden
-              className={`flex size-4 items-center justify-center rounded border transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-chrome-accent ${
-                viewed
-                  ? 'border-chrome-accent bg-chrome-accent text-chrome-accent-fg'
-                  : 'border-chrome-border'
-              }`}
-            >
-              {viewed && <Check size={12} strokeWidth={3} />}
-            </span>
+            <Check size={12} strokeWidth={viewed ? 2.5 : 1.75} aria-hidden />
             Viewed
-          </label>
+          </button>
         );
       }}
       renderHeaderPrefix={(item: CodeViewItem<ThreadAnnotationMeta>) => (
@@ -202,7 +263,7 @@ export function ReviewCodeView(): React.JSX.Element {
           onClick={() => toggleFileCollapsed(item.id)}
           aria-label={item.collapsed === true ? `Expand ${item.id}` : `Collapse ${item.id}`}
           aria-expanded={item.collapsed !== true}
-          className="flex shrink-0 items-center justify-center rounded p-0.5 text-chrome-fg-muted transition-colors hover:bg-chrome-bg-sunken hover:text-chrome-fg"
+          className="chrome-icon-btn -ml-1 size-6 text-chrome-fg-subtle"
         >
           {item.collapsed === true ? (
             <ChevronRight size={14} strokeWidth={1.5} aria-hidden />
@@ -219,7 +280,7 @@ export function ReviewCodeView(): React.JSX.Element {
         if (meta === undefined) return null;
         if (meta.threadId === DRAFT_THREAD_ID) {
           return (
-            <div className="my-1 w-full max-w-xl">
+            <div className="my-2 w-full max-w-2xl font-sans">
               <CommentComposer
                 placeholder="Comment on this line…"
                 onSubmit={(body, ask) => void submitDraftThread(body, ask)}
