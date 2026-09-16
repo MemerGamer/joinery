@@ -10,11 +10,14 @@ import {
   createReviewBodySchema,
   createThreadBodySchema,
   generateReadingOrderBodySchema,
+  listBranchesQuerySchema,
+  listReviewsQuerySchema,
   markViewedBodySchema,
   readingOrderPlanSchema,
   replyBodySchema,
   revisionSchema,
   setRevisionBodySchema,
+  setReviewStatusBodySchema,
   NULL_BLOB,
   type ServerEvent,
   type Thread,
@@ -40,6 +43,8 @@ import {
   markViewed,
   resolveThread,
   setCurrentRevision,
+  setStatus,
+  summarizeReviews,
   unmarkViewed,
   unresolveThread,
   upsertRepo,
@@ -51,7 +56,10 @@ import {
   defaultBranch as gitDefaultBranch,
   getFileContents,
   getFilePatch,
+  listBranches,
+  listOpenPulls,
   remoteIdentity,
+  resolvePr,
   showToplevel,
 } from '../git/index.ts';
 import type { EngineRegistry } from '../engine/index.ts';
@@ -144,11 +152,40 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     return c.json({ repo }, 201);
   });
 
+  // --- discovery: branches and PRs for a registered repo, so the web UI can
+  // open any of them, not just ones added via the CLI ---
+
+  app.get('/api/repos/:id/branches', async (c) => {
+    const id = c.req.param('id');
+    const repo = await getRepoById(deps.db, id);
+    if (repo === null) throw notFound(`repo ${id} not found`);
+    const query = parseQuery(listBranchesQuerySchema, c);
+    const branches = await listBranches({
+      cwd: repo.rootPath,
+      ...(query.filter === undefined ? {} : { filter: query.filter }),
+      limit: query.limit ?? 50,
+    });
+    return c.json({ branches });
+  });
+
+  app.get('/api/repos/:id/pulls', async (c) => {
+    const id = c.req.param('id');
+    const repo = await getRepoById(deps.db, id);
+    if (repo === null) throw notFound(`repo ${id} not found`);
+    const result = await listOpenPulls({ cwd: repo.rootPath });
+    return c.json(result);
+  });
+
   // --- reviews ---
 
   app.get('/api/reviews', async (c) => {
-    const reviews = await listReviews(deps.db);
-    return c.json({ reviews });
+    const query = parseQuery(listReviewsQuerySchema, c);
+    const reviews = await listReviews(deps.db, query.status === undefined ? undefined : { status: query.status });
+    const summaries = await summarizeReviews(
+      deps.db,
+      reviews.map((r) => r.id),
+    );
+    return c.json({ reviews, summaries });
   });
 
   app.post('/api/reviews', async (c) => {
@@ -161,13 +198,34 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     }
     if (repo === null) throw badRequest('repoId or a registered repoPath is required');
 
-    if (body.branch === undefined && body.sha === undefined) {
-      throw badRequest('one of branch or sha is required');
+    // A bare `prNumber` (no branch/sha) resolves via `gh` to the PR's real
+    // `(headRefName, baseRefName)` before falling into the normal
+    // branch/sha identity logic below. A PR review is then identified as
+    // `(repo, headRefName)` with `prNumber` set — the SAME identity as a
+    // branch review (SPEC §4), so `findReviewByBranch`'s dedupe already
+    // handles "open PR #123 twice" without any PR-specific lookup table.
+    // Fork PRs are out of scope; same-repo PRs only.
+    let branch = body.branch;
+    let base = body.base;
+    if (branch === undefined && body.sha === undefined) {
+      if (body.prNumber === undefined) {
+        throw badRequest('one of branch or sha (or prNumber, resolved via gh) is required');
+      }
+      const resolved = await resolvePr(body.prNumber, { cwd: repo.rootPath });
+      if (resolved === null) {
+        throw badRequest(
+          `could not resolve PR #${String(body.prNumber)} via gh`,
+          'Check that `gh` is installed, authenticated (`gh auth status`), and the PR exists in this repo.',
+        );
+      }
+      branch = resolved.headRefName;
+      // Stacked PRs diff against their real base, never the repo default.
+      base = resolved.baseRefName;
     }
 
     let review =
-      body.branch !== undefined
-        ? await findReviewByBranch(deps.db, repo.id, body.branch)
+      branch !== undefined
+        ? await findReviewByBranch(deps.db, repo.id, branch)
         : body.sha !== undefined
           ? await findReviewByPinnedSha(deps.db, repo.id, body.sha)
           : null;
@@ -175,9 +233,9 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     if (review === null) {
       review = await createReview(deps.db, {
         repoId: repo.id,
-        branch: body.branch ?? null,
+        branch: branch ?? null,
         pinnedSha: body.sha ?? null,
-        baseRef: body.base ?? repo.defaultBranch,
+        baseRef: base ?? repo.defaultBranch,
         prNumber: body.prNumber ?? null,
       });
     }
@@ -430,6 +488,17 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     const state = await engine.getState();
     const list = engine.getFileList(body.revision);
     return c.json({ state, list });
+  });
+
+  // Archive is a DB status flag only — it never disposes the engine or
+  // touches worktrees, and it never deletes or modifies threads, comments,
+  // reading order, or viewed state. Reversible by posting `open` again.
+  app.post('/api/reviews/:id/status', async (c) => {
+    const id = c.req.param('id');
+    await requireReview(deps, id);
+    const body = await parseBody(setReviewStatusBodySchema, c);
+    const review = await setStatus(deps.db, id, body.status);
+    return c.json({ review });
   });
 
   app.post('/api/reviews/:id/viewed', async (c) => {

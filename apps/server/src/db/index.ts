@@ -9,5 +9,6 @@ export * from './threads.ts';
 export * from './readingOrder.ts';
 export * from './fileViewed.ts';
 export * from './runs.ts';
+export * from './summaries.ts';
 export * from './worktrees.ts';
 export * from './renames.ts';

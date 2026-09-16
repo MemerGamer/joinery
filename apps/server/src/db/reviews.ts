@@ -60,11 +60,21 @@ export async function getReview(db: Db, id: string): Promise<Review | null> {
   return row === undefined ? null : toReview(row);
 }
 
-export async function listReviews(db: Db, filter?: { readonly repoId?: string }): Promise<Review[]> {
+export async function listReviews(
+  db: Db,
+  filter?: { readonly repoId?: string; readonly status?: ReviewStatus },
+): Promise<Review[]> {
+  const conditions = [];
+  if (filter?.repoId !== undefined) conditions.push(eq(review.repoId, filter.repoId));
+  if (filter?.status !== undefined) conditions.push(eq(review.status, filter.status));
+
   const rows =
-    filter?.repoId === undefined
+    conditions.length === 0
       ? await db.select().from(review)
-      : await db.select().from(review).where(eq(review.repoId, filter.repoId));
+      : await db
+          .select()
+          .from(review)
+          .where(conditions.length === 1 ? conditions[0] : and(...conditions));
   return rows.map(toReview);
 }
 

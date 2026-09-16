@@ -3,10 +3,33 @@
  * only revisions that currently exist.
  */
 import { useEffect, useState } from 'react';
-import type { Revision } from '@review/core';
+import type { HeadSource, Revision } from '@review/core';
 import { useReview } from '../state/ReviewContext.tsx';
 
 const LABELS: Record<Revision, string> = { working: 'Working', head: 'Head', pr: 'PR' };
+
+/**
+ * SPEC §4 forbids silently changing what `head` means, so when it was
+ * resolved from anything other than the checkout or local branch, the button
+ * says which rung answered (`ReviewState.headSource`). `worktree`/`local` are
+ * the expected case and get no suffix — the label only speaks up when the
+ * meaning shifted.
+ */
+const HEAD_SOURCE_SUFFIX: Record<HeadSource, string | null> = {
+  worktree: null,
+  local: null,
+  remote: 'origin',
+  'pinned-sha': 'pinned',
+  pin: 'pinned',
+};
+
+const HEAD_SOURCE_TITLE: Record<HeadSource, string> = {
+  worktree: 'Head of the attached worktree',
+  local: 'Tip of the local branch',
+  remote: 'No local branch — tip of the remote-tracking branch on origin',
+  'pinned-sha': 'The commit this review was pinned to',
+  pin: 'The branch is gone — the last commit this review saw',
+};
 
 /**
  * How long a switch has to stay pending before the sweep appears. Most
@@ -47,6 +70,8 @@ export function RevisionPicker(): React.JSX.Element | null {
       {reviewState.availableRevisions.map((rev) => {
         const active = rev === selected;
         const pending = rev === pendingRevision;
+        const source = rev === 'head' ? reviewState.headSource : null;
+        const suffix = source === null ? null : HEAD_SOURCE_SUFFIX[source];
         return (
           <button
             key={rev}
@@ -57,13 +82,15 @@ export function RevisionPicker(): React.JSX.Element | null {
             // switch is in flight either way, and the animation is decorative.
             aria-busy={pending}
             onClick={() => void setRevision(rev)}
-            className={`h-7 rounded-md px-2.5 text-xs font-medium transition-colors ${
+            title={source === null ? undefined : HEAD_SOURCE_TITLE[source]}
+            className={`flex h-7 items-center gap-1 rounded-md px-2.5 text-xs font-medium transition-colors ${
               active
                 ? 'bg-chrome-bg-active text-chrome-fg'
                 : 'text-chrome-fg-muted hover:bg-chrome-bg-hover hover:text-chrome-fg'
             } ${pending && sweeping ? 'chrome-sweep' : ''}`}
           >
             {LABELS[rev]}
+            {suffix !== null && <span className="font-normal text-chrome-fg-subtle">{suffix}</span>}
           </button>
         );
       })}

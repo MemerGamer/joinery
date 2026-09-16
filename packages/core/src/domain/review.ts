@@ -30,6 +30,51 @@ export const reviewSchema = z.object({
 });
 export type Review = z.infer<typeof reviewSchema>;
 
+/**
+ * Homebase row roll-up (§1): DB aggregates only — counts a dashboard can show
+ * for a hundred reviews without waking a hundred engines. Ships alongside
+ * `Review` in `GET /api/reviews` rather than inside it, since it's derived
+ * state, not the row's identity.
+ */
+export const reviewSummarySchema = z.object({
+  reviewId: z.string(),
+  openThreads: z.number().int().nonnegative(),
+  resolvedThreads: z.number().int().nonnegative(),
+  viewedFiles: z.number().int().nonnegative(),
+  /** Null when no reading order has been generated yet. */
+  readingOrderVersion: z.number().int().nullable(),
+  agentRunning: z.boolean(),
+  /** Unix seconds of the newest thread, comment, viewed check, or reading order; null when untouched. */
+  lastActivityAt: z.number().int().nullable(),
+});
+export type ReviewSummary = z.infer<typeof reviewSummarySchema>;
+
+// --- branch and PR discovery (§4, "open any branch or PR") ---
+
+export const branchSchema = z.object({
+  /** Short name, e.g. "feat/x" — no `refs/heads/` or `origin/` prefix. */
+  name: z.string(),
+  hasLocalRef: z.boolean(),
+  hasRemoteRef: z.boolean(),
+  tipSha: z.string(),
+  /** Committer date, unix seconds, of whichever ref (local/remote) is newer. */
+  committerDate: z.number().int(),
+  subject: z.string().nullable(),
+  authorName: z.string().nullable(),
+});
+export type Branch = z.infer<typeof branchSchema>;
+
+export const pullSchema = z.object({
+  number: z.number().int().positive(),
+  title: z.string(),
+  headRefName: z.string(),
+  baseRefName: z.string(),
+  authorLogin: z.string().nullable(),
+  updatedAt: z.string(),
+  isDraft: z.boolean(),
+});
+export type Pull = z.infer<typeof pullSchema>;
+
 // --- reading order (§7) ---
 
 export const stepFileSchema = z.object({

@@ -77,6 +77,10 @@ const READ_ONLY_SUBCOMMANDS = new Set([
   // with `--no-write-fetch-head` and never writes the working tree, index,
   // or any ref outside `refs/remotes/*` / the explicit refspec given.
   'fetch',
+  // Added for branch discovery (SPEC §4, "open any branch"): reads refs and
+  // their metadata, writes nothing — strictly read-only, like `branch`
+  // above, just with a machine-readable format and no ref-listing limits.
+  'for-each-ref',
 ]);
 
 export type GitCallOptions = {

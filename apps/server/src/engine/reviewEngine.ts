@@ -11,6 +11,7 @@ import type {
   Divergence,
   FileList,
   GitOperation,
+  HeadSource,
   Review,
   ReviewState,
   Revision,
@@ -32,6 +33,7 @@ import {
   gitCommonDir,
   gitOrThrow,
   mergeBase,
+  pinReviewRef,
   revParse,
 } from '../git/index.ts';
 import {
@@ -65,6 +67,29 @@ export type ReviewEngineParams = {
   readonly emit: (event: ServerEvent) => void;
 };
 
+/**
+ * True when an `fs.watch` filename names one of *our own* bookkeeping refs
+ * under `refs/review/` — the head pin and the fetched PR ref (SPEC §4).
+ *
+ * One `update-ref` produces several distinct paths, and the path is relative
+ * to whichever directory fired, so matching a fixed prefix is not enough:
+ *
+ *   refs/review/<id>                 git-dir watch
+ *   .git/refs/review/<id>            root watch, collapsed onto the main clone
+ *   .git/refs/review/<id>.lock       the transient lock git writes first
+ *   .git/logs/refs/review/<id>       the reflog, when core.logAllRefUpdates is on
+ *
+ * So this matches a `refs/review/` path *segment* anywhere. The theoretical
+ * cost is swallowing a signal for a tracked source file that genuinely lives
+ * at `.../refs/review/...` in a worktree; that is worth it against the
+ * certainty of the engine waking itself on every head move.
+ */
+function isOwnRefWrite(filename: string | Buffer | null): boolean {
+  if (filename === null) return false;
+  const name = (typeof filename === 'string' ? filename : filename.toString('utf8')).replaceAll('\\', '/');
+  return name === 'refs/review' || name.startsWith('refs/review/') || name.includes('/refs/review/');
+}
+
 /** True when `child` is `parent` or nested under it (both already realpaths). */
 function isUnderOrEqual(child: string, parent: string): boolean {
   if (child === parent) return true;
@@ -83,6 +108,14 @@ export class ReviewEngine {
   #attachedPath: string | null = null;
   #detachedReason: RootBinding['detachedReason'] = 'not-checked-out';
   #operationInProgress: GitOperation | null = null;
+  /** Which rung of the §4 fallback ladder last resolved `head`; null until the first tick resolves it. */
+  #headSource: HeadSource | null = null;
+  /**
+   * The sha last written to `refs/review/<id>` (SPEC §4's pin), so the tick
+   * can skip `update-ref` when `head` didn't move rather than writing it
+   * every tick.
+   */
+  #lastPinnedHeadSha: string | null = null;
   /** One cached snapshot per revision — kept warm proactively so a revision switch is a cache read, not a recompute. */
   #snapshots: Record<Revision, FileList>;
   #built = new Set<Revision>();
@@ -219,6 +252,17 @@ export class ReviewEngine {
     return this.#subscriberCount;
   }
 
+  /**
+   * Whether `dispose()` has already run. `EngineRegistry.get()` checks this
+   * so a cached-but-disposed entry (e.g. evicted by the idle sweep just as a
+   * caller resumes after an `await`) is treated as a cache miss and rebuilt,
+   * rather than handing back an engine whose `cat-file` process and watchers
+   * are already torn down.
+   */
+  get disposed(): boolean {
+    return this.#disposed;
+  }
+
   focus(): void {
     this.#focused = true;
     this.#restartPoll();
@@ -249,12 +293,33 @@ export class ReviewEngine {
 
   // --- signal handling / debounce ---
 
-  #onRootSignal = (): void => {
+  // Filtered for the same reason as `#onGitSignal` below: when the attached
+  // root *is* the main clone, `#syncGitWatcher` collapses the git watch into
+  // this one (SPEC §5), so our own ref writes surface here as
+  // `.git/refs/review/...` instead.
+  #onRootSignal = (_event: string, filename: string | Buffer | null): void => {
+    if (isOwnRefWrite(filename)) return;
     this.#pendingSources.add('root');
     this.#scheduleTick();
   };
 
-  #onGitSignal = (): void => {
+  /**
+   * Our own bookkeeping refs live under `refs/review/` inside
+   * `$GIT_COMMON_DIR` — the `refs/review/<id>` head pin this engine writes
+   * during a tick (SPEC §4) and the `refs/review/pr/<id>` ref the remote
+   * poll fetches into. Both are *our* writes, so treating them as "git
+   * changed" makes the engine wake itself: tick -> pin -> watcher fires ->
+   * tick -> `#emitState`, broadcasting a spurious `root.rebound` for a
+   * review whose root never moved. The sha guard on the pin stops it after
+   * one extra round, but one extra round per head move is still UI churn
+   * and still wrong.
+   *
+   * Everything else under the git dir is a genuine external signal and must
+   * still get through — including `refs/remotes/origin/*`, which the poll
+   * writes but which represents a real remote move.
+   */
+  #onGitSignal = (_event: string, filename: string | Buffer | null): void => {
+    if (isOwnRefWrite(filename)) return;
     this.#pendingSources.add('git');
     this.#scheduleTick();
   };
@@ -344,9 +409,13 @@ export class ReviewEngine {
   }
 
   /**
-   * `git fetch --no-write-fetch-head` for the PR ref and
+   * `git fetch --no-write-fetch-head` for the PR ref,
    * `refs/remotes/origin/<default>` — the second is not optional (SPEC §5):
-   * without it the base never advances and the diff silently drifts.
+   * without it the base never advances and the diff silently drifts — and,
+   * when the review's branch has no local ref (rung b of the §4 `head`
+   * ladder is dead), `refs/remotes/origin/<branch>` too, so rung c has
+   * something fresh to resolve against instead of whatever was fetched once
+   * and never touched again.
    */
   async #remotePoll(): Promise<void> {
     if (this.#disposed) return;
@@ -355,6 +424,7 @@ export class ReviewEngine {
     const defaultBranchName = this.#repo.defaultBranch;
     let defaultMoved = false;
     let prMoved = false;
+    let branchMoved = false;
     try {
       const beforeDefault = await revParse(`refs/remotes/origin/${defaultBranchName}`, { cwd });
       await git(
@@ -379,6 +449,17 @@ export class ReviewEngine {
         const afterPr = await revParse(prRef, { cwd });
         if (beforePr !== afterPr) prMoved = true;
       }
+
+      if (review.branch !== null && (await revParse(`refs/heads/${review.branch}`, { cwd })) === null) {
+        const remoteBranchRef = `refs/remotes/origin/${review.branch}`;
+        const beforeBranch = await revParse(remoteBranchRef, { cwd });
+        await git(
+          ['fetch', '--no-write-fetch-head', 'origin', `refs/heads/${review.branch}:${remoteBranchRef}`],
+          { cwd },
+        );
+        const afterBranch = await revParse(remoteBranchRef, { cwd });
+        if (beforeBranch !== afterBranch) branchMoved = true;
+      }
     } catch {
       return;
     }
@@ -386,10 +467,13 @@ export class ReviewEngine {
       await this.#detectPr(review.branch, cwd);
     }
     // `defaultMoved` invalidates every revision's shared merge-base; `prMoved`
-    // only invalidates the `pr` snapshot.
+    // only invalidates the `pr` snapshot; `branchMoved` is a `head` input
+    // (rung c of the ladder), so it's marked as a `git` signal exactly like a
+    // local branch move would be picked up by the git watcher.
     if (defaultMoved) this.#pendingSources.add('remote-default');
     if (prMoved) this.#pendingSources.add('remote-pr');
-    if (defaultMoved || prMoved) this.#scheduleTick();
+    if (branchMoved) this.#pendingSources.add('git');
+    if (defaultMoved || prMoved || branchMoved) this.#scheduleTick();
   }
 
   /**
@@ -406,6 +490,39 @@ export class ReviewEngine {
     this.#review = await setPrNumber(this.#db, this.#review.id, prNumber);
     this.#pendingSources.add('remote-pr');
     this.#scheduleTick();
+  }
+
+  /**
+   * SPEC §4 `head` fallback ladder: try each rung in priority order and stop
+   * at the first that resolves, rather than the old single `refs/heads/
+   * <branch>` lookup that went dark for a branch that only ever existed on
+   * the remote (or that has since been deleted locally). Which rung answered
+   * is returned alongside the sha — never just the sha — because collapsing
+   * "resolved via the remote-tracking ref" and "resolved via the local
+   * branch" into one anonymous `head` is exactly the silent revision-meaning
+   * flip §4 forbids.
+   *
+   *   a. attached worktree      -> HEAD
+   *   b. local branch tip       -> refs/heads/<branch>
+   *   c. remote-tracking tip    -> refs/remotes/origin/<branch>
+   *   d. the review's pinned sha
+   *   e. the review's own pin   -> refs/review/<id>
+   */
+  async #resolveHeadTarget(cwd: string): Promise<{ sha: string; source: HeadSource } | null> {
+    const review = this.#review;
+    const rungs: ReadonlyArray<{ ref: string; source: HeadSource } | null> = [
+      this.#attachedPath !== null ? { ref: 'HEAD', source: 'worktree' } : null,
+      review.branch !== null ? { ref: `refs/heads/${review.branch}`, source: 'local' } : null,
+      review.branch !== null ? { ref: `refs/remotes/origin/${review.branch}`, source: 'remote' } : null,
+      review.pinnedSha !== null ? { ref: review.pinnedSha, source: 'pinned-sha' } : null,
+      { ref: `refs/review/${review.id}`, source: 'pin' },
+    ];
+    for (const rung of rungs) {
+      if (rung === null) continue;
+      const sha = await revParse(rung.ref, { cwd });
+      if (sha !== null) return { sha, source: rung.source };
+    }
+    return null;
   }
 
   // --- the tick (SPEC §5, "The tick") ---
@@ -476,27 +593,37 @@ export class ReviewEngine {
         (rev === 'pr' && sources.has('remote-pr'));
       if (!needsRebuild) continue;
 
-      let targetRef: string | undefined;
-      if (rev === 'head') {
-        targetRef =
-          this.#attachedPath !== null
-            ? 'HEAD'
-            : (review.branch !== null ? `refs/heads/${review.branch}` : (review.pinnedSha ?? undefined));
-      } else if (rev === 'pr') {
-        targetRef = `refs/review/pr/${review.id}`;
-      }
-      if (rev !== 'working' && targetRef === undefined) continue;
-
-      const headRef = rev === 'working' ? 'HEAD' : (targetRef as string);
-
       // Resolve the ref to a commit, once, before anything reads it.
       //
       // Everything downstream has to agree on a single commit even if the ref
       // moves mid-tick, and `headSha` is what a later tick compares against to
       // decide whether head actually moved — a ref *name* would always compare
       // equal to itself, so storing one silently disables that check.
-      const headSha = await revParse(headRef, { cwd });
-      if (headSha === null) continue;
+      let headSha: string | null;
+      if (rev === 'head') {
+        // SPEC §4 fallback ladder: only give up on `head` (and `continue`,
+        // holding the last snapshot) once every rung below has come back
+        // empty.
+        const resolved = await this.#resolveHeadTarget(cwd);
+        if (resolved === null) continue;
+        headSha = resolved.sha;
+        this.#headSource = resolved.source;
+        // Keep `refs/review/<id>` pinned to the resolved commit so it
+        // survives the local branch being deleted later (SPEC §4). Cheap:
+        // `update-ref` only runs when the sha actually moved, not every tick.
+        if (headSha !== this.#lastPinnedHeadSha) {
+          try {
+            await pinReviewRef(review.id, headSha, { cwd: this.#repo.rootPath });
+            this.#lastPinnedHeadSha = headSha;
+          } catch {
+            // Best-effort keepalive; a failed pin must not crash the tick.
+          }
+        }
+      } else {
+        const targetRef = rev === 'pr' ? `refs/review/pr/${review.id}` : 'HEAD';
+        headSha = await revParse(targetRef, { cwd });
+        if (headSha === null) continue;
+      }
 
       // No merge base means `baseRef` is unknown to this repo (a deleted or
       // never-fetched branch): fall back to head, i.e. an empty diff, rather
@@ -759,10 +886,13 @@ export class ReviewEngine {
     if (review.prNumber !== null) {
       const cwd = this.#attachedPath ?? this.#repo.rootPath;
       const prRef = `refs/review/pr/${review.id}`;
-      const headRef =
-        this.#attachedPath !== null
-          ? 'HEAD'
-          : (review.branch !== null ? `refs/heads/${review.branch}` : (review.pinnedSha ?? 'HEAD'));
+      // Reuse the `head` snapshot's already-resolved sha rather than
+      // re-deriving a ref here: it went through the full §4 fallback ladder
+      // (`#resolveHeadTarget`), and duplicating a subset of that ladder here
+      // would silently under-resolve for a branch that only exists on the
+      // remote — exactly the bug this change fixes elsewhere. Empty only
+      // before the first tick has ever built `head` (the placeholder).
+      const headRef = this.#snapshots.head.headSha !== '' ? this.#snapshots.head.headSha : 'HEAD';
       try {
         // Independent git calls — run them concurrently rather than serially.
         const [d, baseHead, basePr] = await Promise.all([
@@ -794,6 +924,7 @@ export class ReviewEngine {
       basesMismatched: this.#cachedRevisionState?.basesMismatched ?? false,
       operationInProgress: this.#operationInProgress,
       prNumber: review.prNumber,
+      headSource: this.#headSource,
     };
   }
 

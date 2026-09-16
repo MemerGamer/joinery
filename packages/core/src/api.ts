@@ -13,10 +13,14 @@ import {
 import { fileListSchema, revisionSchema, reviewStateSchema } from './domain/files.ts';
 import {
   agentRunSchema,
+  branchSchema,
+  pullSchema,
   readingOrderPlanSchema,
   readingOrderSchema,
   repoSchema,
   reviewSchema,
+  reviewStatusSchema,
+  reviewSummarySchema,
   threadSchema,
 } from './domain/review.ts';
 
@@ -71,6 +75,18 @@ export const replyBodySchema = z.object({
   askAgent: z.boolean().default(false),
 });
 export const generateReadingOrderBodySchema = z.object({});
+export const setReviewStatusBodySchema = z.object({ status: reviewStatusSchema });
+
+// A monorepo can have thousands of remote branches — `filter` and `limit`
+// keep the response bounded rather than dumping the whole ref namespace.
+export const listBranchesQuerySchema = z.object({
+  filter: z.string().min(1).optional(),
+  limit: z.coerce.number().int().positive().max(500).optional(),
+});
+export const listReviewsQuerySchema = z.object({
+  /** Omitted means every status — archived reviews included. */
+  status: reviewStatusSchema.optional(),
+});
 
 // --- responses ---
 
@@ -133,12 +149,26 @@ export const api = {
     query: undefined,
     response: z.object({ repo: repoSchema }),
   }),
+  listBranches: def({
+    method: 'GET',
+    path: (repoId: string) => `/api/repos/${encodeURIComponent(repoId)}/branches`,
+    body: undefined,
+    query: listBranchesQuerySchema,
+    response: z.object({ branches: z.array(branchSchema) }),
+  }),
+  listPulls: def({
+    method: 'GET',
+    path: (repoId: string) => `/api/repos/${encodeURIComponent(repoId)}/pulls`,
+    body: undefined,
+    query: undefined,
+    response: z.object({ available: z.boolean(), pulls: z.array(pullSchema) }),
+  }),
   listReviews: def({
     method: 'GET',
     path: () => '/api/reviews',
     body: undefined,
-    query: undefined,
-    response: z.object({ reviews: z.array(reviewSchema) }),
+    query: listReviewsQuerySchema,
+    response: z.object({ reviews: z.array(reviewSchema), summaries: z.array(reviewSummarySchema) }),
   }),
   createReview: def({
     method: 'POST',
@@ -260,6 +290,13 @@ export const api = {
     // snapshot is already warm (kept fresh in the background), so this is a
     // cache read, not a second round trip via GET /files.
     response: z.object({ state: reviewStateSchema, list: fileListSchema }),
+  }),
+  setReviewStatus: def({
+    method: 'POST',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/status`,
+    body: setReviewStatusBodySchema,
+    query: undefined,
+    response: z.object({ review: reviewSchema }),
   }),
   markViewed: def({
     method: 'POST',

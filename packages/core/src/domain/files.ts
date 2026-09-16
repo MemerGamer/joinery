@@ -78,6 +78,17 @@ export const rootBindingSchema = z.object({
 });
 export type RootBinding = z.infer<typeof rootBindingSchema>;
 
+/**
+ * Which rung of the `head` fallback ladder (§4) last resolved a commit for
+ * this review: the attached worktree, the local branch tip, the
+ * remote-tracking tip, the review's `pinned_sha` column, or the review's own
+ * `refs/review/<id>` pin. SPEC §4 forbids silently changing what a revision
+ * means, so this rides along on `ReviewState` rather than being folded into
+ * an anonymous "head" — the UI labels e.g. `head (origin)` when it's `remote`.
+ */
+export const headSourceSchema = z.enum(['worktree', 'local', 'remote', 'pinned-sha', 'pin']);
+export type HeadSource = z.infer<typeof headSourceSchema>;
+
 export const reviewStateSchema = z.object({
   reviewId: z.string(),
   /** Only the revisions that actually exist right now. */
@@ -89,5 +100,7 @@ export const reviewStateSchema = z.object({
   basesMismatched: z.boolean(),
   operationInProgress: gitOperationSchema.nullable(),
   prNumber: z.number().int().positive().nullable(),
+  /** Null only before the first tick has resolved `head` at all. */
+  headSource: headSourceSchema.nullable(),
 });
 export type ReviewState = z.infer<typeof reviewStateSchema>;

@@ -10,20 +10,61 @@ import { ReviewEngine } from './reviewEngine.ts';
 
 export type EventListener = (event: ServerEvent) => void;
 
+/**
+ * Idle-eviction constants (SPEC §5, "one engine actor per review" — that's a
+ * ceiling on concurrency, not a promise to keep every engine ever touched
+ * alive forever). A `ReviewEngine` pins a poll timer, two recursive
+ * `fs.watch` handles, and a live `git cat-file --batch` child process. A
+ * one-shot HTTP/CLI call (e.g. `review files <id>`) goes through the same
+ * `requireEngine` path as a live review window and would otherwise leak all
+ * three for the life of the server.
+ *
+ * `SWEEP_INTERVAL_MS` is how often the registry looks for idle engines.
+ * `IDLE_GRACE_MS` is how long an unsubscribed engine survives after its last
+ * `get()` before it's disposed. The trade-off: shorter grace = less idle
+ * memory/FD/process pressure, but a following one-shot call within the
+ * window is instant while one past it pays a warm-up (the first tick has to
+ * rebuild the file list from scratch). A live review window always holds a
+ * WS subscription (`subscriberCount > 0`), so it is exempt from the sweep no
+ * matter how long it sits idle on screen — only unsubscribed engines age
+ * out. This is what makes it cheap to create reviews freely by browsing
+ * branches in the UI: nothing sticks around unless something is actually
+ * watching it.
+ */
+const SWEEP_INTERVAL_MS = 60_000;
+const IDLE_GRACE_MS = 120_000;
+
+interface EngineEntry {
+  engine: ReviewEngine;
+  lastUsedAt: number;
+}
+
 export class EngineRegistry {
   readonly #db: Db;
-  readonly #engines = new Map<string, ReviewEngine>();
+  readonly #engines = new Map<string, EngineEntry>();
   readonly #listeners = new Map<string, Set<EventListener>>();
   readonly #creating = new Map<string, Promise<ReviewEngine | null>>();
+  readonly #sweepTimer: ReturnType<typeof setInterval>;
 
   constructor(db: Db) {
     this.#db = db;
+    this.#sweepTimer = setInterval(() => this.#sweep(), SWEEP_INTERVAL_MS);
+    // Don't let the sweep alone keep the process alive (e.g. in tests or a
+    // CLI-driven server that should exit once its real work is done).
+    this.#sweepTimer.unref?.();
   }
 
   /** Returns the engine for `reviewId`, creating it on first use. Null if the review doesn't exist. */
   async get(reviewId: string): Promise<ReviewEngine | null> {
     const existing = this.#engines.get(reviewId);
-    if (existing !== undefined) return existing;
+    // A cached entry can be disposed out from under a caller that resumed
+    // after an `await` right as the idle sweep ran — treat that as a cache
+    // miss and rebuild rather than handing back an engine whose `cat-file`
+    // process and watchers are already torn down.
+    if (existing !== undefined && !existing.engine.disposed) {
+      existing.lastUsedAt = Date.now();
+      return existing.engine;
+    }
 
     const inFlight = this.#creating.get(reviewId);
     if (inFlight !== undefined) return inFlight;
@@ -49,8 +90,26 @@ export class EngineRegistry {
       review,
       emit: (event) => this.#dispatch(reviewId, event),
     });
-    this.#engines.set(reviewId, engine);
+    this.#engines.set(reviewId, { engine, lastUsedAt: Date.now() });
     return engine;
+  }
+
+  /**
+   * Disposes every engine that's both unsubscribed (`subscriberCount === 0`
+   * — no live review window pinning it open) and idle past `IDLE_GRACE_MS`.
+   * One timer for the whole registry rather than one per engine: eviction is
+   * a periodic housekeeping pass, not a per-entry deadline that needs to
+   * fire precisely.
+   */
+  #sweep(): void {
+    const now = Date.now();
+    for (const [reviewId, entry] of this.#engines) {
+      if (entry.engine.subscriberCount > 0) continue;
+      if (now - entry.lastUsedAt < IDLE_GRACE_MS) continue;
+      entry.engine.dispose();
+      this.#engines.delete(reviewId);
+      this.#listeners.delete(reviewId);
+    }
   }
 
   /**
@@ -108,15 +167,16 @@ export class EngineRegistry {
   }
 
   disposeAll(): void {
-    for (const engine of this.#engines.values()) engine.dispose();
+    clearInterval(this.#sweepTimer);
+    for (const entry of this.#engines.values()) entry.engine.dispose();
     this.#engines.clear();
     this.#listeners.clear();
   }
 
   dispose(reviewId: string): void {
-    const engine = this.#engines.get(reviewId);
-    if (engine === undefined) return;
-    engine.dispose();
+    const entry = this.#engines.get(reviewId);
+    if (entry === undefined) return;
+    entry.engine.dispose();
     this.#engines.delete(reviewId);
     this.#listeners.delete(reviewId);
   }

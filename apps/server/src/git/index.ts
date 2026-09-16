@@ -41,7 +41,17 @@ export {
 
 export { buildFileList, type BuildFileListParams } from './filelist.ts';
 
-export { findOpenPrNumberForBranch, type FindOpenPrOptions } from './github.ts';
+export {
+  findOpenPrNumberForBranch,
+  listOpenPulls,
+  resolvePr,
+  type FindOpenPrOptions,
+  type PullSummary,
+  type ListOpenPullsResult,
+  type ResolvedPr,
+} from './github.ts';
+
+export { listBranches, type BranchSummary, type ListBranchesOptions } from './refs.ts';
 
 export {
   getFilePatch,
