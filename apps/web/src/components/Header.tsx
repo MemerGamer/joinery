@@ -5,14 +5,48 @@ import {
   Columns2,
   MessageSquare,
   MessageSquareOff,
-  PanelLeft,
-  PanelRight,
   Rows2,
   Search,
 } from 'lucide-react';
 import { goHomebase } from '../lib/router.ts';
 import { useReview } from '../state/ReviewContext.tsx';
 import { RevisionPicker } from './RevisionPicker.tsx';
+
+/**
+ * Same frame + divider as lucide's `PanelLeft`/`PanelRight`, but the open
+ * state is read from a solid sidebar rather than a direction arrow — an
+ * arrow reads as "click to move this way," which is backwards half the
+ * time (opening the *left* panel means the content the arrow points at
+ * doesn't exist yet). A filled-vs-hollow sidebar reads as pure state, no
+ * direction implied.
+ */
+function PanelToggleIcon({
+  side,
+  filled,
+}: {
+  side: 'left' | 'right';
+  filled: boolean;
+}): React.JSX.Element {
+  const dividerX = side === 'left' ? 9 : 15;
+  const sidebarX = side === 'left' ? 4 : 15;
+  return (
+    <svg
+      width={15}
+      height={15}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <rect width="18" height="18" x="3" y="3" rx="3" />
+      <path d={`M${dividerX} 3v18`} />
+      {filled && <rect width="5" height="16" x={sidebarX} y="4" rx="1.5" fill="currentColor" stroke="none" />}
+    </svg>
+  );
+}
 
 export function Header({ onOpenPalette }: { onOpenPalette: () => void }): React.JSX.Element {
   const {
@@ -131,7 +165,7 @@ export function Header({ onOpenPalette }: { onOpenPalette: () => void }): React.
           onClick={toggleLeftPanel}
           className={`chrome-icon-btn ${leftPanelOpen ? '' : 'text-chrome-fg-subtle'}`}
         >
-          <PanelLeft size={15} strokeWidth={1.75} aria-hidden />
+          <PanelToggleIcon side="left" filled={leftPanelOpen} />
         </button>
         <button
           type="button"
@@ -141,7 +175,7 @@ export function Header({ onOpenPalette }: { onOpenPalette: () => void }): React.
           onClick={toggleRightPanel}
           className={`chrome-icon-btn ${rightPanelOpen ? '' : 'text-chrome-fg-subtle'}`}
         >
-          <PanelRight size={15} strokeWidth={1.75} aria-hidden />
+          <PanelToggleIcon side="right" filled={rightPanelOpen} />
         </button>
       </div>
     </header>
