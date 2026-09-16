@@ -149,6 +149,9 @@ export function ReviewCodeView(): React.JSX.Element {
       // its own dev build too, since it measures on every reconcile.
       __devOnlyValidateItemHeights: import.meta.env.DEV,
       enableGutterUtility: true,
+      // Upstream default is 100 lines per "more unchanged context" click —
+      // too much to page through at once for this app's density.
+      expansionLineCount: 20,
       stickyHeaders: true,
       disableVirtualizationBuffers: false,
       unsafeCSS: FILE_CARD_CSS,
