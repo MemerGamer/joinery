@@ -5,13 +5,15 @@
  * open. Resolve/reopen and reply round-trip through the API and then ask the
  * parent to reload threads.
  */
-import { AlertTriangle, Bot, Check, ChevronDown, History, MessageSquare, User } from 'lucide-react';
+import { AlertTriangle, Bot, Check, ChevronDown, History, Loader2, MessageSquare, Sparkles, User } from 'lucide-react';
 import { useState } from 'react';
 import type { Thread } from '@review/core';
 import { callApi } from '../lib/apiClient.ts';
 import { CommentComposer } from './CommentComposer.tsx';
 import { Markdown } from './Markdown.tsx';
+import { ReactionBar } from './ReactionBar.tsx';
 import { threadSummary } from '../lib/threadSummary.ts';
+import { useReview } from '../state/ReviewContext.tsx';
 
 /**
  * `createdAt` comes from SQLite's `unixepoch()` (seconds); anything that
@@ -71,6 +73,7 @@ export function ThreadArticle({
   thread: Thread;
   onChanged: () => void;
 }): React.JSX.Element {
+  const { threadRuns, askAgent } = useReview();
   const [replying, setReplying] = useState(false);
   // Resolved threads start collapsed; resolving/reopening re-syncs the
   // default (same derive-from-props pattern as `collapsedOutdated` below),
@@ -103,6 +106,9 @@ export function ThreadArticle({
   const hasBadges = thread.outdated || thread.changedSinceComment || resolved;
   const commentCount = thread.comments.length;
   const summary = threadSummary(thread.comments[0]?.bodyMd ?? '');
+
+  const runEntry = threadRuns.get(thread.id);
+  const runLive = runEntry !== undefined && (runEntry.run.status === 'pending' || runEntry.run.status === 'running');
 
   if (collapsed) {
     // One diff line tall, no card: a collapsed thread should read as part
@@ -175,6 +181,16 @@ export function ThreadArticle({
           )}
           </>
         )}
+        <button
+          type="button"
+          onClick={() => void askAgent(thread.id)}
+          disabled={runLive}
+          aria-label="Ask agent"
+          title="Ask agent to reply, without composing a new comment"
+          className="chrome-icon-btn ml-auto size-6 text-chrome-fg-subtle disabled:opacity-50"
+        >
+          <Sparkles size={13} strokeWidth={1.75} aria-hidden />
+        </button>
       </div>
 
       {thread.outdated && collapsedOutdated ? (
@@ -203,10 +219,30 @@ export function ThreadArticle({
                     </time>
                   </div>
                   <Markdown>{comment.bodyMd}</Markdown>
+                  <ReactionBar comment={comment} />
                 </div>
               </li>
             );
           })}
+          {runLive && runEntry !== undefined && (
+            <li className="flex gap-2.5 px-3 py-1.5">
+              <span
+                className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-chrome-accent-soft text-chrome-accent"
+                aria-hidden
+              >
+                <Bot size={12} strokeWidth={1.75} />
+              </span>
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <span className="shrink-0 text-micro font-medium text-chrome-fg-muted">Thinking…</span>
+                {runEntry.lastDelta.length > 0 && (
+                  <span className="min-w-0 flex-1 truncate font-mono text-micro text-chrome-fg-subtle">
+                    {runEntry.lastDelta}
+                  </span>
+                )}
+                <Loader2 size={12} strokeWidth={2} className="shrink-0 animate-spin text-chrome-fg-subtle" aria-hidden />
+              </div>
+            </li>
+          )}
         </ul>
       )}
 

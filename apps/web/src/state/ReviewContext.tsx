@@ -35,6 +35,7 @@ import {
   type AgentRun,
   type FileEntry,
   type FileListDelta,
+  type ReactionKind,
   type ReadingOrder,
   type Revision,
   type Review,
@@ -55,6 +56,7 @@ import {
 } from 'react';
 import { ApiError, callApi } from '../lib/apiClient.ts';
 import { blobPairKey, loadFileDiff, placeholderFileDiff } from '../lib/diffLoader.ts';
+import { toggleReactionLocally } from '../lib/reactions.ts';
 import { localRun } from '../lib/runState.ts';
 import { eventsClient } from '../lib/wsClient.ts';
 
@@ -148,6 +150,14 @@ interface ReviewEngineState {
    * `lib/runState.ts`) so callers can't special-case today's error text.
    */
   readingOrderRun: AgentRun | null;
+  /**
+   * Live `thread_reply` runs, keyed by thread id (SPEC: agent reply
+   * mechanism, R4). Fed by `run.started`/`run.delta`/`run.ended`; a thread
+   * with no live run (or none since load) simply has no entry. `lastDelta`
+   * is the concatenation of that run's `run.delta` text, trimmed to the
+   * last ~200 chars, for the "Thinking…" row's live preview.
+   */
+  threadRuns: Map<string, { run: AgentRun; lastDelta: string }>;
 }
 
 export interface ReviewEngine extends ReviewEngineState {
@@ -189,6 +199,17 @@ export interface ReviewEngine extends ReviewEngineState {
    * directly, so the outcome is never silently dropped.
    */
   generateReadingOrder: () => Promise<void>;
+  /**
+   * The explicit "Ask agent" trigger (Sparkles button on a thread header, or
+   * the composer's "Ask" split button via `submitDraftThread`/`reply`'s own
+   * `askAgent` flag — this action is only the former, standalone case).
+   * Seeds a local pending run into `threadRuns` immediately, same pattern as
+   * `generateReadingOrder`, then reconciles with whatever the POST (or a
+   * `run.started`/`run.ended` event for the same run) reports.
+   */
+  askAgent: (threadId: string) => Promise<void>;
+  /** Toggle the *user's* reaction on a comment; `ReactionBar` is the only caller. */
+  setReaction: (commentId: string, kind: ReactionKind, on: boolean) => Promise<void>;
   /**
    * Moves a `draft`/`archived` review to `open` (SPEC: "Feature: drafts",
    * D4) so it starts showing up on Homebase. A no-op when there's no review
@@ -256,6 +277,7 @@ export function ReviewProvider({
     pendingDelta: null,
     pendingRevision: null,
     readingOrderRun: null,
+    threadRuns: new Map(),
   });
 
   const [diffStyle, setDiffStyle] = useState<DiffStyle>('split');
@@ -451,6 +473,7 @@ export function ReviewProvider({
         pendingDelta: null,
         pendingRevision: null,
         readingOrderRun: null,
+        threadRuns: new Map(),
       });
       rebuildOrder(filesRes.list.files, threadsRes.threads);
     } catch (err) {
@@ -543,10 +566,45 @@ export function ReviewProvider({
         }
         case 'run.started':
         case 'run.ended': {
-          // Only reading-order runs drive this pane's feedback; a
-          // thread_reply run for the same review is someone else's concern.
-          if (event.run.kind !== 'reading_order') break;
-          setState((s) => ({ ...s, readingOrderRun: event.run }));
+          if (event.run.kind === 'reading_order') {
+            setState((s) => ({ ...s, readingOrderRun: event.run }));
+            break;
+          }
+          // thread_reply: keyed by threadId in `threadRuns`, not this pane's
+          // single `readingOrderRun` slot — a review can have many live at
+          // once. `threadId` is always set for this kind (R3); the guard is
+          // just to satisfy the type.
+          if (event.run.kind === 'thread_reply' && event.run.threadId !== null) {
+            const threadId = event.run.threadId;
+            setState((s) => {
+              const threadRuns = new Map(s.threadRuns);
+              threadRuns.set(threadId, { run: event.run, lastDelta: threadRuns.get(threadId)?.lastDelta ?? '' });
+              return { ...s, threadRuns };
+            });
+          }
+          break;
+        }
+        case 'run.delta': {
+          // The delta payload carries `{ text }`, kept as `unknown` on the
+          // wire (events.ts) so the UI can render what it knows without the
+          // schema pinning the SDK's message shape — read it defensively.
+          const text = extractDeltaText(event.payload);
+          if (text === null) break;
+          setState((s) => {
+            let threadId: string | null = null;
+            for (const [tid, entry] of s.threadRuns) {
+              if (entry.run.id === event.runId) {
+                threadId = tid;
+                break;
+              }
+            }
+            if (threadId === null) return s;
+            const threadRuns = new Map(s.threadRuns);
+            const prev = threadRuns.get(threadId);
+            if (prev === undefined) return s;
+            threadRuns.set(threadId, { run: prev.run, lastDelta: (prev.lastDelta + text).slice(-200) });
+            return { ...s, threadRuns };
+          });
           break;
         }
         default:
@@ -792,6 +850,80 @@ export function ReviewProvider({
     }
   }, [reviewId]);
 
+  const askAgent = useCallback(
+    async (threadId: string) => {
+      const pending: AgentRun = {
+        id: `local_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        reviewId,
+        threadId,
+        kind: 'thread_reply',
+        status: 'pending',
+        sessionId: null,
+        startedAt: Date.now(),
+        endedAt: null,
+        error: null,
+      };
+      setState((s) => {
+        const threadRuns = new Map(s.threadRuns);
+        threadRuns.set(threadId, { run: pending, lastDelta: '' });
+        return { ...s, threadRuns };
+      });
+      try {
+        const res = await callApi('askAgent', { params: [threadId], body: {} });
+        setState((s) => {
+          const threadRuns = new Map(s.threadRuns);
+          threadRuns.set(threadId, { run: res.run, lastDelta: threadRuns.get(threadId)?.lastDelta ?? '' });
+          return { ...s, threadRuns };
+        });
+      } catch (err) {
+        // Genuinely thrown: network failure or non-2xx, no server-side run
+        // at all — synthesize one so the live row can show the failure
+        // instead of hanging on "Thinking…" forever.
+        setState((s) => {
+          const threadRuns = new Map(s.threadRuns);
+          threadRuns.set(threadId, {
+            run: {
+              id: `local_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+              reviewId,
+              threadId,
+              kind: 'thread_reply',
+              status: 'error',
+              sessionId: null,
+              startedAt: Date.now(),
+              endedAt: Date.now(),
+              error: err instanceof ApiError ? err.message : 'Could not reach the server.',
+            },
+            lastDelta: '',
+          });
+          return { ...s, threadRuns };
+        });
+      }
+    },
+    [reviewId],
+  );
+
+  const setReaction = useCallback(async (commentId: string, kind: ReactionKind, on: boolean) => {
+    setState((s) => ({
+      ...s,
+      threads: s.threads.map((t) => ({
+        ...t,
+        comments: t.comments.map((c) =>
+          c.id === commentId ? { ...c, reactions: toggleReactionLocally(c.reactions, kind, 'user', on) } : c,
+        ),
+      })),
+    }));
+    try {
+      const res = await callApi('setReaction', { params: [commentId], body: { kind, actor: 'user', on } });
+      setState((s) => ({
+        ...s,
+        threads: s.threads.map((t) => (t.id === res.thread.id ? res.thread : t)),
+      }));
+    } catch {
+      // Optimistic, like `setViewed` — a later `thread.updated` or reload
+      // corrects any drift rather than surfacing a transient error here.
+    }
+  }, []);
+
   const startReview = useCallback(async () => {
     if (state.review === null || state.review.status === 'open') return;
     const res = await callApi('setReviewStatus', {
@@ -953,6 +1085,8 @@ export function ReviewProvider({
     reloadReadingOrder,
     reloadAll: load,
     generateReadingOrder,
+    askAgent,
+    setReaction,
     startReview,
     bumpAnnotations,
     annotationsByPath: annotationsRef.current,
@@ -1039,6 +1173,14 @@ function annotationsEqual(
     }
   }
   return true;
+}
+
+/** `run.delta`'s payload is `unknown` on the wire (events.ts) — read the
+ * `{ text }` shape R3 promises without trusting it blindly. */
+function extractDeltaText(payload: unknown): string | null {
+  if (typeof payload !== 'object' || payload === null) return null;
+  const text = (payload as { text?: unknown }).text;
+  return typeof text === 'string' ? text : null;
 }
 
 function isLargeFile(entry: FileEntry): boolean {
