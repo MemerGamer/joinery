@@ -1,5 +1,5 @@
 /**
- * Homebase — first pass at "an actual homebase", on mock data.
+ * Homebase — first pass at "an actual homebase", on real data.
  *
  * Two questions, two places: *what am I reviewing* (the page, centre) and
  * *what could I pick up next* (the queue, right). Both are ordered by an
@@ -10,32 +10,34 @@
  * bottom, or a painting — chosen from the corner switcher and remembered,
  * so the screen has a mood rather than a flat grey.
  *
- * Every number here comes from `mock/homebase.ts`; nothing is wired.
+ * Everything here comes from `useHomeData()`.
  */
+import type { Pull, Repo, Review, ReviewSummary } from '@review/core';
 import {
   Archive,
   Check,
   Compass,
   GitPullRequest,
   Inbox,
+  Loader2,
   MessageSquare,
   RefreshCw,
   Search,
   Sparkles,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { effortOf } from '../lib/effort.ts';
 import { backdropProps, coverPainting, useBackdrop } from '../lib/covers.ts';
+import { firstName, personFrom } from '../lib/people.ts';
 import { relativeTime } from '../lib/relativeTime.ts';
 import { goExplore, goReview } from '../lib/router.ts';
-import { PULLS, REPOS, REVIEWS, YOU, effortOf, type MockPull, type MockReview } from '../mock/homebase.ts';
+import { useHomeData, type HomeReview } from '../state/HomeData.tsx';
 import { BackdropPicker } from './home/BackdropPicker.tsx';
 import { Avatar, Chip, CiIcon, CoverBand, DiffStat, EffortMeter, Kbd, ProgressBar, SectionHeading, type Tone } from './home/primitives.tsx';
 import { TopBar } from './TopBar.tsx';
 
 type Focus = 'reviewing' | 'replies' | 'done' | null;
 type Order = 'effort' | 'recent';
-
-const repoById = new Map(REPOS.map((r) => [r.id, r]));
 
 function greeting(): string {
   const hour = new Date().getHours();
@@ -47,25 +49,41 @@ function greeting(): string {
 
 const DATE = new Intl.DateTimeFormat('en', { weekday: 'long', day: 'numeric', month: 'long' });
 
-function firstName(p: { name: string }): string {
-  return p.name === YOU.name ? 'you' : (p.name.split(' ')[0] ?? p.name);
+/** `remoteName` when known, else the last path segment of `rootPath`. */
+function repoDisplayName(repo: Repo): string {
+  if (repo.remoteName !== null) return repo.remoteName;
+  const segments = repo.rootPath.split('/').filter((s) => s.length > 0);
+  return segments[segments.length - 1] ?? repo.rootPath;
+}
+
+function reviewTitle(review: Review, summary: ReviewSummary): string {
+  return summary.title ?? review.branch ?? (review.pinnedSha !== null ? review.pinnedSha.slice(0, 10) : 'detached');
+}
+
+function reviewLastActivityAt(hr: HomeReview): number {
+  return hr.summary.lastActivityAt ?? hr.summary.headCommittedAt ?? hr.review.createdAt;
 }
 
 export function Homebase(): React.JSX.Element {
+  const { repos, reviews, pullsByRepo, pullsAvailable, me, loading, refreshing, error, refresh, openPull, archiveReview, generateReadingOrder } =
+    useHomeData();
   const [focus, setFocus] = useState<Focus>(null);
   const [order, setOrder] = useState<Order>('effort');
+  const [openingKeys, setOpeningKeys] = useState<ReadonlySet<string>>(new Set());
   const [backdrop, setBackdrop] = useBackdrop();
   const painting = coverPainting(backdrop);
 
-  const reviewing = useMemo(() => REVIEWS.filter((r) => r.bucket === 'attention'), []);
-  const done = useMemo(() => REVIEWS.filter((r) => r.bucket === 'done').sort((a, b) => b.lastActivityAt - a.lastActivityAt), []);
-  const unread = reviewing.reduce((n, r) => n + r.unreadReplies, 0);
-  const withReplies = reviewing.filter((r) => r.unreadReplies > 0);
+  const youName = me?.name ?? me?.login ?? null;
+
+  const reviewing = useMemo(() => reviews.filter((r) => r.bucket === 'attention'), [reviews]);
+  const done = useMemo(() => reviews.filter((r) => r.bucket === 'done').sort((a, b) => reviewLastActivityAt(b) - reviewLastActivityAt(a)), [reviews]);
+  const unread = reviewing.reduce((n, r) => n + r.summary.unreadAgentReplies, 0);
+  const withReplies = reviewing.filter((r) => r.summary.unreadAgentReplies > 0);
 
   const list = useMemo(() => {
     const base = focus === 'replies' ? withReplies : reviewing;
     return [...base].sort((a, b) =>
-      order === 'effort' ? effortOf(a).score - effortOf(b).score : b.lastActivityAt - a.lastActivityAt,
+      order === 'effort' ? effortOf(a.summary).score - effortOf(b.summary).score : reviewLastActivityAt(b) - reviewLastActivityAt(a),
     );
   }, [focus, order, reviewing, withReplies]);
 
@@ -73,13 +91,41 @@ export function Homebase(): React.JSX.Element {
   // lightest first — so "I have twenty minutes" has an obvious answer.
   const queue = useMemo(
     () =>
-      Object.entries(PULLS)
+      Array.from(pullsByRepo.entries())
         .flatMap(([repoId, pulls]) => pulls.filter((p) => p.reviewId === null).map((p) => ({ repoId, pull: p })))
-        .sort((a, b) => effortOf(a.pull).score - effortOf(b.pull).score),
-    [],
+        .sort(
+          (a, b) =>
+            effortOf({ filesTotal: a.pull.changedFiles, additions: a.pull.additions, deletions: a.pull.deletions }).score -
+            effortOf({ filesTotal: b.pull.changedFiles, additions: b.pull.additions, deletions: b.pull.deletions }).score,
+        ),
+    [pullsByRepo],
   );
 
   const toggle = (f: Exclude<Focus, null>) => () => setFocus((cur) => (cur === f ? null : f));
+
+  const handleOpenPull = (repoId: string, pull: Pull) => {
+    const key = `${repoId}:${String(pull.number)}`;
+    setOpeningKeys((s) => new Set(s).add(key));
+    void openPull(repoId, pull).finally(() => {
+      setOpeningKeys((s) => {
+        const next = new Set(s);
+        next.delete(key);
+        return next;
+      });
+    });
+  };
+
+  const handleArchiveAll = () => {
+    void (async () => {
+      for (const r of done) {
+        await archiveReview(r.review.id);
+      }
+    })();
+  };
+
+  const showSkeleton = loading && reviews.length === 0;
+  const showNoRepos = !showSkeleton && repos.length === 0;
+  const noPullsAvailable = repos.length > 0 && repos.every((r) => pullsAvailable.get(r.id) === false);
 
   return (
     <div className="home-shell flex h-full flex-col p-2" {...backdropProps(backdrop)}>
@@ -95,8 +141,14 @@ export function Homebase(): React.JSX.Element {
             <Compass size={13} strokeWidth={1.75} aria-hidden />
             Explore
           </button>
-          <button type="button" aria-label="Refresh" title="Refresh" className="chrome-icon-btn">
-            <RefreshCw size={15} strokeWidth={1.75} aria-hidden />
+          <button
+            type="button"
+            aria-label="Refresh"
+            title="Refresh"
+            onClick={() => void refresh({ force: true })}
+            className="chrome-icon-btn"
+          >
+            <RefreshCw size={15} strokeWidth={1.75} className={refreshing || loading ? 'animate-spin' : ''} aria-hidden />
           </button>
         </TopBar>
 
@@ -107,86 +159,115 @@ export function Homebase(): React.JSX.Element {
               <header className="flex flex-col gap-1">
                 <p className="text-xs text-chrome-fg-subtle">{DATE.format(new Date())}</p>
                 <h1 className="text-2xl font-semibold tracking-tight text-chrome-fg">
-                  {greeting()}, {YOU.name}
+                  {greeting()}
+                  {youName !== null ? `, ${youName}` : ''}
                 </h1>
               </header>
 
-              {/* One strip of numbers, each a filter. Said once, here — the
-                  cards below carry the detail, so no prose restating them. */}
-              <div className="flex items-stretch divide-x divide-chrome-border rounded-lg border border-chrome-border">
-                <Stat
-                  value={reviewing.length}
-                  label="reviewing"
-                  icon={<Inbox size={14} strokeWidth={1.75} aria-hidden />}
-                  active={focus === 'reviewing'}
-                  onClick={toggle('reviewing')}
-                />
-                <Stat
-                  value={unread}
-                  label="agent replies"
-                  icon={<Sparkles size={14} strokeWidth={1.75} aria-hidden />}
-                  active={focus === 'replies'}
-                  onClick={toggle('replies')}
-                />
-                <Stat
-                  value={done.length}
-                  label="cleared"
-                  icon={<Check size={14} strokeWidth={1.75} aria-hidden />}
-                  active={focus === 'done'}
-                  onClick={toggle('done')}
-                />
-                <Stat
-                  value={queue.length}
-                  label="up for review"
-                  icon={<GitPullRequest size={14} strokeWidth={1.75} aria-hidden />}
-                />
-              </div>
-
-              {focus !== 'done' && (
-                <section className="flex flex-col gap-3">
-                  <SectionHeading
-                    title={focus === 'replies' ? 'Agent replies to read' : 'Currently reviewing'}
-                    count={list.length}
-                    action={
-                      <div role="tablist" aria-label="Order" className="flex gap-1">
-                        <OrderTab label="Lightest first" selected={order === 'effort'} onSelect={() => setOrder('effort')} />
-                        <OrderTab label="Recent" selected={order === 'recent'} onSelect={() => setOrder('recent')} />
-                      </div>
-                    }
-                  />
-                  <ul className="flex flex-col gap-2">
-                    {list.map((r) => (
-                      <ReviewCard key={r.id} review={r} />
-                    ))}
-                  </ul>
-                </section>
+              {error !== null && (
+                <div className="flex items-center gap-2 text-xs text-chrome-danger">
+                  <span>{error}</span>
+                  <button type="button" onClick={() => void refresh({ force: true })} className="chrome-btn">
+                    Retry
+                  </button>
+                </div>
               )}
 
-              {(focus === null || focus === 'done') && (
-                <section className="flex flex-col gap-3">
-                  <SectionHeading
-                    title="Cleared"
-                    count={done.length}
-                    hint="all files viewed, nothing open"
-                    action={
-                      <button type="button" className="chrome-btn bg-transparent">
-                        <Archive size={13} strokeWidth={1.75} aria-hidden />
-                        Archive all
-                      </button>
-                    }
-                  />
-                  <ul className="home-card divide-y divide-chrome-border hover:border-chrome-border hover:shadow-none">
-                    {done.map((r) => (
-                      <DoneRow key={r.id} review={r} />
-                    ))}
-                  </ul>
-                </section>
-              )}
+              {showSkeleton ? (
+                <SkeletonBlocks />
+              ) : showNoRepos ? (
+                <div className="flex flex-col items-center gap-3 py-16 text-center">
+                  <p className="text-xs text-chrome-fg-muted">No repositories yet</p>
+                  <button type="button" onClick={goExplore} className="chrome-btn">
+                    Add one in Explore
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* One strip of numbers, each a filter. Said once, here — the
+                      cards below carry the detail, so no prose restating them. */}
+                  <div className="flex items-stretch divide-x divide-chrome-border rounded-lg border border-chrome-border">
+                    <Stat
+                      value={reviewing.length}
+                      label="reviewing"
+                      icon={<Inbox size={14} strokeWidth={1.75} aria-hidden />}
+                      active={focus === 'reviewing'}
+                      onClick={toggle('reviewing')}
+                    />
+                    <Stat
+                      value={unread}
+                      label="agent replies"
+                      icon={<Sparkles size={14} strokeWidth={1.75} aria-hidden />}
+                      active={focus === 'replies'}
+                      onClick={toggle('replies')}
+                    />
+                    <Stat
+                      value={done.length}
+                      label="cleared"
+                      icon={<Check size={14} strokeWidth={1.75} aria-hidden />}
+                      active={focus === 'done'}
+                      onClick={toggle('done')}
+                    />
+                    <Stat
+                      value={queue.length}
+                      label="up for review"
+                      icon={<GitPullRequest size={14} strokeWidth={1.75} aria-hidden />}
+                    />
+                  </div>
 
-              {focus !== null && (
-                <button type="button" onClick={() => setFocus(null)} className="self-start text-xs text-chrome-accent hover:underline">
-                  Show everything
-                </button>
+                  {focus !== 'done' && (
+                    <section className="flex flex-col gap-3">
+                      <SectionHeading
+                        title={focus === 'replies' ? 'Agent replies to read' : 'Currently reviewing'}
+                        count={list.length}
+                        action={
+                          <div role="tablist" aria-label="Order" className="flex gap-1">
+                            <OrderTab label="Lightest first" selected={order === 'effort'} onSelect={() => setOrder('effort')} />
+                            <OrderTab label="Recent" selected={order === 'recent'} onSelect={() => setOrder('recent')} />
+                          </div>
+                        }
+                      />
+                      {reviewing.length === 0 ? (
+                        <p className="rounded-lg border border-dashed border-chrome-border px-4 py-6 text-center text-xs text-chrome-fg-muted">
+                          Nothing in review — pick something up from the queue
+                        </p>
+                      ) : (
+                        <ul className="flex flex-col gap-2">
+                          {list.map((r) => (
+                            <ReviewCard key={r.review.id} review={r} you={youName} onGenerateReadingOrder={generateReadingOrder} />
+                          ))}
+                        </ul>
+                      )}
+                    </section>
+                  )}
+
+                  {(focus === null || focus === 'done') && (
+                    <section className="flex flex-col gap-3">
+                      <SectionHeading
+                        title="Cleared"
+                        count={done.length}
+                        hint="all files viewed, nothing open"
+                        action={
+                          <button type="button" onClick={handleArchiveAll} className="chrome-btn bg-transparent">
+                            <Archive size={13} strokeWidth={1.75} aria-hidden />
+                            Archive all
+                          </button>
+                        }
+                      />
+                      <ul className="home-card divide-y divide-chrome-border hover:border-chrome-border hover:shadow-none">
+                        {done.map((r) => (
+                          <DoneRow key={r.review.id} review={r} onArchive={archiveReview} />
+                        ))}
+                      </ul>
+                    </section>
+                  )}
+
+                  {focus !== null && (
+                    <button type="button" onClick={() => setFocus(null)} className="self-start text-xs text-chrome-accent hover:underline">
+                      Show everything
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </main>
@@ -196,11 +277,35 @@ export function Homebase(): React.JSX.Element {
               <h2 className="text-body font-medium text-chrome-fg">Up for review</h2>
               <span className="text-xs tabular-nums text-chrome-fg-subtle">{queue.length}</span>
             </div>
-            <ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pt-1 pb-2">
-              {queue.map(({ repoId, pull }) => (
-                <QueueRow key={`${repoId}:${String(pull.number)}`} repoName={repoById.get(repoId)?.name ?? repoId} pull={pull} />
-              ))}
-            </ul>
+            {showSkeleton ? (
+              <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pt-1 pb-2">
+                <SkeletonBlocks height={92} />
+              </div>
+            ) : noPullsAvailable ? (
+              <div className="px-2 pt-1 pb-2">
+                <p className="rounded-lg border border-dashed border-chrome-border px-4 py-6 text-center text-xs text-chrome-fg-muted">
+                  Install and sign in to <code>gh</code> to see open pull requests here.
+                </p>
+              </div>
+            ) : (
+              <ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pt-1 pb-2">
+                {queue.map(({ repoId, pull }) => {
+                  const key = `${repoId}:${String(pull.number)}`;
+                  const repo = repos.find((r) => r.id === repoId);
+                  return (
+                    <QueueRow
+                      key={key}
+                      repoName={repo !== undefined ? repoDisplayName(repo) : repoId}
+                      repoId={repoId}
+                      pull={pull}
+                      you={youName}
+                      opening={openingKeys.has(key)}
+                      onOpen={handleOpenPull}
+                    />
+                  );
+                })}
+              </ul>
+            )}
             <div className="shrink-0 border-t border-chrome-border px-2 py-2">
               <button type="button" onClick={goExplore} className="chrome-btn w-full justify-center bg-transparent">
                 <Compass size={13} strokeWidth={1.75} aria-hidden />
@@ -211,6 +316,16 @@ export function Homebase(): React.JSX.Element {
         </div>
       </div>
     </div>
+  );
+}
+
+function SkeletonBlocks({ height = 96 }: { height?: number }): React.JSX.Element {
+  return (
+    <>
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="home-card animate-pulse" style={{ height }} />
+      ))}
+    </>
   );
 }
 
@@ -260,61 +375,88 @@ function Stat({
 }
 
 /** The "what's waiting in here" chips for a review card. CI, commits and steps are not chips: CI is the icon by the title, the rest is noise. */
-function reasons(r: MockReview): { tone: Tone; icon: React.ReactNode; text: string }[] {
+function reasons(summary: ReviewSummary): { tone: Tone; icon: React.ReactNode; text: string }[] {
   const out: { tone: Tone; icon: React.ReactNode; text: string }[] = [];
   const i = { size: 11, strokeWidth: 2, 'aria-hidden': true } as const;
-  if (r.openThreads > 0)
-    out.push({ tone: 'neutral', icon: <MessageSquare {...i} />, text: `${String(r.openThreads)} open ${r.openThreads === 1 ? 'thread' : 'threads'}` });
+  if (summary.openThreads > 0)
+    out.push({
+      tone: 'neutral',
+      icon: <MessageSquare {...i} />,
+      text: `${String(summary.openThreads)} open ${summary.openThreads === 1 ? 'thread' : 'threads'}`,
+    });
   return out;
 }
 
-function ReviewCard({ review: r }: { review: MockReview }): React.JSX.Element {
-  const repo = repoById.get(r.repoId);
-  const effort = effortOf(r);
-  const chips = reasons(r);
+function ReviewCard({
+  review: hr,
+  you,
+  onGenerateReadingOrder,
+}: {
+  review: HomeReview;
+  you: string | null;
+  onGenerateReadingOrder: (id: string) => Promise<void>;
+}): React.JSX.Element {
+  const { review, summary, repo } = hr;
+  const title = reviewTitle(review, summary);
+  const author = personFrom(summary.authorName);
+  const effort = effortOf(summary);
+  const chips = reasons(summary);
+  const showReadingOrderAction = summary.readingOrderVersion === null || summary.agentRunning;
   return (
     // The whole card opens the review via an underlay button, so the one
     // real control inside it (generate a reading order) isn't a button
     // nested in a button. Content ignores the pointer except that control.
     <li className="home-card group relative">
-      <button type="button" onClick={() => goReview(r.id)} aria-label={`Open ${r.title}`} className="absolute inset-0 rounded-[inherit]" />
+      <button type="button" onClick={() => goReview(review.id)} aria-label={`Open ${title}`} className="absolute inset-0 rounded-[inherit]" />
       <div className="pointer-events-none relative flex items-stretch gap-4 p-4">
-        <Avatar person={r.author} size={32} />
+        <Avatar person={author} size={32} />
 
         <span className="flex min-w-0 flex-1 flex-col gap-2.5">
           <span className="flex flex-col gap-0.5">
             <span className="flex min-w-0 items-center gap-1.5">
-              <span className="truncate text-body font-medium text-chrome-fg">{r.title}</span>
-              {r.prNumber !== null && (
+              <span className="truncate text-body font-medium text-chrome-fg">{title}</span>
+              {review.status === 'orphaned' && <Chip>branch gone</Chip>}
+              {review.prNumber !== null && (
                 <span className="flex shrink-0 items-center gap-0.5 text-micro tabular-nums text-chrome-fg-subtle">
                   <GitPullRequest size={11} strokeWidth={2} aria-hidden />
-                  {r.prNumber}
+                  {review.prNumber}
                 </span>
               )}
-              {r.draft && <Chip>draft</Chip>}
-              <CiIcon ci={r.ci} size={12} />
+              {summary.draft && <Chip>draft</Chip>}
+              <CiIcon ci={summary.ci} size={12} />
             </span>
             <span className="truncate text-micro text-chrome-fg-subtle">
-              {repo?.name} · {r.baseRef} ← {r.branch} · {firstName(r.author)}
+              {repoDisplayName(repo)} · {review.baseRef} ← {review.branch ?? 'detached'} · {firstName(author, you)}
             </span>
           </span>
 
-          {(chips.length > 0 || r.readingOrder === null) && (
+          {(chips.length > 0 || showReadingOrderAction) && (
             <span className="flex flex-wrap items-center gap-1.5">
               {chips.map((c) => (
                 <Chip key={c.text} tone={c.tone} icon={c.icon}>
                   {c.text}
                 </Chip>
               ))}
-              {r.readingOrder === null && (
-                <button
-                  type="button"
-                  className="pointer-events-auto inline-flex h-5 items-center gap-1 rounded-md bg-chrome-accent-soft px-1.5 text-micro font-medium whitespace-nowrap text-chrome-accent transition-[filter] hover:brightness-110"
-                >
-                  <Sparkles size={11} strokeWidth={2} aria-hidden />
-                  Generate reading order
-                </button>
-              )}
+              {showReadingOrderAction &&
+                (summary.agentRunning ? (
+                  <button
+                    type="button"
+                    disabled
+                    className="pointer-events-auto inline-flex h-5 items-center gap-1 rounded-md bg-chrome-accent-soft px-1.5 text-micro font-medium whitespace-nowrap text-chrome-accent"
+                  >
+                    <Loader2 size={11} strokeWidth={2} className="animate-spin" aria-hidden />
+                    Generating…
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void onGenerateReadingOrder(review.id)}
+                    className="pointer-events-auto inline-flex h-5 items-center gap-1 rounded-md bg-chrome-accent-soft px-1.5 text-micro font-medium whitespace-nowrap text-chrome-accent transition-[filter] hover:brightness-110"
+                  >
+                    <Sparkles size={11} strokeWidth={2} aria-hidden />
+                    Generate reading order
+                  </button>
+                ))}
             </span>
           )}
         </span>
@@ -322,13 +464,17 @@ function ReviewCard({ review: r }: { review: MockReview }): React.JSX.Element {
         {/* Right column, three aligned lines: diff size, progress, effort · files viewed. */}
         <span className="flex w-48 shrink-0 flex-col justify-between gap-1.5 text-micro">
           <span className="flex justify-end">
-            <DiffStat additions={r.additions} deletions={r.deletions} />
+            {summary.filesTotal === null ? (
+              <span className="text-chrome-fg-subtle">—</span>
+            ) : (
+              <DiffStat additions={summary.additions ?? 0} deletions={summary.deletions ?? 0} />
+            )}
           </span>
-          <ProgressBar value={r.filesViewed} total={r.filesTotal} />
+          {summary.filesTotal !== null && <ProgressBar value={summary.viewedFiles} total={summary.filesTotal} />}
           <span className="flex items-end justify-between leading-none">
             <EffortMeter level={effort.level} label={effort.label} minutes={effort.minutes} />
             <span className="tabular-nums whitespace-nowrap text-chrome-fg-subtle">
-              <span className="font-medium text-chrome-fg-muted">{r.filesViewed}</span> of {r.filesTotal} files
+              <span className="font-medium text-chrome-fg-muted">{summary.viewedFiles}</span> of {summary.filesTotal ?? '—'} files
             </span>
           </span>
         </span>
@@ -337,29 +483,36 @@ function ReviewCard({ review: r }: { review: MockReview }): React.JSX.Element {
   );
 }
 
-function DoneRow({ review: r }: { review: MockReview }): React.JSX.Element {
-  const repo = repoById.get(r.repoId);
+function DoneRow({ review: hr, onArchive }: { review: HomeReview; onArchive: (id: string) => Promise<void> }): React.JSX.Element {
+  const { review, summary, repo } = hr;
+  const title = reviewTitle(review, summary);
+  const author = personFrom(summary.authorName);
   return (
     <li className="group flex items-center transition-colors hover:bg-chrome-bg-hover">
-      <button type="button" onClick={() => goReview(r.id)} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-2.5 text-left">
+      <button type="button" onClick={() => goReview(review.id)} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-2.5 text-left">
         <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-chrome-success-bg text-chrome-success">
           <Check size={14} strokeWidth={2.25} aria-hidden />
         </span>
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-body text-chrome-fg-muted group-hover:text-chrome-fg">{r.title}</span>
-            {r.prNumber !== null && <span className="shrink-0 text-micro tabular-nums text-chrome-fg-subtle">#{r.prNumber}</span>}
+            <span className="truncate text-body text-chrome-fg-muted group-hover:text-chrome-fg">{title}</span>
+            {review.prNumber !== null && <span className="shrink-0 text-micro tabular-nums text-chrome-fg-subtle">#{review.prNumber}</span>}
           </span>
           <span className="truncate text-micro text-chrome-fg-subtle">
-            {repo?.name} · {r.resolvedThreads} resolved · {r.filesTotal} files viewed · {relativeTime(r.lastActivityAt)}
+            {repoDisplayName(repo)} · {summary.resolvedThreads} resolved · {summary.filesTotal ?? summary.viewedFiles} files viewed ·{' '}
+            {relativeTime(summary.lastActivityAt ?? summary.headCommittedAt ?? review.createdAt)}
           </span>
         </span>
-        <Avatar person={r.author} size={20} />
+        <Avatar person={author} size={20} />
       </button>
       <button
         type="button"
         aria-label="Archive review"
         title="Archive"
+        onClick={(e) => {
+          e.stopPropagation();
+          void onArchive(review.id);
+        }}
         className="chrome-icon-btn mr-2 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
       >
         <Archive size={14} strokeWidth={1.75} aria-hidden />
@@ -368,31 +521,52 @@ function DoneRow({ review: r }: { review: MockReview }): React.JSX.Element {
   );
 }
 
-function QueueRow({ repoName, pull: p }: { repoName: string; pull: MockPull }): React.JSX.Element {
-  const effort = effortOf(p);
+function QueueRow({
+  repoId,
+  repoName,
+  pull: p,
+  you,
+  opening,
+  onOpen,
+}: {
+  repoId: string;
+  repoName: string;
+  pull: Pull;
+  you: string | null;
+  opening: boolean;
+  onOpen: (repoId: string, pull: Pull) => void;
+}): React.JSX.Element {
+  const effort = effortOf({ filesTotal: p.changedFiles, additions: p.additions, deletions: p.deletions });
+  const author = personFrom(p.authorLogin);
   const flags: React.ReactNode[] = [];
-  if (p.draft) flags.push(<Chip key="draft">draft</Chip>);
+  if (p.isDraft) flags.push(<Chip key="draft">draft</Chip>);
   if (p.reviewRequested) flags.push(<Chip key="req" tone="warning">review requested</Chip>);
   return (
     <li>
       {/* Three fixed columns — avatar, text, effort — so every row lines
           up: title on the first line, facts on the second, flags (if any)
           on a third. Nothing floats to the right except the effort. */}
-      <button type="button" className="group flex w-full items-start gap-3 rounded-md px-3 py-3.5 text-left transition-colors hover:bg-chrome-bg-hover">
-        <Avatar person={p.author} size={24} />
+      <button
+        type="button"
+        disabled={opening}
+        aria-busy={opening}
+        onClick={() => onOpen(repoId, p)}
+        className="group flex w-full items-start gap-3 rounded-md px-3 py-3.5 text-left transition-colors hover:bg-chrome-bg-hover disabled:opacity-60"
+      >
+        <Avatar person={author} size={24} />
         <span className="flex min-w-0 flex-1 flex-col gap-1.5">
           <span className="line-clamp-2 text-body font-medium leading-snug text-chrome-fg">{p.title}</span>
           <span className="flex items-center gap-1.5 text-micro text-chrome-fg-subtle">
             <CiIcon ci={p.ci} size={11} />
             <span className="truncate">
-              {repoName} #{p.number} · {firstName(p.author)}
+              {repoName} #{p.number} · {firstName(author, you)}
             </span>
           </span>
           {flags.length > 0 && <span className="flex items-center gap-1">{flags}</span>}
         </span>
         <span className="flex shrink-0 flex-col items-end gap-1 pt-0.5">
           <EffortMeter level={effort.level} label={effort.label} minutes={effort.minutes} />
-          <span className="text-micro tabular-nums text-chrome-fg-subtle">{relativeTime(p.updatedAt)}</span>
+          <span className="text-micro tabular-nums text-chrome-fg-subtle">{relativeTime(p.updatedAtUnix)}</span>
         </span>
       </button>
     </li>
