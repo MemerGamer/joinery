@@ -78,6 +78,17 @@ export async function summarizeReviews(db: Db, reviewIds: readonly string[]): Pr
         readingOrderVersion: null,
         agentRunning: false,
         lastActivityAt: null,
+        // Filled by the Homebase composer (git stats + gh cache); DB-only defaults here.
+        title: null,
+        authorName: null,
+        filesTotal: null,
+        additions: null,
+        deletions: null,
+        headSha: null,
+        headCommittedAt: null,
+        ci: null,
+        draft: false,
+        unreadAgentReplies: 0,
       },
     ]),
   );

@@ -14,6 +14,7 @@ import { fileListSchema, revisionSchema, reviewStateSchema } from './domain/file
 import {
   agentRunSchema,
   branchSchema,
+  meSchema,
   pullSchema,
   readingOrderPlanSchema,
   readingOrderSchema,
@@ -86,6 +87,12 @@ export const listBranchesQuerySchema = z.object({
 export const listReviewsQuerySchema = z.object({
   /** Omitted means every status — archived reviews included. */
   status: reviewStatusSchema.optional(),
+  /** `'true'` bypasses the server's short-lived `gh` cache for PR titles, CI, and diff sizes. */
+  refresh: z.enum(['true', 'false']).optional(),
+});
+export const listPullsQuerySchema = z.object({
+  /** `'true'` bypasses the server's short-lived `gh` cache. */
+  refresh: z.enum(['true', 'false']).optional(),
 });
 
 // --- responses ---
@@ -160,8 +167,15 @@ export const api = {
     method: 'GET',
     path: (repoId: string) => `/api/repos/${encodeURIComponent(repoId)}/pulls`,
     body: undefined,
-    query: undefined,
+    query: listPullsQuerySchema,
     response: z.object({ available: z.boolean(), pulls: z.array(pullSchema) }),
+  }),
+  me: def({
+    method: 'GET',
+    path: () => '/api/me',
+    body: undefined,
+    query: undefined,
+    response: meSchema,
   }),
   listReviews: def({
     method: 'GET',
