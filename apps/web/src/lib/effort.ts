@@ -1,7 +1,7 @@
 /**
  * "How much of me will this review take" — files carry more weight than
  * lines (a 40-file rename is harder to hold in your head than one 400-line
- * file), bucketed into four levels. Moved out of `mock/homebase.ts`
+ * file), bucketed into four levels. Moved out of the retired mock data
  * unchanged in behaviour, generalized to the nullable fields
  * `ReviewSummary` actually carries (a head that can't be resolved reports
  * `null` diff stats rather than zeros).
