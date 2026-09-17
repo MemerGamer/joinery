@@ -10,7 +10,7 @@
  * here keeps "which remote" a non-question rather than inventing a
  * multi-remote UI nobody asked for.
  */
-import { gitOrThrow, bytesToText, type GitCallOptions } from './run.ts';
+import { git, gitOrThrow, bytesToText, type GitCallOptions } from './run.ts';
 
 export type BranchSummary = {
   /** Short name, e.g. "feat/x" — with no `refs/heads/` or `origin/` prefix. */
@@ -22,6 +22,9 @@ export type BranchSummary = {
   committerDate: number;
   subject: string | null;
   authorName: string | null;
+  /** Commits ahead of / behind the repo's default branch; null when git can't say. */
+  ahead: number | null;
+  behind: number | null;
 };
 
 export type ListBranchesOptions = GitCallOptions & {
@@ -29,6 +32,8 @@ export type ListBranchesOptions = GitCallOptions & {
   filter?: string;
   /** Applied after merge + sort, so it caps rows returned, not refs scanned. */
   limit?: number;
+  /** The repo's default branch short name, to resolve the ahead/behind comparison ref against. */
+  defaultBranch: string;
 };
 
 const REMOTE_PREFIX = 'refs/remotes/origin/';
@@ -37,7 +42,39 @@ const LOCAL_PREFIX = 'refs/heads/';
 // Tab and newline are literal format codes `for-each-ref` supports directly
 // (git-for-each-ref(1)) — no shell quoting hazards, and no need for a
 // separator that could collide with a commit subject.
-const FORMAT = '%(refname)%09%(objectname)%09%(committerdate:unix)%09%(authorname)%09%(subject)';
+const BASE_FIELDS = '%(refname)%09%(objectname)%09%(committerdate:unix)%09%(authorname)';
+// Subject stays last in both variants: it may contain a literal tab, and
+// splitting on '\t' with a fixed prefix of known-safe fields lets us just
+// re-join everything after them.
+const FORMAT_NO_AHEAD_BEHIND = `${BASE_FIELDS}%09%(subject)`;
+const formatWithAheadBehind = (ref: string) => `${BASE_FIELDS}%09%(ahead-behind:${ref})%09%(subject)`;
+
+/**
+ * Resolve the ref to compare branches against for ahead/behind: the local
+ * default branch if it exists, else its `origin` remote-tracking ref, else
+ * `null` (no default branch known locally at all — ahead/behind is skipped
+ * entirely rather than guessing).
+ */
+async function resolveDefaultRef(defaultBranch: string, options: GitCallOptions): Promise<string | null> {
+  const localRef = `refs/heads/${defaultBranch}`;
+  const local = await git(['rev-parse', '--verify', localRef], options);
+  if (local.exitCode === 0) return localRef;
+
+  const remoteRef = `${REMOTE_PREFIX}${defaultBranch}`;
+  const remote = await git(['rev-parse', '--verify', remoteRef], options);
+  if (remote.exitCode === 0) return remoteRef;
+
+  return null;
+}
+
+function parseAheadBehind(text: string | undefined): { ahead: number | null; behind: number | null } {
+  if (text === undefined) return { ahead: null, behind: null };
+  const [aheadText, behindText] = text.trim().split(/\s+/u);
+  const ahead = Number(aheadText);
+  const behind = Number(behindText);
+  if (!Number.isFinite(ahead) || !Number.isFinite(behind)) return { ahead: null, behind: null };
+  return { ahead, behind };
+}
 
 /**
  * `git for-each-ref` over `refs/heads` and `refs/remotes/origin`, merged so
@@ -47,18 +84,49 @@ const FORMAT = '%(refname)%09%(objectname)%09%(committerdate:unix)%09%(authornam
  * per ref.
  */
 export async function listBranches(options: ListBranchesOptions): Promise<BranchSummary[]> {
-  const result = await gitOrThrow(
-    ['for-each-ref', '--sort=-committerdate', `--format=${FORMAT}`, 'refs/heads', 'refs/remotes/origin'],
-    options,
-  );
-  const text = bytesToText(result.stdout);
+  const defaultRef = await resolveDefaultRef(options.defaultBranch, options);
+
+  let text: string;
+  let hasAheadBehind: boolean;
+  if (defaultRef === null) {
+    const result = await gitOrThrow(
+      ['for-each-ref', '--sort=-committerdate', `--format=${FORMAT_NO_AHEAD_BEHIND}`, 'refs/heads', 'refs/remotes/origin'],
+      options,
+    );
+    text = bytesToText(result.stdout);
+    hasAheadBehind = false;
+  } else {
+    const attempt = await git(
+      ['for-each-ref', '--sort=-committerdate', `--format=${formatWithAheadBehind(defaultRef)}`, 'refs/heads', 'refs/remotes/origin'],
+      options,
+    );
+    if (attempt.exitCode === 0) {
+      text = bytesToText(attempt.stdout);
+      hasAheadBehind = true;
+    } else {
+      // Older git (< 2.41) doesn't know `%(ahead-behind:...)` and exits
+      // non-zero for the whole call — retry without it rather than failing
+      // branch discovery outright.
+      const fallback = await gitOrThrow(
+        ['for-each-ref', '--sort=-committerdate', `--format=${FORMAT_NO_AHEAD_BEHIND}`, 'refs/heads', 'refs/remotes/origin'],
+        options,
+      );
+      text = bytesToText(fallback.stdout);
+      hasAheadBehind = false;
+    }
+  }
 
   const byName = new Map<string, BranchSummary>();
   for (const line of text.split('\n')) {
     if (line.trim() === '') continue;
-    // Subject is last so a tab inside it can't shift the fixed fields.
-    const [refname, sha, dateText, authorName, ...rest] = line.split('\t');
-    const subject = rest.length === 0 ? undefined : rest.join('\t');
+    const parts = line.split('\t');
+    const refname = parts[0];
+    const sha = parts[1];
+    const dateText = parts[2];
+    const authorName = parts[3];
+    const aheadBehindText = hasAheadBehind ? parts[4] : undefined;
+    const subjectParts = hasAheadBehind ? parts.slice(5) : parts.slice(4);
+    const subject = subjectParts.length === 0 ? undefined : subjectParts.join('\t');
     if (refname === undefined || sha === undefined) continue;
 
     let name: string;
@@ -79,6 +147,7 @@ export async function listBranches(options: ListBranchesOptions): Promise<Branch
 
     const date = Number(dateText ?? '0');
     const committerDate = Number.isFinite(date) ? date : 0;
+    const { ahead, behind } = parseAheadBehind(aheadBehindText);
     const existing = byName.get(name);
     if (existing === undefined) {
       byName.set(name, {
@@ -89,6 +158,8 @@ export async function listBranches(options: ListBranchesOptions): Promise<Branch
         committerDate,
         subject: subject === undefined || subject === '' ? null : subject,
         authorName: authorName === undefined || authorName === '' ? null : authorName,
+        ahead,
+        behind,
       });
       continue;
     }
@@ -103,6 +174,8 @@ export async function listBranches(options: ListBranchesOptions): Promise<Branch
       existing.committerDate = committerDate;
       existing.subject = subject === undefined || subject === '' ? null : subject;
       existing.authorName = authorName === undefined || authorName === '' ? null : authorName;
+      existing.ahead = ahead;
+      existing.behind = behind;
     }
   }
 

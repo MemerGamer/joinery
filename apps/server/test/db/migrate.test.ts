@@ -12,7 +12,7 @@ describe('runMigrations', () => {
       const sqlite = new Database(join(dir, 'state.sqlite'), { create: true });
 
       const first = await runMigrations(sqlite);
-      expect(first).toEqual(['0001_init.sql', '0002_revision_choice.sql']);
+      expect(first).toEqual(['0001_init.sql', '0002_revision_choice.sql', '0003_last_opened.sql']);
 
       const tables = sqlite
         .query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type = 'table'")
@@ -33,7 +33,7 @@ describe('runMigrations', () => {
         .query<{ name: string }, []>('SELECT name FROM schema_migrations')
         .all()
         .map((r) => r.name);
-      expect(applied).toEqual(['0001_init.sql', '0002_revision_choice.sql']);
+      expect(applied).toEqual(['0001_init.sql', '0002_revision_choice.sql', '0003_last_opened.sql']);
 
       sqlite.close();
     } finally {

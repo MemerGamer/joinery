@@ -6,7 +6,7 @@
 import { Bot, CircleCheck, CircleDashed, CircleX } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { paintingUrl, type Painting } from '../../lib/covers.ts';
-import type { Ci, Person } from '../../mock/homebase.ts';
+import type { Ci, Person } from '../../lib/people.ts';
 
 export function Avatar({ person, size = 24 }: { person: Person; size?: number }): React.JSX.Element {
   return (

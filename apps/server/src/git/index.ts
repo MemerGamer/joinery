@@ -45,11 +45,17 @@ export {
   findOpenPrNumberForBranch,
   listOpenPulls,
   resolvePr,
+  deriveCiStatus,
+  deriveReviewRequested,
   type FindOpenPrOptions,
   type PullSummary,
   type ListOpenPullsResult,
   type ResolvedPr,
 } from './github.ts';
+
+export { getPullsCached, clearPullsCache } from './pullsCache.ts';
+
+export { getMe, getCachedLogin, type Me } from './me.ts';
 
 export { listBranches, type BranchSummary, type ListBranchesOptions } from './refs.ts';
 

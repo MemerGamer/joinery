@@ -5,7 +5,7 @@
 import { review } from '@review/core/db';
 import type { Review, ReviewStatus, Revision } from '@review/core';
 import { reviewId, reviewStatusSchema, revisionSchema } from '@review/core';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Db } from './client.ts';
 import { narrowUnion } from './narrow.ts';
 
@@ -121,6 +121,24 @@ export async function setLastSeenPrSha(db: Db, id: string, lastSeenPrSha: string
 
 export async function setStatus(db: Db, id: string, status: ReviewStatus): Promise<Review> {
   return update(db, id, { status });
+}
+
+/**
+ * Mark `id` as opened now (§1): `GET /api/reviews/:id` calls this after
+ * building its response, so "unread agent replies" is measured against the
+ * *previous* open, not the one currently in flight. Bypasses the `update()`
+ * helper above since `lastOpenedAt` is set to a raw `unixepoch()` SQL
+ * expression rather than a plain value.
+ */
+export async function touchOpened(db: Db, id: string): Promise<Review> {
+  const rows = await db
+    .update(review)
+    .set({ lastOpenedAt: sql`(unixepoch())` })
+    .where(eq(review.id, id))
+    .returning();
+  const row = rows[0];
+  if (row === undefined) throw new Error(`review ${id} not found`);
+  return toReview(row);
 }
 
 /**

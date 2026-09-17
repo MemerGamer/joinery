@@ -4,7 +4,7 @@
  * itself; there is deliberately no invalidation code here (§5).
  */
 import { fileViewed } from '@review/core/db';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { Db } from './client.ts';
 
 export type FileViewed = {
@@ -41,4 +41,25 @@ export async function isViewed(db: Db, reviewId: string, path: string, blobSha: 
     .where(and(eq(fileViewed.reviewId, reviewId), eq(fileViewed.path, path), eq(fileViewed.blobSha, blobSha)))
     .limit(1);
   return rows.length > 0;
+}
+
+/**
+ * `listViewed` for a whole batch of reviews at once (one query), so the
+ * Homebase composer can recompute every review's `viewedFiles` against its
+ * *current* file list without a query per review (§1).
+ */
+export async function listViewedForReviews(
+  db: Db,
+  reviewIds: readonly string[],
+): Promise<Map<string, FileViewed[]>> {
+  const byReview = new Map<string, FileViewed[]>();
+  if (reviewIds.length === 0) return byReview;
+
+  const rows = await db.select().from(fileViewed).where(inArray(fileViewed.reviewId, [...reviewIds]));
+  for (const row of rows) {
+    const list = byReview.get(row.reviewId) ?? [];
+    list.push({ path: row.path, blobSha: row.blobSha, viewedAt: row.viewedAt });
+    byReview.set(row.reviewId, list);
+  }
+  return byReview;
 }

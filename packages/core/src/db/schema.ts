@@ -51,6 +51,8 @@ export const review = sqliteTable(
     currentRevision: text('current_revision'),
     /** PR head SHA last rendered, for the "changes since you last looked" view (§4). */
     lastSeenPrSha: text('last_seen_pr_sha'),
+    /** Unix seconds the review was last opened via `GET /api/reviews/:id`; null means never (§1, "unread agent replies"). */
+    lastOpenedAt: integer('last_opened_at'),
     status: text('status').notNull().default('open'),
     createdAt: integer('created_at').notNull().default(now),
   },

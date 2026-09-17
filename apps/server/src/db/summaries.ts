@@ -3,12 +3,12 @@
  * no reading order yet, unviewed files, unresolved threads, agent runs in
  * flight"). Everything here is a DB aggregate — a handful of `GROUP BY
  * review_id` queries over the whole id set — so listing a hundred reviews
- * costs five statements, not a hundred engines. Anything that needs git
+ * costs six statements, not a hundred engines. Anything that needs git
  * (files changed, divergence) is deliberately absent; see Homebase.tsx.
  */
-import { agentRun, comment, fileViewed, readingOrder, thread } from '@review/core/db';
+import { agentRun, comment, fileViewed, readingOrder, review, thread } from '@review/core/db';
 import type { ReviewSummary } from '@review/core';
-import { and, count, countDistinct, eq, inArray, max } from 'drizzle-orm';
+import { and, count, countDistinct, eq, inArray, max, sql } from 'drizzle-orm';
 import type { Db } from './client.ts';
 
 function maxOf(...values: ReadonlyArray<number | null | undefined>): number | null {
@@ -24,7 +24,7 @@ export async function summarizeReviews(db: Db, reviewIds: readonly string[]): Pr
   if (reviewIds.length === 0) return [];
   const ids = [...reviewIds];
 
-  const [threadRows, commentRows, viewedRows, readingOrderRows, runRows] = await Promise.all([
+  const [threadRows, commentRows, viewedRows, readingOrderRows, runRows, unreadRows] = await Promise.all([
     db
       .select({
         reviewId: thread.reviewId,
@@ -65,6 +65,22 @@ export async function summarizeReviews(db: Db, reviewIds: readonly string[]): Pr
       .from(agentRun)
       .where(and(inArray(agentRun.reviewId, ids), inArray(agentRun.status, ['pending', 'running'])))
       .groupBy(agentRun.reviewId),
+    // Agent comments created after the review was last opened (null =
+    // never opened -> everything counts). Joined through `thread` for
+    // `reviewId` and through `review` for `last_opened_at`.
+    db
+      .select({ reviewId: thread.reviewId, n: count() })
+      .from(comment)
+      .innerJoin(thread, eq(comment.threadId, thread.id))
+      .innerJoin(review, eq(thread.reviewId, review.id))
+      .where(
+        and(
+          inArray(thread.reviewId, ids),
+          eq(comment.author, 'agent'),
+          sql`${comment.createdAt} > coalesce(${review.lastOpenedAt}, 0)`,
+        ),
+      )
+      .groupBy(thread.reviewId),
   ]);
 
   const byId = new Map<string, ReviewSummary>(
@@ -120,6 +136,10 @@ export async function summarizeReviews(db: Db, reviewIds: readonly string[]): Pr
   for (const row of runRows) {
     const s = byId.get(row.reviewId);
     if (s !== undefined) s.agentRunning = row.n > 0;
+  }
+  for (const row of unreadRows) {
+    const s = byId.get(row.reviewId);
+    if (s !== undefined) s.unreadAgentReplies = row.n;
   }
 
   return [...byId.values()];

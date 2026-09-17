@@ -6,6 +6,8 @@
  * in a try/catch to stay up.
  */
 import { z } from 'zod';
+import type { CiStatus, Pull } from '@review/core';
+import { getCachedLogin } from './me.ts';
 
 export type FindOpenPrOptions = { cwd: string };
 
@@ -35,6 +37,78 @@ export async function findOpenPrNumberForBranch(
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
+// `statusCheckRollup` items come in two incompatible shapes depending on
+// whether the check is a GitHub Actions "check run" or a legacy commit
+// "status context" — see PLAN.md §2b. Every field is optional and the
+// object is `.passthrough()`, so a shape gh changes tomorrow just carries no
+// signal instead of throwing; the whole array further `.catch([])`s so a
+// totally different `statusCheckRollup` shape degrades this PR's `ci` to
+// `null` rather than failing `listOpenPulls` for every PR in the repo.
+const rollupItemSchema = z
+  .object({
+    /** CheckRun-shaped: 'COMPLETED' | 'IN_PROGRESS' | 'QUEUED' | ... */
+    status: z.string().optional(),
+    /** CheckRun-shaped, only meaningful once `status === 'COMPLETED'`. */
+    conclusion: z.string().nullable().optional(),
+    /** StatusContext-shaped: 'SUCCESS' | 'FAILURE' | 'ERROR' | 'PENDING' | 'EXPECTED' */
+    state: z.string().optional(),
+  })
+  .passthrough();
+type RollupItem = z.infer<typeof rollupItemSchema>;
+const statusCheckRollupSchema = z.array(rollupItemSchema).catch([]);
+
+const reviewRequestItemSchema = z
+  .object({
+    login: z.string().optional(),
+    name: z.string().optional(),
+    __typename: z.string().optional(),
+  })
+  .passthrough();
+const reviewRequestsSchema = z.array(reviewRequestItemSchema).catch([]);
+
+const FAILING_VALUES = new Set(['FAILURE', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'ERROR']);
+
+/**
+ * Roll up `statusCheckRollup` into one `CiStatus`: any failing check/status
+ * wins outright, then any not-yet-completed/pending one, else passing when
+ * there's at least one check, else `null` for "no checks at all".
+ */
+export function deriveCiStatus(rollup: readonly RollupItem[]): CiStatus | null {
+  if (rollup.length === 0) return null;
+  let anyFailing = false;
+  let anyPending = false;
+  for (const item of rollup) {
+    if (item.conclusion !== null && item.conclusion !== undefined && FAILING_VALUES.has(item.conclusion)) {
+      anyFailing = true;
+    }
+    if (item.state !== undefined && FAILING_VALUES.has(item.state)) {
+      anyFailing = true;
+    }
+    if (item.status !== undefined && item.status !== 'COMPLETED') {
+      anyPending = true;
+    }
+    if (item.state === 'PENDING' || item.state === 'EXPECTED') {
+      anyPending = true;
+    }
+  }
+  if (anyFailing) return 'failing';
+  if (anyPending) return 'pending';
+  return 'passing';
+}
+
+/**
+ * True when the local `gh` login is among the requested reviewers; when the
+ * login isn't known yet (cold cache / no `gh`), true iff anyone was
+ * requested — better a false positive nudge than silently hiding it.
+ */
+export function deriveReviewRequested(
+  requests: readonly { login?: string | undefined }[],
+  login: string | null,
+): boolean {
+  if (login === null) return requests.length > 0;
+  return requests.some((r) => r.login === login);
+}
+
 const pullListItemSchema = z.object({
   number: z.number().int().positive(),
   title: z.string(),
@@ -43,17 +117,15 @@ const pullListItemSchema = z.object({
   author: z.object({ login: z.string() }).nullable().default(null),
   updatedAt: z.string(),
   isDraft: z.boolean(),
+  additions: z.number().int().nonnegative().optional(),
+  deletions: z.number().int().nonnegative().optional(),
+  changedFiles: z.number().int().nonnegative().optional(),
+  statusCheckRollup: statusCheckRollupSchema.optional().default([]),
+  reviewRequests: reviewRequestsSchema.optional().default([]),
 });
 
-export type PullSummary = {
-  number: number;
-  title: string;
-  headRefName: string;
-  baseRefName: string;
-  authorLogin: string | null;
-  updatedAt: string;
-  isDraft: boolean;
-};
+/** Matches `Pull` from `@review/core` exactly; `reviewId` is always `null` here — the route fills it from the DB. */
+export type PullSummary = Pull;
 
 export type ListOpenPullsResult = {
   /**
@@ -88,7 +160,7 @@ export async function listOpenPulls(options: FindOpenPrOptions): Promise<ListOpe
         '--state',
         'open',
         '--json',
-        'number,title,headRefName,baseRefName,author,updatedAt,isDraft',
+        'number,title,headRefName,baseRefName,author,updatedAt,isDraft,additions,deletions,changedFiles,statusCheckRollup,reviewRequests',
       ],
       { cwd: options.cwd, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
     );
@@ -107,15 +179,26 @@ export async function listOpenPulls(options: FindOpenPrOptions): Promise<ListOpe
   const parsed = z.array(pullListItemSchema).safeParse(raw);
   if (!parsed.success) return { available: true, pulls: [] };
 
-  const pulls = parsed.data.map((p) => ({
-    number: p.number,
-    title: p.title,
-    headRefName: p.headRefName,
-    baseRefName: p.baseRefName,
-    authorLogin: p.author?.login ?? null,
-    updatedAt: p.updatedAt,
-    isDraft: p.isDraft,
-  }));
+  const login = getCachedLogin();
+  const pulls = parsed.data.map((p) => {
+    const updatedAtMs = Date.parse(p.updatedAt);
+    return {
+      number: p.number,
+      title: p.title,
+      headRefName: p.headRefName,
+      baseRefName: p.baseRefName,
+      authorLogin: p.author?.login ?? null,
+      updatedAt: p.updatedAt,
+      updatedAtUnix: Number.isFinite(updatedAtMs) ? Math.floor(updatedAtMs / 1000) : 0,
+      isDraft: p.isDraft,
+      additions: p.additions ?? null,
+      deletions: p.deletions ?? null,
+      changedFiles: p.changedFiles ?? null,
+      ci: deriveCiStatus(p.statusCheckRollup),
+      reviewRequested: deriveReviewRequested(p.reviewRequests, login),
+      reviewId: null,
+    };
+  });
   return { available: true, pulls };
 }
 
