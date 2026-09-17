@@ -11,7 +11,12 @@ export const repoSchema = z.object({
 });
 export type Repo = z.infer<typeof repoSchema>;
 
-export const reviewStatusSchema = z.enum(['open', 'orphaned', 'archived']);
+/**
+ * `draft`: opened from the UI to look at, not yet claimed as a review —
+ * Homebase ignores it until "Start review" moves it to `open`. The CLI and
+ * agents create reviews as `open` directly.
+ */
+export const reviewStatusSchema = z.enum(['draft', 'open', 'orphaned', 'archived']);
 export type ReviewStatus = z.infer<typeof reviewStatusSchema>;
 
 export const reviewSchema = z.object({
@@ -96,6 +101,8 @@ export const branchSchema = z.object({
   authorName: z.string().nullable(),
   /** An existing review at `(repo, name)`, so the UI can land on it instead of creating a second one. */
   reviewId: z.string().nullable(),
+  /** That review's status; null when `reviewId` is null. */
+  reviewStatus: reviewStatusSchema.nullable(),
   /** Commits ahead of / behind the repo's default branch; null when git can't say (older git, no default ref). */
   ahead: z.number().int().nonnegative().nullable(),
   behind: z.number().int().nonnegative().nullable(),
@@ -123,6 +130,8 @@ export const pullSchema = z.object({
   reviewRequested: z.boolean(),
   /** An existing review at `(repo, headRefName)`; filled by the server from the DB. */
   reviewId: z.string().nullable(),
+  /** That review's status; null when `reviewId` is null. */
+  reviewStatus: reviewStatusSchema.nullable(),
 });
 export type Pull = z.infer<typeof pullSchema>;
 

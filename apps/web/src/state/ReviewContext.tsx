@@ -189,6 +189,15 @@ export interface ReviewEngine extends ReviewEngineState {
    * directly, so the outcome is never silently dropped.
    */
   generateReadingOrder: () => Promise<void>;
+  /**
+   * Moves a `draft`/`archived` review to `open` (SPEC: "Feature: drafts",
+   * D4) so it starts showing up on Homebase. A no-op when there's no review
+   * loaded yet or it's already `open`. Errors are not folded into
+   * `state.error` (that channel is for "the review failed to load", a
+   * different failure the whole window reacts to) — they're rethrown so the
+   * Header's button can show its own transient message instead.
+   */
+  startReview: () => Promise<void>;
   bumpAnnotations: (path: string) => void;
   annotationsByPath: Map<string, DiffLineAnnotation<ThreadAnnotationMeta>[]>;
   draftThread: DraftThread | null;
@@ -783,6 +792,15 @@ export function ReviewProvider({
     }
   }, [reviewId]);
 
+  const startReview = useCallback(async () => {
+    if (state.review === null || state.review.status === 'open') return;
+    const res = await callApi('setReviewStatus', {
+      params: [reviewId],
+      body: { status: 'open' },
+    });
+    setState((s) => ({ ...s, review: res.review }));
+  }, [reviewId, state.review]);
+
   const bumpAnnotations = useCallback(
     (path: string) => {
       const rec = itemsRef.current.get(path);
@@ -935,6 +953,7 @@ export function ReviewProvider({
     reloadReadingOrder,
     reloadAll: load,
     generateReadingOrder,
+    startReview,
     bumpAnnotations,
     annotationsByPath: annotationsRef.current,
     draftThread,

@@ -92,7 +92,11 @@ export function Homebase(): React.JSX.Element {
   const queue = useMemo(
     () =>
       Array.from(pullsByRepo.entries())
-        .flatMap(([repoId, pulls]) => pulls.filter((p) => p.reviewId === null).map((p) => ({ repoId, pull: p })))
+        .flatMap(([repoId, pulls]) =>
+          pulls
+            .filter((p) => p.reviewId === null || p.reviewStatus === 'draft' || p.reviewStatus === 'archived')
+            .map((p) => ({ repoId, pull: p })),
+        )
         .sort(
           (a, b) =>
             effortOf({ filesTotal: a.pull.changedFiles, additions: a.pull.additions, deletions: a.pull.deletions }).score -
@@ -541,6 +545,8 @@ function QueueRow({
   const flags: React.ReactNode[] = [];
   if (p.isDraft) flags.push(<Chip key="draft">draft</Chip>);
   if (p.reviewRequested) flags.push(<Chip key="req" tone="warning">review requested</Chip>);
+  if (p.reviewStatus === 'draft') flags.push(<Chip key="opened">opened</Chip>);
+  if (p.reviewStatus === 'archived') flags.push(<Chip key="archived">archived</Chip>);
   return (
     <li>
       {/* Three fixed columns — avatar, text, effort — so every row lines

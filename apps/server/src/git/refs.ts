@@ -10,6 +10,7 @@
  * here keeps "which remote" a non-question rather than inventing a
  * multi-remote UI nobody asked for.
  */
+import type { ReviewStatus } from '@review/core';
 import { git, gitOrThrow, bytesToText, type GitCallOptions } from './run.ts';
 
 export type BranchSummary = {
@@ -22,6 +23,8 @@ export type BranchSummary = {
   committerDate: number;
   subject: string | null;
   authorName: string | null;
+  /** That review's status; filled by the route alongside `reviewId`, null until then. */
+  reviewStatus: ReviewStatus | null;
   /** Commits ahead of / behind the repo's default branch; null when git can't say. */
   ahead: number | null;
   behind: number | null;
@@ -158,6 +161,7 @@ export async function listBranches(options: ListBranchesOptions): Promise<Branch
         committerDate,
         subject: subject === undefined || subject === '' ? null : subject,
         authorName: authorName === undefined || authorName === '' ? null : authorName,
+        reviewStatus: null,
         ahead,
         behind,
       });

@@ -197,6 +197,7 @@ export async function listOpenPulls(options: FindOpenPrOptions): Promise<ListOpe
       ci: deriveCiStatus(p.statusCheckRollup),
       reviewRequested: deriveReviewRequested(p.reviewRequests, login),
       reviewId: null,
+      reviewStatus: null,
     };
   });
   return { available: true, pulls };

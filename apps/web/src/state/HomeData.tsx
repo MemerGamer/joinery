@@ -22,8 +22,10 @@ export interface HomeReview {
 
 export interface HomeSnapshot {
   repos: Repo[];
-  /** Archived reviews excluded. */
+  /** Only `open` and `orphaned` reviews; archived and draft excluded. */
   reviews: HomeReview[];
+  /** `draft` reviews — started but not yet claimed. */
+  drafts: HomeReview[];
   /** Repo id → open pulls (all, including already-reviewed ones; screens filter). */
   pullsByRepo: ReadonlyMap<string, Pull[]>;
   /** Repo id → whether `gh` was available for that repo's pull list. */
@@ -88,6 +90,7 @@ function errorMessage(err: unknown, fallback: string): string {
 let snapshot: HomeSnapshot = {
   repos: [],
   reviews: [],
+  drafts: [],
   pullsByRepo: new Map(),
   pullsAvailable: new Map(),
   me: null,
@@ -150,12 +153,15 @@ async function doLoad(force: boolean): Promise<void> {
     const repoById = new Map(repos.map((r) => [r.id, r] as const));
     const summaryByReviewId = new Map(reviewsRes.summaries.map((s) => [s.reviewId, s] as const));
     const reviews: HomeReview[] = [];
+    const drafts: HomeReview[] = [];
     for (const review of reviewsRes.reviews) {
       if (review.status === 'archived') continue;
       const repo = repoById.get(review.repoId);
       if (repo === undefined) continue;
       const summary = summaryByReviewId.get(review.id) ?? defaultSummary(review.id);
-      reviews.push({ review, summary, repo, bucket: bucketOf(summary) });
+      const hr: HomeReview = { review, summary, repo, bucket: bucketOf(summary) };
+      if (review.status === 'draft') drafts.push(hr);
+      else reviews.push(hr);
     }
 
     const pullsByRepo = new Map<string, Pull[]>();
@@ -168,6 +174,7 @@ async function doLoad(force: boolean): Promise<void> {
     setSnapshot({
       repos,
       reviews,
+      drafts,
       pullsByRepo,
       pullsAvailable,
       me: meRes,
@@ -202,7 +209,7 @@ async function openPull(repoId: string, pull: Pull): Promise<void> {
   }
   try {
     const detail = await callApi('createReview', {
-      body: { repoId, branch: pull.headRefName, base: pull.baseRefName, prNumber: pull.number },
+      body: { repoId, branch: pull.headRefName, base: pull.baseRefName, prNumber: pull.number, status: 'draft' },
     });
     goReview(detail.review.id);
     void refresh();
@@ -221,7 +228,7 @@ async function openBranch(repoId: string, branch: Branch | string): Promise<void
     return;
   }
   try {
-    const detail = await callApi('createReview', { body: { repoId, branch: name } });
+    const detail = await callApi('createReview', { body: { repoId, branch: name, status: 'draft' } });
     goReview(detail.review.id);
     void refresh();
   } catch (err) {
@@ -235,7 +242,10 @@ async function archiveReview(id: string): Promise<void> {
   // Optimistic: drop it from the snapshot immediately, then let `refresh`
   // reconcile with the server either way (including undoing this if the
   // request actually failed).
-  patch({ reviews: snapshot.reviews.filter((r) => r.review.id !== id) });
+  patch({
+    reviews: snapshot.reviews.filter((r) => r.review.id !== id),
+    drafts: snapshot.drafts.filter((r) => r.review.id !== id),
+  });
   try {
     await callApi('setReviewStatus', { params: [id], body: { status: 'archived' } });
   } catch (err) {

@@ -3,14 +3,60 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   Columns2,
+  Loader2,
   MessageSquare,
   MessageSquareOff,
+  Play,
   Rows2,
   Search,
 } from 'lucide-react';
+import { useState } from 'react';
+import { ApiError } from '../lib/apiClient.ts';
 import { goHomebase } from '../lib/router.ts';
 import { useReview } from '../state/ReviewContext.tsx';
 import { RevisionPicker } from './RevisionPicker.tsx';
+
+/**
+ * "Start review" / "Reopen review" — moves a `draft`/`archived` review to
+ * `open` (SPEC: "Feature: drafts", D4). Hidden for `open`/`orphaned`. Its
+ * in-flight and error state are local rather than in `ReviewContext`: a
+ * failed status flip doesn't belong in `state.error` (that's "the review
+ * failed to load"), and nothing else needs to know about it.
+ */
+function StartReviewButton({ status }: { status: 'draft' | 'archived' }): React.JSX.Element {
+  const { startReview } = useReview();
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleClick = async (): Promise<void> => {
+    setStarting(true);
+    setError(null);
+    try {
+      await startReview();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to start review');
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={() => void handleClick()}
+      disabled={starting}
+      title={error ?? undefined}
+      className="chrome-btn-primary ml-2"
+    >
+      {starting ? (
+        <Loader2 size={13} strokeWidth={1.75} className="animate-spin" aria-hidden />
+      ) : (
+        <Play size={13} strokeWidth={1.75} aria-hidden />
+      )}
+      {status === 'archived' ? 'Reopen review' : 'Start review'}
+    </button>
+  );
+}
 
 /**
  * Same frame + divider as lucide's `PanelLeft`/`PanelRight`, but the open
@@ -87,6 +133,10 @@ export function Header({ onOpenPalette }: { onOpenPalette: () => void }): React.
           {review?.branch ?? review?.pinnedSha?.slice(0, 10) ?? '…'}
         </span>
       </div>
+
+      {(review?.status === 'draft' || review?.status === 'archived') && (
+        <StartReviewButton status={review.status} />
+      )}
 
       <div className="flex-1" />
 

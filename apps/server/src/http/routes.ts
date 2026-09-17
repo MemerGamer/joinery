@@ -178,7 +178,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     const branches = await Promise.all(
       rawBranches.map(async (branch) => {
         const existing = await findReviewByBranch(deps.db, repo.id, branch.name);
-        return { ...branch, reviewId: existing?.id ?? null };
+        return { ...branch, reviewId: existing?.id ?? null, reviewStatus: existing?.status ?? null };
       }),
     );
     return c.json({ branches });
@@ -196,7 +196,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     const pulls = await Promise.all(
       result.pulls.map(async (pull) => {
         const existing = await findReviewByBranch(deps.db, repo.id, pull.headRefName);
-        return { ...pull, reviewId: existing?.id ?? null };
+        return { ...pull, reviewId: existing?.id ?? null, reviewStatus: existing?.status ?? null };
       }),
     );
     return c.json({ available: result.available, pulls });
@@ -260,6 +260,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
         pinnedSha: body.sha ?? null,
         baseRef: base ?? repo.defaultBranch,
         prNumber: body.prNumber ?? null,
+        status: body.status,
       });
     }
 

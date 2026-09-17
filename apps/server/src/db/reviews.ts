@@ -34,6 +34,8 @@ export type CreateReviewInput = {
   readonly pinnedSha: string | null;
   readonly baseRef: string;
   readonly prNumber?: number | null;
+  /** Status for the new row (drafts feature); defaults to `'open'`. */
+  readonly status?: ReviewStatus;
 };
 
 export async function createReview(db: Db, input: CreateReviewInput): Promise<Review> {
@@ -47,6 +49,7 @@ export async function createReview(db: Db, input: CreateReviewInput): Promise<Re
       pinnedSha: input.pinnedSha,
       baseRef: input.baseRef,
       prNumber: input.prNumber ?? null,
+      status: input.status ?? 'open',
     })
     .returning();
   const row = rows[0];

@@ -52,6 +52,12 @@ export const createReviewBodySchema = z.object({
   sha: z.string().optional(),
   base: z.string().optional(),
   prNumber: z.number().int().positive().optional(),
+  /**
+   * Status for a review this call creates. An existing review at the same
+   * identity is returned as-is, whatever its status. The web UI opens as
+   * `draft` (look first, "Start review" later); the CLI defaults to `open`.
+   */
+  status: z.enum(['draft', 'open']).default('open'),
 });
 export const setRevisionBodySchema = z.object({ revision: revisionSchema });
 export const markViewedBodySchema = z.object({

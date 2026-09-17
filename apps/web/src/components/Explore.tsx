@@ -13,7 +13,7 @@
  */
 import { Cloud, FolderGit2, GitBranch, HardDrive, Plus, Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Branch, Pull, Repo } from '@review/core';
+import type { Branch, Pull, Repo, ReviewStatus } from '@review/core';
 import { ApiError, callApi } from '../lib/apiClient.ts';
 import { backdropProps, coverPainting, useBackdrop } from '../lib/covers.ts';
 import { effortOf } from '../lib/effort.ts';
@@ -39,6 +39,11 @@ function branchKey(name: string): string {
 }
 function rowKeyOf(row: Row): string {
   return row.kind === 'pull' ? pullKey(row.pull.number) : branchKey(row.branch.name);
+}
+
+/** A pull/branch is claimed — and hidden from Explore — when its review is `open` or `orphaned`. */
+function isClaimed(status: ReviewStatus | null): boolean {
+  return status === 'open' || status === 'orphaned';
 }
 
 function repoLabel(r: Repo): string {
@@ -111,7 +116,7 @@ export function Explore(): React.JSX.Element {
   const repo = repos.find((r) => r.id === repoId);
 
   const pulls = useMemo(() => {
-    const list = (pullsByRepo.get(repoId) ?? []).filter((p) => p.reviewId === null);
+    const list = (pullsByRepo.get(repoId) ?? []).filter((p) => !isClaimed(p.reviewStatus));
     const filtered =
       needle === ''
         ? list
@@ -157,8 +162,8 @@ export function Explore(): React.JSX.Element {
   useEffect(() => () => branchAbortRef.current?.abort(), []);
 
   const branches = useMemo(() => {
-    const heads = new Set((pullsByRepo.get(repoId) ?? []).filter((p) => p.reviewId === null).map((p) => p.headRefName));
-    return branchesRaw.filter((b) => !heads.has(b.name) && b.reviewId === null);
+    const heads = new Set((pullsByRepo.get(repoId) ?? []).filter((p) => !isClaimed(p.reviewStatus)).map((p) => p.headRefName));
+    return branchesRaw.filter((b) => !heads.has(b.name) && !isClaimed(b.reviewStatus));
   }, [branchesRaw, pullsByRepo, repoId]);
 
   const rows = useMemo<Row[]>(
@@ -241,7 +246,7 @@ export function Explore(): React.JSX.Element {
   }, []);
 
   function countFor(id: string): number {
-    const unreviewedPulls = (pullsByRepo.get(id) ?? []).filter((p) => p.reviewId === null).length;
+    const unreviewedPulls = (pullsByRepo.get(id) ?? []).filter((p) => !isClaimed(p.reviewStatus)).length;
     return id === repoId ? unreviewedPulls + branches.length : unreviewedPulls;
   }
 
@@ -391,7 +396,7 @@ export function Explore(): React.JSX.Element {
               ) : (
                 <>
                   <section className="flex flex-col gap-2">
-                    <SectionHeading title="Pull requests" count={pulls.length} hint="open, not yet reviewed" />
+                    <SectionHeading title="Pull requests" count={pulls.length} hint="open, not started" />
                     {loading ? (
                       <Empty>Loading…</Empty>
                     ) : pullsAvailable.get(repoId) === false ? (
@@ -511,6 +516,8 @@ function PullRow({
             <span className="truncate text-body font-medium text-chrome-fg">{p.title}</span>
             {p.isDraft && <Chip>draft</Chip>}
             {p.reviewRequested && <Chip tone="warning">review requested</Chip>}
+            {p.reviewStatus === 'draft' && <Chip>opened</Chip>}
+            {p.reviewStatus === 'archived' && <Chip>archived</Chip>}
           </span>
           <span className="flex items-center gap-1.5 text-micro text-chrome-fg-subtle">
             <CiIcon ci={p.ci} size={11} />
@@ -560,6 +567,8 @@ function BranchRow({
           <span className="flex min-w-0 items-center gap-1.5">
             <span className="truncate font-mono text-xs font-medium text-chrome-fg">{b.name}</span>
             {isDefault && <Chip>default</Chip>}
+            {b.reviewStatus === 'draft' && <Chip>opened</Chip>}
+            {b.reviewStatus === 'archived' && <Chip>archived</Chip>}
           </span>
           <span className="flex items-center gap-1.5 text-micro text-chrome-fg-subtle">
             <GitBranch size={11} strokeWidth={2} className="shrink-0" aria-hidden />
