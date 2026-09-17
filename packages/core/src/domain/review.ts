@@ -194,6 +194,28 @@ export type ReadingOrderPlan = z.infer<typeof readingOrderPlanSchema>;
 export const threadSideSchema = z.enum(['old', 'new']);
 export type ThreadSide = z.infer<typeof threadSideSchema>;
 
+/**
+ * Six fixed kinds, set by the user (UI), the embedded agent (tool), or an
+ * external agent (CLI). Display glyphs and titles live in the web
+ * (`lib/reactions.ts`) — the contract only names the kinds.
+ */
+export const reactionKindSchema = z.enum([
+  'thumbs_up',
+  'thumbs_down',
+  'eyes',
+  'check',
+  'question',
+  'tada',
+]);
+export type ReactionKind = z.infer<typeof reactionKindSchema>;
+
+/** One kind on one comment, with everyone who set it (`user` first). */
+export const reactionSchema = z.object({
+  kind: reactionKindSchema,
+  actors: z.array(z.enum(['user', 'agent'])),
+});
+export type Reaction = z.infer<typeof reactionSchema>;
+
 export const commentSchema = z.object({
   id: z.string(),
   threadId: z.string(),
@@ -201,6 +223,8 @@ export const commentSchema = z.object({
   bodyMd: z.string(),
   agentRunId: z.string().nullable(),
   createdAt: z.number().int(),
+  /** Empty when the comment has no reactions. */
+  reactions: z.array(reactionSchema),
 });
 export type Comment = z.infer<typeof commentSchema>;
 

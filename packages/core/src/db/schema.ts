@@ -184,6 +184,28 @@ export const comment = sqliteTable(
   (t) => [index('comment_thread_idx').on(t.threadId, t.createdAt)],
 );
 
+/**
+ * One row per `(comment, actor, kind)`. Reactions carry no identity of their
+ * own — a user toggling one off simply deletes the row.
+ */
+export const reaction = sqliteTable(
+  'reaction',
+  {
+    commentId: text('comment_id')
+      .notNull()
+      .references(() => comment.id, { onDelete: 'cascade' }),
+    /** 'user' | 'agent' */
+    actor: text('actor').notNull(),
+    /** One of `reactionKindSchema`. */
+    kind: text('kind').notNull(),
+    createdAt: integer('created_at').notNull().default(now),
+  },
+  (t) => [
+    primaryKey({ columns: [t.commentId, t.actor, t.kind] }),
+    index('reaction_comment_idx').on(t.commentId),
+  ],
+);
+
 export const agentRun = sqliteTable(
   'agent_run',
   {
@@ -232,6 +254,7 @@ export const schema = {
   fileViewed,
   thread,
   comment,
+  reaction,
   agentRun,
   agentEvent,
 };
@@ -245,5 +268,6 @@ export type StepFileRow = typeof stepFile.$inferSelect;
 export type FileViewedRow = typeof fileViewed.$inferSelect;
 export type ThreadRow = typeof thread.$inferSelect;
 export type CommentRow = typeof comment.$inferSelect;
+export type ReactionRow = typeof reaction.$inferSelect;
 export type AgentRunRow = typeof agentRun.$inferSelect;
 export type AgentEventRow = typeof agentEvent.$inferSelect;

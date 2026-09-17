@@ -18,6 +18,7 @@ import {
   pullSchema,
   readingOrderPlanSchema,
   readingOrderSchema,
+  reactionKindSchema,
   repoSchema,
   reviewSchema,
   reviewStatusSchema,
@@ -72,6 +73,7 @@ export const createThreadBodySchema = z.object({
   startLine: z.number().int().positive(),
   endLine: z.number().int().positive(),
   bodyMd: z.string().min(1),
+  author: z.enum(['user', 'agent']).default('user'),
   /** Post the comment, then immediately ask an agent to reply (Cmd+Enter). */
   askAgent: z.boolean().default(false),
 });
@@ -82,6 +84,13 @@ export const replyBodySchema = z.object({
   askAgent: z.boolean().default(false),
 });
 export const generateReadingOrderBodySchema = z.object({});
+export const askAgentBodySchema = z.object({});
+export const setReactionBodySchema = z.object({
+  kind: reactionKindSchema,
+  actor: z.enum(['user', 'agent']).default('user'),
+  /** False removes the reaction. */
+  on: z.boolean().default(true),
+});
 export const setReviewStatusBodySchema = z.object({ status: reviewStatusSchema });
 
 // A monorepo can have thousands of remote branches — `filter` and `limit`
@@ -288,6 +297,25 @@ export const api = {
     method: 'POST',
     path: (id: string) => `/api/threads/${encodeURIComponent(id)}/resolve`,
     body: z.object({ resolved: z.boolean().default(true) }),
+    query: undefined,
+    response: z.object({ thread: threadSchema }),
+  }),
+  /**
+   * The explicit "Ask agent" trigger for a thread that already carries the
+   * question. `createThread`/`reply` with `askAgent: true` are sugar for the
+   * same run.
+   */
+  askAgent: def({
+    method: 'POST',
+    path: (id: string) => `/api/threads/${encodeURIComponent(id)}/ask`,
+    body: askAgentBodySchema,
+    query: undefined,
+    response: z.object({ run: agentRunSchema }),
+  }),
+  setReaction: def({
+    method: 'POST',
+    path: (id: string) => `/api/comments/${encodeURIComponent(id)}/reactions`,
+    body: setReactionBodySchema,
     query: undefined,
     response: z.object({ thread: threadSchema }),
   }),
