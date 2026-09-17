@@ -22,7 +22,7 @@ export function TopBar({
   children?: ReactNode;
 }): React.JSX.Element {
   return (
-    <header className="home-island flex h-11 shrink-0 items-center gap-1 px-2">
+    <header className="home-island flex h-11 shrink-0 items-center gap-1 px-2" style={{ viewTransitionName: 'topbar' }}>
       {onBack !== undefined && (
         <button type="button" onClick={onBack} aria-label="Back" className="chrome-icon-btn">
           <ArrowLeft size={15} strokeWidth={1.75} aria-hidden />

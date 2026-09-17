@@ -67,7 +67,7 @@ export function Header({ onOpenPalette }: { onOpenPalette: () => void }): React.
   const repoName = repo?.rootPath.split('/').filter(Boolean).at(-1);
 
   return (
-    <header className="chrome-island flex h-11 shrink-0 items-center gap-1 px-2">
+    <header className="chrome-island flex h-11 shrink-0 items-center gap-1 px-2" style={{ viewTransitionName: 'topbar' }}>
       <button type="button" onClick={goHomebase} aria-label="Back to Homebase" className="chrome-icon-btn">
         <ArrowLeft size={15} strokeWidth={1.75} aria-hidden />
       </button>

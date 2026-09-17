@@ -246,7 +246,29 @@ select {
   }
 }
 
+/*
+ * Route changes (lib/router.ts) run inside `document.startViewTransition`.
+ * The root cross-fades, quickly; the top bar keeps its name across screens
+ * so it morphs in place rather than fading out and back in, which is what
+ * makes Homebase → Explore read as one app changing page.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 160ms;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+::view-transition-old(topbar),
+::view-transition-new(topbar) {
+  animation-duration: 200ms;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+
   *,
   *::before,
   *::after {

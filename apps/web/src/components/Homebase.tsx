@@ -196,7 +196,7 @@ export function Homebase(): React.JSX.Element {
               <h2 className="text-body font-medium text-chrome-fg">Up for review</h2>
               <span className="text-xs tabular-nums text-chrome-fg-subtle">{queue.length}</span>
             </div>
-            <ul className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
+            <ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pt-1 pb-2">
               {queue.map(({ repoId, pull }) => (
                 <QueueRow key={`${repoId}:${String(pull.number)}`} repoName={repoById.get(repoId)?.name ?? repoId} pull={pull} />
               ))}
@@ -378,9 +378,9 @@ function QueueRow({ repoName, pull: p }: { repoName: string; pull: MockPull }): 
       {/* Three fixed columns — avatar, text, effort — so every row lines
           up: title on the first line, facts on the second, flags (if any)
           on a third. Nothing floats to the right except the effort. */}
-      <button type="button" className="group flex w-full items-start gap-2.5 rounded-md px-2.5 py-2.5 text-left transition-colors hover:bg-chrome-bg-hover">
+      <button type="button" className="group flex w-full items-start gap-3 rounded-md px-3 py-3.5 text-left transition-colors hover:bg-chrome-bg-hover">
         <Avatar person={p.author} size={24} />
-        <span className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="flex min-w-0 flex-1 flex-col gap-1.5">
           <span className="line-clamp-2 text-body font-medium leading-snug text-chrome-fg">{p.title}</span>
           <span className="flex items-center gap-1.5 text-micro text-chrome-fg-subtle">
             <CiIcon ci={p.ci} size={11} />
