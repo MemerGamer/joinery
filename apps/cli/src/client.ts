@@ -255,6 +255,10 @@ export function getRun(id: string): Promise<ResponseOf<'getRun'>> {
   return send('getRun', { path: api.getRun.path(id) });
 }
 
+export function setReaction(id: string, body: BodyOf<'setReaction'>): Promise<ResponseOf<'setReaction'>> {
+  return send('setReaction', { path: api.setReaction.path(id), body });
+}
+
 /** Exposed for tests: clears the cached bearer token between cases. */
 export function _resetTokenCache(): void {
   cachedToken = undefined;

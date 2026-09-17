@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
+import { reactionKindSchema, type ReactionKind } from '@review/core';
 import * as client from '../client.ts';
 import { UsageError } from '../args.ts';
 import { printLine, printTable } from '../format.ts';
 import type { Command } from './types.ts';
-import { flagBoolean } from '../args.ts';
+import { flagBoolean, flagString } from '../args.ts';
 import { maybePrintJson, parseCommand, requireFlag, requirePositional, wantsHelp } from './shared.ts';
 
 export const threads: Command = {
@@ -94,6 +95,45 @@ export const resolve: Command = {
     const result = await client.resolveThread(id);
     if (maybePrintJson(parsed, result)) return;
     printLine(`thread ${result.thread.id} resolved`);
+  },
+};
+
+const EMOJI_TO_KIND: Readonly<Record<string, ReactionKind>> = {
+  '👍': 'thumbs_up',
+  '👎': 'thumbs_down',
+  '👀': 'eyes',
+  '✅': 'check',
+  '❓': 'question',
+  '🎉': 'tada',
+};
+
+function parseKind(raw: string): ReactionKind {
+  const emojiMatch = EMOJI_TO_KIND[raw];
+  if (emojiMatch !== undefined) return emojiMatch;
+  const parsed = reactionKindSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new UsageError(`invalid reaction kind "${raw}" (expected one of ${reactionKindSchema.options.join(', ')}, or an emoji)`);
+  }
+  return parsed.data;
+}
+
+export const react: Command = {
+  path: 'react',
+  summary: 'Set or clear a reaction on a comment',
+  usage: 'review react <commentId> <kind> [--off] [--actor user|agent] [--json]',
+  async run(argv) {
+    const parsed = parseCommand(argv, [{ name: 'off', type: 'boolean' }, { name: 'actor', type: 'string' }]);
+    if (wantsHelp(parsed)) return printLine(react.usage);
+    const commentId = requirePositional(parsed.positionals, 0, 'commentId');
+    const kind = parseKind(requirePositional(parsed.positionals, 1, 'kind'));
+    const actorFlag = flagString(parsed.flags, 'actor') ?? 'user';
+    if (actorFlag !== 'user' && actorFlag !== 'agent') {
+      throw new UsageError(`--actor must be "user" or "agent", got "${actorFlag}"`);
+    }
+    const on = !flagBoolean(parsed.flags, 'off');
+    const result = await client.setReaction(commentId, { kind, actor: actorFlag, on });
+    if (maybePrintJson(parsed, result)) return;
+    printLine(`${on ? 'reacted' : 'removed reaction'} ${kind} on comment ${commentId} as ${actorFlag}`);
   },
 };
 

@@ -72,8 +72,11 @@ this as your task) or manually.
 
 ## Workflow 2: answer a thread
 
-Triggered by "Ask agent" on a comment (`thread_reply` run). You are seeded
-with the thread, its code context, and the review's reading order.
+Triggered by "Ask agent" on a comment (`thread_reply` run). That embedded run
+acts through in-process tools (`mcp__review__*`), not this CLI — it has no
+shell at all. This workflow is for an *external* Claude Code session working
+the same way a human would: it is seeded with the thread, its code context,
+and the review's reading order, and talks to the server through `review`.
 
 1. Read the thread:
    ```
@@ -97,6 +100,27 @@ with the thread, its code context, and the review's reading order.
    ```
    review resolve <threadId>
    ```
+
+## Reacting
+
+`review react <commentId> <kind> [--off] [--actor user|agent] [--json]` sets
+or clears a reaction on a comment. `<kind>` accepts either the enum value
+(`thumbs_up`, `thumbs_down`, `eyes`, `check`, `question`, `tada`) or its
+emoji (👍 👎 👀 ✅ ❓ 🎉). `--actor` defaults to `user`; pass `--actor agent`
+when reacting as yourself. `--off` removes the reaction instead of setting it.
+
+Three status conventions, so a reaction reads the same everywhere in the app:
+- `eyes` — react on a thread's latest comment when you start working on it
+  from an external session (the embedded run does this automatically).
+- `check` — react once you've addressed what was asked, if you're not also
+  posting a reply.
+- `thumbs_up` — acknowledge a comment without writing a reply at all.
+
+```
+review react abc123 eyes --actor agent
+review react abc123 check --actor agent
+review react abc123 eyes --off --actor agent
+```
 
 ## Useful one-liners
 

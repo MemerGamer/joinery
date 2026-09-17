@@ -26,6 +26,7 @@ const leaves: Readonly<Record<string, Command>> = {
   thread: threads.thread,
   reply: threads.reply,
   resolve: threads.resolve,
+  react: threads.react,
   feedback: threads.feedback,
   revision: reviews.revision,
   viewed: reviews.viewed,

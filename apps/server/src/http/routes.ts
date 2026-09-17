@@ -17,6 +17,7 @@ import {
   readingOrderPlanSchema,
   replyBodySchema,
   revisionSchema,
+  setReactionBodySchema,
   setRevisionBodySchema,
   setReviewStatusBodySchema,
   NULL_BLOB,
@@ -30,6 +31,7 @@ import {
   createThread,
   findReviewByBranch,
   findReviewByPinnedSha,
+  getCommentThreadId,
   getLatestReadingOrder,
   getRepoById,
   getRepoByPath,
@@ -44,6 +46,7 @@ import {
   markViewed,
   resolveThread,
   setCurrentRevision,
+  setReaction,
   setStatus,
   touchOpened,
   unmarkViewed,
@@ -478,6 +481,18 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     const existing = await requireThread(deps, threadId);
     const body = await parseBody(resolveBodySchema, c);
     const thread = body.resolved ? await resolveThread(deps.db, threadId) : await unresolveThread(deps.db, threadId);
+    dispatch(existing.reviewId, { type: 'thread.updated', reviewId: existing.reviewId, thread });
+    return c.json({ thread });
+  });
+
+  app.post('/api/comments/:id/reactions', async (c) => {
+    const commentId = c.req.param('id');
+    const threadId = await getCommentThreadId(deps.db, commentId);
+    if (threadId === null) throw notFound(`comment ${commentId} not found`);
+    const existing = await requireThread(deps, threadId);
+    const body = await parseBody(setReactionBodySchema, c);
+    await setReaction(deps.db, { commentId, actor: body.actor, kind: body.kind, on: body.on });
+    const thread = await requireThread(deps, threadId);
     dispatch(existing.reviewId, { type: 'thread.updated', reviewId: existing.reviewId, thread });
     return c.json({ thread });
   });
