@@ -463,3 +463,70 @@ select {
   font-size: 12px;
   line-height: 1.5;
 }
+
+/*
+ * Initials avatar tinted by a per-person hue (`--h`), derived for both
+ * schemes so a warm hue reads as warm on dark too rather than as mud.
+ */
+@utility home-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  background: light-dark(hsl(var(--h) 70% 91%), hsl(var(--h) 35% 24%));
+  color: light-dark(hsl(var(--h) 55% 34%), hsl(var(--h) 70% 80%));
+}
+
+/* A card that lifts a hair on hover: border firms up, a soft shadow appears. */
+@utility home-card {
+  border-radius: var(--chrome-radius-lg);
+  border: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
+  transition:
+    border-color var(--chrome-transition-fast),
+    box-shadow var(--chrome-transition-fast),
+    background-color var(--chrome-transition-fast);
+  &:hover {
+    border-color: var(--chrome-border-strong);
+    box-shadow: var(--chrome-shadow);
+  }
+}
+
+/*
+ * The Homebase shell is the ordinary sunken black (or light grey). The
+ * chosen backdrop sits between the shell's background and its islands —
+ * `isolation` makes the shell a stacking context so the negative z-index
+ * lands there and nowhere lower — and the islands are opaque, so it shows
+ * only in the gaps. `--cover-bg` is a `background-image` value, set inline
+ * (the translucent glow; paintings live inside the page as a cover band).
+ */
+@utility home-shell {
+  background-color: var(--chrome-bg-sunken);
+  position: relative;
+  isolation: isolate;
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image: var(--cover-bg, none);
+    opacity: light-dark(0.55, 1);
+  }
+}
+
+/*
+ * Same shell as `chrome-island`, with a slightly deeper shadow so it sits
+ * on the lit background rather than floating over it.
+ */
+@utility home-island {
+  border-radius: var(--chrome-radius-lg);
+  background: var(--chrome-bg);
+  box-shadow:
+    0 0 0 0.5px light-dark(rgba(20, 22, 30, 0.14), rgba(255, 255, 255, 0.08)),
+    0 1px 2px light-dark(rgba(20, 22, 30, 0.06), rgba(0, 0, 0, 0.3)),
+    0 8px 24px light-dark(rgba(20, 22, 30, 0.08), rgba(0, 0, 0, 0.35));
+  overflow: hidden;
+}

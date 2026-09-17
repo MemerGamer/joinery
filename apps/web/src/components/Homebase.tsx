@@ -1,507 +1,400 @@
 /**
- * Homebase (SPEC §1): one row per branch across registered repos, each row
- * showing what's waiting on you — open threads, viewed files, whether a
- * reading order exists, an agent in flight.
+ * Homebase — first pass at "an actual homebase", on mock data.
  *
- * Deliberately DB-only: the row data is `GET /api/reviews`' summaries, which
- * are `GROUP BY review_id` aggregates, never per-review engine state. The
- * moment a row wants "4 files changed" every listed review needs a live
- * engine, which is exactly the fan-out the engine's idle eviction exists to
- * avoid.
+ * Two questions, two places: *what am I reviewing* (the page, centre) and
+ * *what could I pick up next* (the queue, right). Both are ordered by an
+ * effort score so the lightest thing is always at the top, and both wear
+ * the same score glyph so the two columns read as one system.
  *
- * Same shell as the review window — sunken background, top bar island,
- * islands on one 8px gap — but the column is capped at a reading width and
- * centred: a dashboard of two-line rows stretched across a 1600px monitor
- * is mostly empty space. The repo rail on the left is both a filter and a
- * per-repo tally, and mirrors Explore's rail so the two screens rhyme.
+ * Behind the islands sits a backdrop — solid, a glow rising from the
+ * bottom, or a painting — chosen from the corner switcher and remembered,
+ * so the screen has a mood rather than a flat grey.
+ *
+ * Every number here comes from `mock/homebase.ts`; nothing is wired.
  */
 import {
-  AlertTriangle,
   Archive,
-  ArchiveRestore,
   Check,
   Compass,
-  GitBranch,
   GitPullRequest,
-  Layers,
-  ListOrdered,
-  Loader2,
+  Inbox,
   MessageSquare,
   RefreshCw,
+  Search,
+  Sparkles,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ApiError, callApi } from '../lib/apiClient.ts';
+import { useMemo, useState } from 'react';
+import { backdropProps, coverPainting, useBackdrop } from '../lib/covers.ts';
 import { relativeTime } from '../lib/relativeTime.ts';
 import { goExplore, goReview } from '../lib/router.ts';
+import { PULLS, REPOS, REVIEWS, YOU, effortOf, type MockPull, type MockReview } from '../mock/homebase.ts';
+import { BackdropPicker } from './home/BackdropPicker.tsx';
+import { Avatar, Chip, CiIcon, CoverBand, DiffStat, EffortMeter, Kbd, ProgressBar, SectionHeading, type Tone } from './home/primitives.tsx';
 import { TopBar } from './TopBar.tsx';
-import type { Repo, Review, ReviewSummary } from '@review/core';
 
-type Tab = 'active' | 'archived';
+type Focus = 'reviewing' | 'replies' | 'done' | null;
+type Order = 'effort' | 'recent';
 
-/** `null` is "all repositories". */
-type RepoFilter = string | null;
+const repoById = new Map(REPOS.map((r) => [r.id, r]));
 
-function repoName(repo: Repo): string {
-  return repo.rootPath.split('/').filter(Boolean).at(-1) ?? repo.rootPath;
+function greeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 5) return 'Still up';
+  if (hour < 12) return 'Good morning';
+  if (hour < 18) return 'Good afternoon';
+  return 'Good evening';
 }
 
-const EMPTY_SUMMARY: Omit<ReviewSummary, 'reviewId'> = {
-  openThreads: 0,
-  resolvedThreads: 0,
-  viewedFiles: 0,
-  readingOrderVersion: null,
-  agentRunning: false,
-  lastActivityAt: null,
-};
+const DATE = new Intl.DateTimeFormat('en', { weekday: 'long', day: 'numeric', month: 'long' });
+
+function firstName(p: { name: string }): string {
+  return p.name === YOU.name ? 'you' : (p.name.split(' ')[0] ?? p.name);
+}
 
 export function Homebase(): React.JSX.Element {
-  const [repos, setRepos] = useState<Repo[]>([]);
-  const [reviews, setReviews] = useState<Review[]>([]);
-  const [summaries, setSummaries] = useState<ReadonlyMap<string, ReviewSummary>>(new Map());
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>('active');
-  const [repoFilter, setRepoFilter] = useState<RepoFilter>(null);
-  /** Ids with an archive/unarchive request in flight, so the row can't be double-submitted. */
-  const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
+  const [focus, setFocus] = useState<Focus>(null);
+  const [order, setOrder] = useState<Order>('effort');
+  const [backdrop, setBackdrop] = useBackdrop();
+  const painting = coverPainting(backdrop);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [repoRes, reviewRes] = await Promise.all([
-        callApi('listRepos'),
-        // Unfiltered: the active/archived split and the repo filter are
-        // client-side, so flipping either is instant rather than a round trip.
-        callApi('listReviews'),
-      ]);
-      setRepos(repoRes.repos);
-      setReviews(reviewRes.reviews);
-      setSummaries(new Map(reviewRes.summaries.map((s) => [s.reviewId, s])));
-    } catch (err) {
-      setError(
-        err instanceof ApiError
-          ? `Can't reach the review server: ${err.message}`
-          : 'Unknown error loading Homebase',
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const reviewing = useMemo(() => REVIEWS.filter((r) => r.bucket === 'attention'), []);
+  const done = useMemo(() => REVIEWS.filter((r) => r.bucket === 'done').sort((a, b) => b.lastActivityAt - a.lastActivityAt), []);
+  const unread = reviewing.reduce((n, r) => n + r.unreadReplies, 0);
+  const withReplies = reviewing.filter((r) => r.unreadReplies > 0);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const list = useMemo(() => {
+    const base = focus === 'replies' ? withReplies : reviewing;
+    return [...base].sort((a, b) =>
+      order === 'effort' ? effortOf(a).score - effortOf(b).score : b.lastActivityAt - a.lastActivityAt,
+    );
+  }, [focus, order, reviewing, withReplies]);
 
-  const setStatus = useCallback(async (review: Review, status: Review['status']) => {
-    setPending((prev) => new Set(prev).add(review.id));
-    try {
-      const res = await callApi('setReviewStatus', { params: [review.id], body: { status } });
-      // Reconcile against the authoritative row rather than assuming, so a
-      // server-side correction shows up instead of being papered over.
-      setReviews((prev) => prev.map((r) => (r.id === res.review.id ? res.review : r)));
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not update the review');
-    } finally {
-      setPending((prev) => {
-        const next = new Set(prev);
-        next.delete(review.id);
-        return next;
-      });
-    }
-  }, []);
+  // The queue: every open PR across every repo that has no review yet,
+  // lightest first — so "I have twenty minutes" has an obvious answer.
+  const queue = useMemo(
+    () =>
+      Object.entries(PULLS)
+        .flatMap(([repoId, pulls]) => pulls.filter((p) => p.reviewId === null).map((p) => ({ repoId, pull: p })))
+        .sort((a, b) => effortOf(a.pull).score - effortOf(b.pull).score),
+    [],
+  );
 
-  const repoById = useMemo(() => new Map(repos.map((r) => [r.id, r])), [repos]);
-
-  // Per-repo tallies for the rail: active count is what the rail shows, since
-  // "3 things to look at in review-ui" is the question a dashboard answers.
-  const activeByRepo = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const r of reviews) {
-      if (r.status === 'archived') continue;
-      m.set(r.repoId, (m.get(r.repoId) ?? 0) + 1);
-    }
-    return m;
-  }, [reviews]);
-
-  const archivedCount = reviews.filter((r) => r.status === 'archived').length;
-  const activeCount = reviews.length - archivedCount;
-
-  // Most recently touched first: a dashboard's top row should be the thing
-  // you were in the middle of, not the thing you opened first.
-  const visible = useMemo(() => {
-    const lastTouched = (r: Review): number => summaries.get(r.id)?.lastActivityAt ?? r.createdAt;
-    return reviews
-      .filter((r) => (tab === 'archived') === (r.status === 'archived'))
-      .filter((r) => repoFilter === null || r.repoId === repoFilter)
-      .sort((a, b) => lastTouched(b) - lastTouched(a));
-  }, [reviews, summaries, tab, repoFilter]);
-
-  const empty = !loading && error === null && visible.length === 0;
-  const sortedRepos = useMemo(() => [...repos].sort((a, b) => repoName(a).localeCompare(repoName(b))), [repos]);
+  const toggle = (f: Exclude<Focus, null>) => () => setFocus((cur) => (cur === f ? null : f));
 
   return (
-    <div className="flex h-full flex-col bg-chrome-bg-sunken p-2">
-      <div className="mx-auto flex h-full w-full max-w-5xl min-h-0 flex-col gap-2">
+    <div className="home-shell flex h-full flex-col p-2" {...backdropProps(backdrop)}>
+      <BackdropPicker value={backdrop} onChange={setBackdrop} />
+      <div className="mx-auto flex h-full w-full max-w-6xl min-h-0 flex-col gap-2">
         <TopBar title="Homebase">
-          <button type="button" onClick={goExplore} className="chrome-btn bg-transparent">
+          <button type="button" className="chrome-btn bg-transparent text-chrome-fg-subtle">
+            <Search size={13} strokeWidth={1.75} aria-hidden />
+            Jump to…
+            <Kbd>⌘K</Kbd>
+          </button>
+          <button type="button" onClick={goExplore} className="chrome-btn">
             <Compass size={13} strokeWidth={1.75} aria-hidden />
             Explore
           </button>
-          <button
-            type="button"
-            onClick={() => void load()}
-            aria-label="Refresh"
-            title="Refresh"
-            className="chrome-icon-btn"
-          >
-            <RefreshCw size={15} strokeWidth={1.75} className={loading ? 'animate-spin' : ''} aria-hidden />
+          <button type="button" aria-label="Refresh" title="Refresh" className="chrome-icon-btn">
+            <RefreshCw size={15} strokeWidth={1.75} aria-hidden />
           </button>
         </TopBar>
 
-        {error !== null && (
-          // Same treatment as the review window's divergence banner: an alert
-          // is its own sibling in the shell column, never squeezed into an
-          // island's header or list.
-          <div
-            role="alert"
-            className="flex items-center gap-2 rounded-lg bg-chrome-danger-bg px-3 py-2 text-xs font-medium text-chrome-fg"
-          >
-            <AlertTriangle size={16} strokeWidth={1.5} className="shrink-0 text-chrome-danger" aria-hidden />
-            <span>{error}</span>
-            <span className="font-normal text-chrome-fg-muted">
-              Start the server (<code>bun run dev:server</code>) and refresh.
-            </span>
-          </div>
-        )}
-
         <div className="flex min-h-0 flex-1 gap-2">
-          <aside className="chrome-island flex w-60 shrink-0 flex-col">
-            <div className="flex h-10 shrink-0 items-center pl-4 pr-2">
-              <h2 className="text-body font-medium text-chrome-fg">Repositories</h2>
-            </div>
-            <ul className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pt-1">
-              <li>
-                <RailItem
-                  icon={<Layers size={15} strokeWidth={1.5} aria-hidden />}
-                  label="All repositories"
-                  count={activeCount}
-                  selected={repoFilter === null}
-                  onSelect={() => setRepoFilter(null)}
+          <main className="home-island min-w-0 flex-1 overflow-y-auto">
+            {painting !== null && <CoverBand painting={painting} />}
+            <div className={`mx-auto flex max-w-3xl flex-col gap-8 px-8 pb-10 ${painting !== null ? 'pt-4' : 'pt-10'}`}>
+              <header className="flex flex-col gap-1">
+                <p className="text-xs text-chrome-fg-subtle">{DATE.format(new Date())}</p>
+                <h1 className="text-2xl font-semibold tracking-tight text-chrome-fg">
+                  {greeting()}, {YOU.name}
+                </h1>
+              </header>
+
+              {/* One strip of numbers, each a filter. Said once, here — the
+                  cards below carry the detail, so no prose restating them. */}
+              <div className="flex items-stretch divide-x divide-chrome-border rounded-lg border border-chrome-border">
+                <Stat
+                  value={reviewing.length}
+                  label="reviewing"
+                  icon={<Inbox size={14} strokeWidth={1.75} aria-hidden />}
+                  active={focus === 'reviewing'}
+                  onClick={toggle('reviewing')}
                 />
-              </li>
-              {sortedRepos.map((repo) => (
-                <li key={repo.id}>
-                  <RailItem
-                    icon={<GitBranch size={15} strokeWidth={1.5} aria-hidden />}
-                    label={repoName(repo)}
-                    sublabel={repo.rootPath}
-                    count={activeByRepo.get(repo.id) ?? 0}
-                    selected={repoFilter === repo.id}
-                    onSelect={() => setRepoFilter(repo.id)}
+                <Stat
+                  value={unread}
+                  label="agent replies"
+                  icon={<Sparkles size={14} strokeWidth={1.75} aria-hidden />}
+                  active={focus === 'replies'}
+                  onClick={toggle('replies')}
+                />
+                <Stat
+                  value={done.length}
+                  label="cleared"
+                  icon={<Check size={14} strokeWidth={1.75} aria-hidden />}
+                  active={focus === 'done'}
+                  onClick={toggle('done')}
+                />
+                <Stat
+                  value={queue.length}
+                  label="up for review"
+                  icon={<GitPullRequest size={14} strokeWidth={1.75} aria-hidden />}
+                />
+              </div>
+
+              {focus !== 'done' && (
+                <section className="flex flex-col gap-3">
+                  <SectionHeading
+                    title={focus === 'replies' ? 'Agent replies to read' : 'Currently reviewing'}
+                    count={list.length}
+                    action={
+                      <div role="tablist" aria-label="Order" className="flex gap-1">
+                        <OrderTab label="Lightest first" selected={order === 'effort'} onSelect={() => setOrder('effort')} />
+                        <OrderTab label="Recent" selected={order === 'recent'} onSelect={() => setOrder('recent')} />
+                      </div>
+                    }
                   />
-                </li>
-              ))}
-              {!loading && repos.length === 0 && (
-                <li className="px-2.5 py-6 text-center text-xs leading-snug text-chrome-fg-muted">
-                  No repositories registered yet.
-                </li>
+                  <ul className="flex flex-col gap-2">
+                    {list.map((r) => (
+                      <ReviewCard key={r.id} review={r} />
+                    ))}
+                  </ul>
+                </section>
               )}
+
+              {(focus === null || focus === 'done') && (
+                <section className="flex flex-col gap-3">
+                  <SectionHeading
+                    title="Cleared"
+                    count={done.length}
+                    hint="all files viewed, nothing open"
+                    action={
+                      <button type="button" className="chrome-btn bg-transparent">
+                        <Archive size={13} strokeWidth={1.75} aria-hidden />
+                        Archive all
+                      </button>
+                    }
+                  />
+                  <ul className="home-card divide-y divide-chrome-border hover:border-chrome-border hover:shadow-none">
+                    {done.map((r) => (
+                      <DoneRow key={r.id} review={r} />
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {focus !== null && (
+                <button type="button" onClick={() => setFocus(null)} className="self-start text-xs text-chrome-accent hover:underline">
+                  Show everything
+                </button>
+              )}
+            </div>
+          </main>
+
+          <aside className="home-island flex w-80 shrink-0 flex-col">
+            <div className="flex h-10 shrink-0 items-center gap-2 pl-4 pr-2">
+              <h2 className="text-body font-medium text-chrome-fg">Up for review</h2>
+              <span className="text-xs tabular-nums text-chrome-fg-subtle">{queue.length}</span>
+            </div>
+            <ul className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
+              {queue.map(({ repoId, pull }) => (
+                <QueueRow key={`${repoId}:${String(pull.number)}`} repoName={repoById.get(repoId)?.name ?? repoId} pull={pull} />
+              ))}
             </ul>
-            <div className="shrink-0 px-2 pb-2 pt-3">
-              <button type="button" onClick={goExplore} className="chrome-btn w-full justify-center">
+            <div className="shrink-0 border-t border-chrome-border px-2 py-2">
+              <button type="button" onClick={goExplore} className="chrome-btn w-full justify-center bg-transparent">
                 <Compass size={13} strokeWidth={1.75} aria-hidden />
-                Browse branches and PRs
+                Browse branches too
               </button>
             </div>
           </aside>
-
-          <section className="chrome-island flex min-w-0 flex-1 flex-col">
-            <div className="flex h-10 shrink-0 items-center gap-2 pl-4 pr-2">
-              <h2 className="text-body font-medium text-chrome-fg">Reviews</h2>
-              <div className="flex-1" />
-              {/* Active/Archived as a segmented pair, the same control the threads
-                  panel uses for Open/Resolved — one idiom for "which subset". */}
-              <div role="tablist" aria-label="Review status" className="flex gap-1">
-                <TabButton
-                  label="Active"
-                  count={activeCount}
-                  selected={tab === 'active'}
-                  onSelect={() => setTab('active')}
-                />
-                <TabButton
-                  label="Archived"
-                  count={archivedCount}
-                  selected={tab === 'archived'}
-                  onSelect={() => setTab('archived')}
-                />
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto px-2 pb-2 pt-1">
-              {loading && reviews.length === 0 && (
-                <p className="flex h-full items-center justify-center text-body text-chrome-fg-muted">Loading…</p>
-              )}
-
-              {empty && (
-                <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
-                  <GitBranch size={20} strokeWidth={1.5} className="text-chrome-fg-subtle" aria-hidden />
-                  <p className="text-xs leading-snug text-chrome-fg-muted">
-                    {tab === 'archived'
-                      ? 'Nothing archived.'
-                      : reviews.length === 0
-                        ? 'No reviews yet. Open a branch or PR from Explore.'
-                        : repoFilter !== null
-                          ? 'No active reviews in this repository.'
-                          : 'No active reviews — everything here is archived.'}
-                  </p>
-                  {tab === 'active' && (
-                    <button type="button" onClick={goExplore} className="chrome-btn">
-                      <Compass size={13} strokeWidth={1.5} aria-hidden />
-                      Explore repositories
-                    </button>
-                  )}
-                </div>
-              )}
-
-              <ul className="flex flex-col gap-0.5">
-                {visible.map((review) => (
-                  <ReviewRow
-                    key={review.id}
-                    review={review}
-                    repo={repoById.get(review.repoId)}
-                    showRepo={repoFilter === null}
-                    summary={summaries.get(review.id) ?? { reviewId: review.id, ...EMPTY_SUMMARY }}
-                    busy={pending.has(review.id)}
-                    onOpen={() => goReview(review.id)}
-                    onToggleArchived={() =>
-                      void setStatus(review, review.status === 'archived' ? 'open' : 'archived')
-                    }
-                  />
-                ))}
-              </ul>
-            </div>
-          </section>
         </div>
       </div>
     </div>
   );
 }
 
-function RailItem({
-  icon,
-  label,
-  sublabel,
-  count,
-  selected,
-  onSelect,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  sublabel?: string;
-  count: number;
-  selected: boolean;
-  onSelect: () => void;
-}): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-current={selected}
-      title={sublabel}
-      className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left transition-colors ${
-        selected ? 'chrome-row-selected' : 'text-chrome-fg-muted hover:bg-chrome-bg-hover hover:text-chrome-fg'
-      }`}
-    >
-      <span className="shrink-0 text-chrome-fg-subtle">{icon}</span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-body">{label}</span>
-        {sublabel !== undefined && (
-          <span className="truncate text-micro text-chrome-fg-subtle">{sublabel}</span>
-        )}
-      </span>
-      {count > 0 && (
-        <span className="shrink-0 rounded-full bg-chrome-bg-hover px-1.5 text-micro tabular-nums text-chrome-fg-muted">
-          {count}
-        </span>
-      )}
-    </button>
-  );
-}
-
-function TabButton({
-  label,
-  count,
-  selected,
-  onSelect,
-}: {
-  label: string;
-  count: number;
-  selected: boolean;
-  onSelect: () => void;
-}): React.JSX.Element {
+function OrderTab({ label, selected, onSelect }: { label: string; selected: boolean; onSelect: () => void }): React.JSX.Element {
   return (
     <button
       type="button"
       role="tab"
       aria-selected={selected}
       onClick={onSelect}
-      className={`flex h-6 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${
+      className={`flex h-6 items-center rounded-md px-2.5 text-xs font-medium transition-colors ${
         selected ? 'bg-chrome-bg-active text-chrome-fg' : 'text-chrome-fg-muted hover:bg-chrome-bg-hover hover:text-chrome-fg'
       }`}
     >
       {label}
-      {count > 0 && <span className="tabular-nums text-chrome-fg-subtle">{count}</span>}
     </button>
   );
 }
 
-function ReviewRow({
-  review,
-  repo,
-  showRepo,
-  summary,
-  busy,
-  onOpen,
-  onToggleArchived,
+function Stat({
+  value,
+  label,
+  icon,
+  active = false,
+  onClick,
 }: {
-  review: Review;
-  repo: Repo | undefined;
-  showRepo: boolean;
-  summary: ReviewSummary;
-  busy: boolean;
-  onOpen: () => void;
-  onToggleArchived: () => void;
+  value: number;
+  label: string;
+  icon: React.ReactNode;
+  active?: boolean;
+  onClick?: () => void;
 }): React.JSX.Element {
-  const archived = review.status === 'archived';
-  const isPr = review.prNumber !== null;
-  const Icon = isPr ? GitPullRequest : GitBranch;
-  const touched = summary.lastActivityAt ?? review.createdAt;
-  const hasReadingOrder = summary.readingOrderVersion !== null;
-
-  const meta: string[] = [];
-  if (showRepo && repo !== undefined) meta.push(repoName(repo));
-  meta.push(`into ${review.baseRef}`);
-  meta.push(summary.lastActivityAt === null ? `opened ${relativeTime(review.createdAt)}` : `active ${relativeTime(touched)}`);
-
+  const body = (
+    <span className="flex items-center gap-1.5 text-xs text-chrome-fg-muted">
+      <span className={active ? 'text-chrome-accent' : 'text-chrome-fg-subtle'}>{icon}</span>
+      <span className="text-xl font-semibold leading-none tracking-tight tabular-nums text-chrome-fg">{value}</span>
+      {label}
+    </span>
+  );
+  const cls = `flex min-w-0 flex-1 items-center px-4 py-3 text-left transition-colors ${active ? 'bg-chrome-accent-soft/50' : ''}`;
+  if (onClick === undefined) return <div className={cls}>{body}</div>;
   return (
-    // Two sibling buttons rather than a button inside a button: the row body
-    // opens the review, the trailing icon archives it. Hover paints the whole
-    // row, so the two read as one control with a secondary action.
-    <li className="group flex items-center rounded-md transition-colors hover:bg-chrome-bg-hover">
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-2.5 py-2 text-left"
-      >
-        <span
-          className={`flex size-8 shrink-0 items-center justify-center rounded-md ${
-            isPr ? 'bg-chrome-accent-soft text-chrome-accent' : 'bg-chrome-bg-hover text-chrome-fg-muted'
-          }`}
-        >
-          <Icon size={16} strokeWidth={1.5} aria-hidden />
-        </span>
+    <button type="button" onClick={onClick} aria-pressed={active} className={`${cls} hover:bg-chrome-bg-hover`}>
+      {body}
+    </button>
+  );
+}
 
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-body font-medium text-chrome-fg">
-              {review.branch ?? review.pinnedSha?.slice(0, 10) ?? 'detached'}
+/** The "what's waiting in here" chips for a review card. CI, commits and steps are not chips: CI is the icon by the title, the rest is noise. */
+function reasons(r: MockReview): { tone: Tone; icon: React.ReactNode; text: string }[] {
+  const out: { tone: Tone; icon: React.ReactNode; text: string }[] = [];
+  const i = { size: 11, strokeWidth: 2, 'aria-hidden': true } as const;
+  if (r.openThreads > 0)
+    out.push({ tone: 'neutral', icon: <MessageSquare {...i} />, text: `${String(r.openThreads)} open ${r.openThreads === 1 ? 'thread' : 'threads'}` });
+  return out;
+}
+
+function ReviewCard({ review: r }: { review: MockReview }): React.JSX.Element {
+  const repo = repoById.get(r.repoId);
+  const effort = effortOf(r);
+  const chips = reasons(r);
+  return (
+    // The whole card opens the review via an underlay button, so the one
+    // real control inside it (generate a reading order) isn't a button
+    // nested in a button. Content ignores the pointer except that control.
+    <li className="home-card group relative">
+      <button type="button" onClick={() => goReview(r.id)} aria-label={`Open ${r.title}`} className="absolute inset-0 rounded-[inherit]" />
+      <div className="pointer-events-none relative flex items-stretch gap-4 p-4">
+        <Avatar person={r.author} size={32} />
+
+        <span className="flex min-w-0 flex-1 flex-col gap-2.5">
+          <span className="flex flex-col gap-0.5">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate text-body font-medium text-chrome-fg">{r.title}</span>
+              {r.prNumber !== null && (
+                <span className="flex shrink-0 items-center gap-0.5 text-micro tabular-nums text-chrome-fg-subtle">
+                  <GitPullRequest size={11} strokeWidth={2} aria-hidden />
+                  {r.prNumber}
+                </span>
+              )}
+              {r.draft && <Chip>draft</Chip>}
+              <CiIcon ci={r.ci} size={12} />
             </span>
-            {isPr && (
-              <span className="shrink-0 rounded-[3px] bg-chrome-bg-hover px-1 text-micro tabular-nums text-chrome-fg-muted">
-                #{review.prNumber}
-              </span>
-            )}
-            {review.status === 'orphaned' && (
-              <span
-                className="shrink-0 rounded-[3px] bg-chrome-warning-bg px-1 text-micro text-chrome-warning"
-                title="The branch this review tracked no longer exists"
-              >
-                orphaned
-              </span>
-            )}
-            {summary.agentRunning && (
-              <span className="flex shrink-0 items-center gap-1 text-micro text-chrome-accent" title="An agent run is in progress">
-                <Loader2 size={11} strokeWidth={2} className="animate-spin" aria-hidden />
-                agent working
-              </span>
-            )}
+            <span className="truncate text-micro text-chrome-fg-subtle">
+              {repo?.name} · {r.baseRef} ← {r.branch} · {firstName(r.author)}
+            </span>
           </span>
-          <span className="truncate text-micro text-chrome-fg-subtle">{meta.join(' · ')}</span>
+
+          {(chips.length > 0 || r.readingOrder === null) && (
+            <span className="flex flex-wrap items-center gap-1.5">
+              {chips.map((c) => (
+                <Chip key={c.text} tone={c.tone} icon={c.icon}>
+                  {c.text}
+                </Chip>
+              ))}
+              {r.readingOrder === null && (
+                <button
+                  type="button"
+                  className="pointer-events-auto inline-flex h-5 items-center gap-1 rounded-md bg-chrome-accent-soft px-1.5 text-micro font-medium whitespace-nowrap text-chrome-accent transition-[filter] hover:brightness-110"
+                >
+                  <Sparkles size={11} strokeWidth={2} aria-hidden />
+                  Generate reading order
+                </button>
+              )}
+            </span>
+          )}
         </span>
 
-        {/* What's waiting on you (SPEC §1), as a fixed-width stat cluster so
-            the columns line up row to row. Zero counts stay visible but
-            subtle — an absent stat reads as "unknown", not "none". */}
-        <span className="flex shrink-0 items-center gap-4 text-micro tabular-nums">
-          <Stat
-            icon={<MessageSquare size={13} strokeWidth={1.75} aria-hidden />}
-            value={summary.openThreads}
-            label={summary.openThreads === 1 ? 'open thread' : 'open threads'}
-            emphasis={summary.openThreads > 0}
-            title={`${String(summary.openThreads)} open, ${String(summary.resolvedThreads)} resolved`}
-          />
-          <Stat
-            icon={<Check size={13} strokeWidth={1.75} aria-hidden />}
-            value={summary.viewedFiles}
-            label="viewed"
-            title={`${String(summary.viewedFiles)} files marked viewed`}
-          />
-          <span
-            className={`flex w-24 items-center gap-1 ${hasReadingOrder ? 'text-chrome-fg-muted' : 'text-chrome-fg-subtle'}`}
-            title={
-              hasReadingOrder
-                ? `Reading order v${String(summary.readingOrderVersion)}`
-                : 'No reading order generated yet'
-            }
-          >
-            <ListOrdered size={13} strokeWidth={1.75} aria-hidden />
-            {hasReadingOrder ? `order v${String(summary.readingOrderVersion)}` : 'no order'}
+        {/* Right column, three aligned lines: diff size, progress, effort · files viewed. */}
+        <span className="flex w-48 shrink-0 flex-col justify-between gap-1.5 text-micro">
+          <span className="flex justify-end">
+            <DiffStat additions={r.additions} deletions={r.deletions} />
+          </span>
+          <ProgressBar value={r.filesViewed} total={r.filesTotal} />
+          <span className="flex items-end justify-between leading-none">
+            <EffortMeter level={effort.level} label={effort.label} minutes={effort.minutes} />
+            <span className="tabular-nums whitespace-nowrap text-chrome-fg-subtle">
+              <span className="font-medium text-chrome-fg-muted">{r.filesViewed}</span> of {r.filesTotal} files
+            </span>
           </span>
         </span>
+      </div>
+    </li>
+  );
+}
+
+function DoneRow({ review: r }: { review: MockReview }): React.JSX.Element {
+  const repo = repoById.get(r.repoId);
+  return (
+    <li className="group flex items-center transition-colors hover:bg-chrome-bg-hover">
+      <button type="button" onClick={() => goReview(r.id)} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-2.5 text-left">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-chrome-success-bg text-chrome-success">
+          <Check size={14} strokeWidth={2.25} aria-hidden />
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-body text-chrome-fg-muted group-hover:text-chrome-fg">{r.title}</span>
+            {r.prNumber !== null && <span className="shrink-0 text-micro tabular-nums text-chrome-fg-subtle">#{r.prNumber}</span>}
+          </span>
+          <span className="truncate text-micro text-chrome-fg-subtle">
+            {repo?.name} · {r.resolvedThreads} resolved · {r.filesTotal} files viewed · {relativeTime(r.lastActivityAt)}
+          </span>
+        </span>
+        <Avatar person={r.author} size={20} />
       </button>
       <button
         type="button"
-        disabled={busy}
-        onClick={onToggleArchived}
-        aria-label={archived ? 'Unarchive review' : 'Archive review'}
-        title={archived ? 'Unarchive' : 'Archive'}
-        // Revealed on row hover or keyboard focus — an archive icon on every
-        // row at rest is a column of identical glyphs that says nothing.
-        className="chrome-icon-btn mr-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-40"
+        aria-label="Archive review"
+        title="Archive"
+        className="chrome-icon-btn mr-2 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
       >
-        {archived ? (
-          <ArchiveRestore size={15} strokeWidth={1.75} aria-hidden />
-        ) : (
-          <Archive size={15} strokeWidth={1.75} aria-hidden />
-        )}
+        <Archive size={14} strokeWidth={1.75} aria-hidden />
       </button>
     </li>
   );
 }
 
-function Stat({
-  icon,
-  value,
-  label,
-  emphasis = false,
-  title,
-}: {
-  icon: React.ReactNode;
-  value: number;
-  label: string;
-  emphasis?: boolean;
-  title: string;
-}): React.JSX.Element {
+function QueueRow({ repoName, pull: p }: { repoName: string; pull: MockPull }): React.JSX.Element {
+  const effort = effortOf(p);
+  const flags: React.ReactNode[] = [];
+  if (p.draft) flags.push(<Chip key="draft">draft</Chip>);
+  if (p.reviewRequested) flags.push(<Chip key="req" tone="warning">review requested</Chip>);
   return (
-    <span
-      className={`flex w-24 items-center gap-1 ${
-        emphasis ? 'text-chrome-fg' : value > 0 ? 'text-chrome-fg-muted' : 'text-chrome-fg-subtle'
-      }`}
-      title={title}
-    >
-      <span className={emphasis ? 'text-chrome-accent' : ''}>{icon}</span>
-      {value} {label}
-    </span>
+    <li>
+      {/* Three fixed columns — avatar, text, effort — so every row lines
+          up: title on the first line, facts on the second, flags (if any)
+          on a third. Nothing floats to the right except the effort. */}
+      <button type="button" className="group flex w-full items-start gap-2.5 rounded-md px-2.5 py-2.5 text-left transition-colors hover:bg-chrome-bg-hover">
+        <Avatar person={p.author} size={24} />
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="line-clamp-2 text-body font-medium leading-snug text-chrome-fg">{p.title}</span>
+          <span className="flex items-center gap-1.5 text-micro text-chrome-fg-subtle">
+            <CiIcon ci={p.ci} size={11} />
+            <span className="truncate">
+              {repoName} #{p.number} · {firstName(p.author)}
+            </span>
+          </span>
+          {flags.length > 0 && <span className="flex items-center gap-1">{flags}</span>}
+        </span>
+        <span className="flex shrink-0 flex-col items-end gap-1 pt-0.5">
+          <EffortMeter level={effort.level} label={effort.label} minutes={effort.minutes} />
+          <span className="text-micro tabular-nums text-chrome-fg-subtle">{relativeTime(p.updatedAt)}</span>
+        </span>
+      </button>
+    </li>
   );
 }
