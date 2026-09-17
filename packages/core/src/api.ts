@@ -319,6 +319,14 @@ export const api = {
     query: undefined,
     response: z.object({ thread: threadSchema }),
   }),
+  /** Reach a comment's thread (and review) from its id alone, for the `react` tool's ownership check. */
+  getComment: def({
+    method: 'GET',
+    path: (id: string) => `/api/comments/${encodeURIComponent(id)}`,
+    body: undefined,
+    query: undefined,
+    response: z.object({ threadId: z.string(), reviewId: z.string() }),
+  }),
   feedback: def({
     method: 'GET',
     path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/feedback`,

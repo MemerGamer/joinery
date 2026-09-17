@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { agentCanUseTool, isReadOnlyBashCommand } from '../../src/agent/permissions.ts';
+import { makeAgentCanUseTool, isReadOnlyBashCommand } from '../../src/agent/permissions.ts';
 
 describe('isReadOnlyBashCommand (SPEC §9: read-only enforcement)', () => {
   test('allows the documented read-only prefixes', () => {
@@ -88,27 +88,32 @@ describe('isReadOnlyBashCommand (SPEC §9: read-only enforcement)', () => {
   });
 });
 
-describe('agentCanUseTool (SPEC §9)', () => {
+describe('makeAgentCanUseTool (PLAN.md "agent reply mechanism": no shell, path-fenced reads)', () => {
   const signal = new AbortController().signal;
   const baseOptions = { signal, toolUseID: 'tool_1', requestId: 'req_1' };
+  const cwd = process.cwd();
+  const agentCanUseTool = makeAgentCanUseTool({ cwd });
 
-  test('auto-approves Read, Grep, Glob', async () => {
+  test('auto-approves Read, Grep, Glob for paths under cwd', async () => {
     for (const toolName of ['Read', 'Grep', 'Glob']) {
-      const result = await agentCanUseTool(toolName, { path: 'foo.ts' }, baseOptions);
+      const key = toolName === 'Read' ? 'file_path' : 'path';
+      const result = await agentCanUseTool(toolName, { [key]: 'foo.ts' }, baseOptions);
       expect(result?.behavior).toBe('allow');
     }
   });
 
-  test('gates Bash through the allowlist', async () => {
-    const allowed = await agentCanUseTool('Bash', { command: 'git status' }, baseOptions);
-    expect(allowed?.behavior).toBe('allow');
-
-    const denied = await agentCanUseTool('Bash', { command: 'git log; rm -rf x' }, baseOptions);
-    expect(denied?.behavior).toBe('deny');
+  test('denies Read for a path outside cwd', async () => {
+    const result = await agentCanUseTool('Read', { file_path: '/etc/passwd' }, baseOptions);
+    expect(result?.behavior).toBe('deny');
   });
 
-  test('denies every other tool by default, including future/unknown tools', async () => {
-    for (const toolName of ['Write', 'Edit', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Task', 'SomeFutureTool']) {
+  test('allows any mcp__review__* tool', async () => {
+    const result = await agentCanUseTool('mcp__review__reply', { threadId: 't1', bodyMd: 'hi' }, baseOptions);
+    expect(result?.behavior).toBe('allow');
+  });
+
+  test('denies Bash and every other tool by default, including future/unknown tools', async () => {
+    for (const toolName of ['Bash', 'Write', 'Edit', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Task', 'SomeFutureTool']) {
       const result = await agentCanUseTool(toolName, {}, baseOptions);
       expect(result?.behavior).toBe('deny');
     }

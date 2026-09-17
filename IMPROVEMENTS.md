@@ -1309,3 +1309,32 @@ session was already bound to :7317 running the pre-change code — not a
 defect in this change, just a note for anyone re-running the repro that
 `bun run --filter '@review/server' start` won't pick up new code on an
 already-running process.
+
+## Agent reply mechanism and reactions (PLAN.md R1–R6)
+
+Built as specced, by three Sonnet agents against a frozen contract. What
+they left out, in their own accounting:
+
+- **The thread-reply prompt's review header omits the PR title** (branch,
+  base and PR number are there). Fetching the title needs the same
+  `gh`-backed path Homebase summaries use, which is real latency on every
+  thread-reply run; deferred rather than paid per run.
+- **The live "Thinking…" row doesn't render for a thread that is both
+  outdated and collapsed to its anchor-context view** — that branch
+  replaces the comment list with a `<pre>`, so there is nowhere to hang
+  the row. The plan didn't cover the case.
+- `createReviewTools` takes a `runId` beyond the plan's `{ invoke,
+  reviewId }`, so `reply`'s `agentRunId` comes from the run context rather
+  than from the model.
+- `resolveRunCwd` deletes and reinserts the `agent_worktree` row when a
+  cached worktree directory has gone missing, since `(repoId, sha)` is the
+  primary key.
+
+**Not verified end to end.** Unlike the reading-order work above, nothing
+here was run against a live server or a browser — the task was explicitly
+scoped to code only, with the user testing it themselves. What is
+verified: `bun run typecheck` clean across all four workspaces, `bun test`
+287 pass / 1 fail (the pre-existing `engine tick > committing moves head
+while working looks identical`), and a successful `apps/web` build. The
+three open questions at the end of PLAN.md's R6 were taken at their
+bracketed defaults.

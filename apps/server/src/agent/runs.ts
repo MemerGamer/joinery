@@ -7,15 +7,31 @@
  * `agent/readingOrder.ts` for the agent side and IMPROVEMENTS.md for what
  * of §9's full session machinery this does not implement.
  *
- * `requestThreadReply` (the `thread_reply` run kind) is untouched — still a
- * placeholder; out of scope for this unit.
+ * `requestThreadReply` is the `thread_reply` run kind (PLAN.md "agent reply
+ * mechanism" R3): create the run, put an `eyes` reaction (as the agent) on
+ * the thread's latest user comment as a working indicator, run the agent
+ * (`threadReply.ts`) against the `review` MCP tools, then remove the `eyes`
+ * reaction and close out the run — on success or on error either way, so a
+ * run never leaves a stray `eyes` reaction behind.
  */
-import type { AgentRun, FileEntry, ServerEvent } from '@review/core';
-import { appendEvent, createRun, setRunError, setRunStatus, writeReadingOrderPlan, type Db } from '../db/index.ts';
+import type { AgentRun, FileEntry, Review, ServerEvent } from '@review/core';
+import {
+  appendEvent,
+  createRun,
+  getThreadWithComments,
+  setRunError,
+  setRunStatus,
+  writeReadingOrderPlan,
+  type Db,
+} from '../db/index.ts';
 import { generateReadingOrderPlan, ReadingOrderAgentError } from './readingOrder.ts';
+import { runThreadReplyAgent } from './threadReply.ts';
+import type { Invoke } from './tools.ts';
+import type { EngineForCwd } from './worktree.ts';
 
 export type RunsDeps = {
   readonly db: Db;
+  readonly invoke: Invoke;
   readonly emit: (event: ServerEvent) => void;
 };
 
@@ -68,26 +84,55 @@ export async function generateReadingOrder(deps: RunsDeps, reviewId: string, con
 }
 
 /**
- * `POST /api/threads/:id/replies` with `askAgent: true` (§10, §9). Same
- * placeholder shape as before: records the run, then reports that the SDK
- * isn't wired up for thread replies yet. The reply itself (a user or
- * already-authored agent comment) is still appended by the caller
- * regardless. Out of scope for this unit — see the task's scope note.
+ * `POST /api/threads/:id/ask` (§10), and the same trigger `createThread`/
+ * `reply` fire with `askAgent: true` — "the latest user message in this
+ * thread, in the context of the thread and the review" (design decision 4).
+ * `engine` is whichever engine the caller already resolved for `review.id`
+ * (routes.ts holds one per request); `resolveRunCwd` (via
+ * `runThreadReplyAgent`) decides whether that means the attached root or a
+ * cached detached worktree.
  */
-export async function requestThreadReply(
-  deps: RunsDeps,
-  reviewId: string,
-  threadId: string,
-): Promise<AgentRun> {
+export async function requestThreadReply(deps: RunsDeps, review: Review, threadId: string, engine: EngineForCwd): Promise<AgentRun> {
+  const reviewId = review.id;
   const run = await createRun(deps.db, { reviewId, threadId, kind: 'thread_reply' });
   deps.emit({ type: 'run.started', reviewId, run });
+  await setRunStatus(deps.db, run.id, 'running');
 
-  await setRunError(
-    deps.db,
-    run.id,
-    'Thread-reply agent runs are not wired up yet (out of scope for this unit — only reading-order generation was implemented).',
-  );
-  const ended = await setRunStatus(deps.db, run.id, 'error');
-  deps.emit({ type: 'run.ended', reviewId, run: ended });
-  return ended;
+  const thread = await getThreadWithComments(deps.db, threadId);
+  const latestUserComment = thread === null ? null : [...thread.comments].reverse().find((c) => c.author === 'user');
+  if (latestUserComment !== undefined && latestUserComment !== null) {
+    await deps.invoke('POST', `/api/comments/${encodeURIComponent(latestUserComment.id)}/reactions`, {
+      kind: 'eyes',
+      actor: 'agent',
+      on: true,
+    });
+  }
+
+  try {
+    if (thread === null) throw new Error(`thread ${threadId} not found`);
+    await runThreadReplyAgent(deps, run.id, review, thread, engine);
+
+    const ended = await setRunStatus(deps.db, run.id, 'done');
+    deps.emit({ type: 'run.ended', reviewId, run: ended });
+    return ended;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : `thread-reply agent run failed: ${String(err)}`;
+    await setRunError(deps.db, run.id, message);
+    await deps.invoke('POST', `/api/threads/${encodeURIComponent(threadId)}/replies`, {
+      bodyMd: `Agent run failed: ${message}`,
+      author: 'agent',
+      agentRunId: run.id,
+    });
+    const ended = await setRunStatus(deps.db, run.id, 'error');
+    deps.emit({ type: 'run.ended', reviewId, run: ended });
+    return ended;
+  } finally {
+    if (latestUserComment !== undefined && latestUserComment !== null) {
+      await deps.invoke('POST', `/api/comments/${encodeURIComponent(latestUserComment.id)}/reactions`, {
+        kind: 'eyes',
+        actor: 'agent',
+        on: false,
+      });
+    }
+  }
 }

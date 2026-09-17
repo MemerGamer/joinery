@@ -1,20 +1,26 @@
 /**
- * Read-only enforcement for agent runs (SPEC §9, non-negotiable — these
- * agents run against the user's real repo).
+ * Read-only, path-fenced enforcement for embedded agent runs (SPEC §9,
+ * PLAN.md "agent reply mechanism", design decision 1 — non-negotiable, since
+ * these agents run against the user's real repo).
  *
- * Two layers:
- *  - `disallowedTools: ['Write', 'Edit', 'NotebookEdit']` (set by the
- *    caller, in `readingOrder.ts`) removes the file-mutation tools outright.
- *  - `agentCanUseTool` (built from `isReadOnlyBashCommand` below) is the
- *    `canUseTool` callback: it auto-approves `Read`/`Grep`/`Glob`, gates
- *    `Bash` through the allowlist predicate, and denies everything else
- *    (Task, WebFetch, WebSearch, MCP tools, ...) — an allowlist, not a
- *    blocklist, so a new tool the SDK adds tomorrow is denied by default.
+ * The embedded agent (reading order, thread reply) gets **no shell at all**:
+ *  - `disallowedTools` (set by each run's caller) includes `'Bash'` alongside
+ *    the file-mutation tools, removing it outright.
+ *  - `makeAgentCanUseTool({ cwd })` is the `canUseTool` callback: it
+ *    auto-approves `Read`/`Grep`/`Glob` only when the path they'd touch
+ *    resolves under the run's `cwd` (the attached root or agent worktree —
+ *    see `worktree.ts`), allows any `mcp__review__*` tool (the in-process
+ *    app tools from `tools.ts`), and denies everything else — an allowlist,
+ *    not a blocklist, so a new tool the SDK adds tomorrow is denied by
+ *    default.
  *
- * `isReadOnlyBashCommand` is exported and kept pure (no I/O, no SDK types)
- * specifically so it can be unit-tested against smuggling attempts without
- * spinning up a query().
+ * `isReadOnlyBashCommand` is kept exported (its unit tests exist) but is
+ * **no longer used by the embedded run** now that Bash is removed entirely;
+ * it remains dead-but-tested code documenting the read-only allowlist that
+ * used to gate it, in case a future non-embedded run wants Bash back.
  */
+import { realpath } from 'node:fs/promises';
+import { isAbsolute, join, resolve, sep } from 'node:path';
 import type { CanUseTool, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
 
 /** `git log|show|diff|blame|status` (SPEC §9). */
@@ -72,7 +78,9 @@ function isReadOnlyReviewInvocation(tokens: readonly string[]): boolean {
 /**
  * Pure predicate: is `command` a read-only invocation of one of the
  * allowlisted programs (SPEC §9)? No I/O, no shelling out — just string
- * inspection, so it's directly unit-testable.
+ * inspection, so it's directly unit-testable. See the module doc comment:
+ * the embedded run no longer exposes `Bash` at all, so nothing calls this
+ * from `canUseTool` any more.
  */
 export function isReadOnlyBashCommand(command: string): boolean {
   const trimmed = command.trim();
@@ -104,18 +112,53 @@ const DENY = (message: string): PermissionResult => ({ behavior: 'deny', message
 const ALLOW = (input: Record<string, unknown>): PermissionResult => ({ behavior: 'allow', updatedInput: input });
 
 /**
- * The `canUseTool` callback for read-only agent runs. `Read`/`Grep`/`Glob`
- * are auto-approved (SPEC §9); `Bash` is gated through
- * `isReadOnlyBashCommand`; everything else is denied — including tools the
- * SDK might add later, since this is an allowlist.
+ * Resolve `candidate` (as `Read`/`Grep`/`Glob` would see it — absolute or
+ * relative to `cwd`) to a real path, and check it under `cwd`'s real path.
+ * Both sides go through `realpath` so a symlink inside `cwd` can't point
+ * the agent outside it. `candidate` itself may not exist yet (`Glob`'s
+ * `path` is often a directory that may or may not be there, and a `Read`
+ * on a not-yet-existing file should still be fenced, not crash) — in that
+ * case fall back to lexical resolution of `candidate` against the real
+ * `cwd`, which still catches `../` escapes.
  */
-export const agentCanUseTool: CanUseTool = async (toolName, input) => {
-  if (toolName === 'Read' || toolName === 'Grep' || toolName === 'Glob') {
-    return ALLOW(input);
+async function isUnderCwd(candidate: string, cwd: string): Promise<boolean> {
+  const realCwd = await realpath(cwd);
+  const absolute = isAbsolute(candidate) ? candidate : join(cwd, candidate);
+  let real: string;
+  try {
+    real = await realpath(absolute);
+  } catch {
+    real = resolve(absolute);
   }
-  if (toolName === 'Bash') {
-    const command = typeof input['command'] === 'string' ? input['command'] : '';
-    return isReadOnlyBashCommand(command) ? ALLOW(input) : DENY(`"${command}" is not on the read-only Bash allowlist (SPEC §9)`);
-  }
-  return DENY(`tool "${toolName}" is not permitted for a read-only agent run (SPEC §9)`);
+  return real === realCwd || real.startsWith(realCwd.endsWith(sep) ? realCwd : `${realCwd}${sep}`);
+}
+
+export type MakeAgentCanUseToolOptions = {
+  /** The run's cwd (attached root or agent worktree — `worktree.ts`). */
+  readonly cwd: string;
 };
+
+/**
+ * Builds the `canUseTool` callback for an embedded agent run.
+ * `Read`/`Grep`/`Glob` are allowed only when the path they'd touch resolves
+ * under `cwd`; any `mcp__review__*` tool (the in-process app tools) is
+ * always allowed since those are already scoped to the run's review server
+ * side; everything else — including `Bash` and any future SDK tool — is
+ * denied by default.
+ */
+export function makeAgentCanUseTool(options: MakeAgentCanUseToolOptions): CanUseTool {
+  return async (toolName, input) => {
+    if (toolName.startsWith('mcp__review__')) {
+      return ALLOW(input);
+    }
+    if (toolName === 'Read' || toolName === 'Grep' || toolName === 'Glob') {
+      const raw = toolName === 'Read' ? input['file_path'] : input['path'];
+      const candidate = typeof raw === 'string' ? raw : options.cwd;
+      const allowed = await isUnderCwd(candidate, options.cwd);
+      return allowed
+        ? ALLOW(input)
+        : DENY(`"${candidate}" is outside this run's directory (${options.cwd})`);
+    }
+    return DENY(`tool "${toolName}" is not permitted for this agent run (no shell — PLAN.md "agent reply mechanism")`);
+  };
+}

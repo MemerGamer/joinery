@@ -5,8 +5,9 @@
  * itself. See IMPROVEMENTS.md for what of §9's full session machinery this
  * intentionally does not implement.
  *
- * The agent explores the review root with read-only tools only
- * (`permissions.ts`) and returns its answer as `outputFormat: 'json_schema'`
+ * The agent explores the review root with read-only, path-fenced tools only
+ * (`permissions.ts`'s `makeAgentCanUseTool`, no shell) and returns its
+ * answer as `outputFormat: 'json_schema'`
  * structured output shaped like `readingOrderPlanSchema` — the model can't
  * hand back free-form prose instead of a plan. The result is still
  * `readingOrderPlanSchema.parse()`d before anything touches the database:
@@ -16,7 +17,7 @@ import { query, type SDKMessage, type SDKResultMessage } from '@anthropic-ai/cla
 import { readingOrderPlanSchema, type FileEntry, type ReadingOrderPlan } from '@review/core';
 import { z } from 'zod';
 import { AGENT_MODEL_ID } from './model.ts';
-import { agentCanUseTool } from './permissions.ts';
+import { makeAgentCanUseTool } from './permissions.ts';
 
 const READING_ORDER_JSON_SCHEMA = (() => {
   const schema = z.toJSONSchema(readingOrderPlanSchema) as Record<string, unknown>;
@@ -47,10 +48,9 @@ export function buildReadingOrderPrompt(files: readonly FileEntry[]): string {
     'Changed files:',
     fileLines,
     '',
-    'Explore the review root with your read-only tools (Read/Grep/Glob, and',
-    'the read-only `git log`/`git show`/`git diff`/`git blame`/`git status`,',
-    '`rg`, `ls`, `cat`, `head`, `sed -n` commands) to understand what changed',
-    'and why, then propose a reading order. Every changed file listed above',
+    'Explore the review root with your read-only tools (Read, Grep, Glob — you',
+    'have no shell) to understand what changed and why, then propose a',
+    'reading order. Every changed file listed above',
     'must appear in exactly one step, under its exact path. Group files that',
     'belong to the same concern into one step rather than one step per file',
     'when that makes for a clearer story. Order steps so foundational or',
@@ -86,20 +86,15 @@ export async function generateReadingOrderPlan(options: GenerateReadingOrderPlan
     options: {
       cwd: options.cwd,
       model: AGENT_MODEL_ID,
-      disallowedTools: ['Write', 'Edit', 'NotebookEdit'],
-      canUseTool: agentCanUseTool,
-      // Claude Code has a built-in fast-path that auto-approves bash
-      // commands its own classifier judges "obviously read-only" *without*
-      // ever calling `canUseTool` — verified empirically (`git log | head`
-      // never reached `agentCanUseTool` under the defaults). Forcing every
-      // Bash call onto the "ask" tier routes ALL of them through
-      // `canUseTool`, making `isReadOnlyBashCommand` the actual, sole
-      // enforcement boundary rather than a check the fast-path can skip.
-      // `settingSources: []` additionally refuses to load the reviewed
-      // repo's own `.claude/settings*.json` — reviewing a branch that adds
-      // a permissive `allow` rule there must not be able to reopen this.
+      // `Bash` is removed outright (PLAN.md "agent reply mechanism", design
+      // decision 1) rather than gated through a read-only allowlist: no
+      // shell at all for the embedded agent, on either run kind.
+      disallowedTools: ['Write', 'Edit', 'NotebookEdit', 'Bash'],
+      canUseTool: makeAgentCanUseTool({ cwd: options.cwd }),
+      // Refuses to load the reviewed repo's own `.claude/settings*.json` —
+      // reviewing a branch that adds a permissive `allow` rule there must
+      // not be able to reopen tool access this run intentionally removed.
       settingSources: [],
-      settings: { permissions: { ask: ['Bash'] } },
       outputFormat: { type: 'json_schema', schema: READING_ORDER_JSON_SCHEMA },
       systemPrompt: {
         type: 'preset',

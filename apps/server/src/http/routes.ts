@@ -7,6 +7,7 @@ import { isAbsolute } from 'node:path';
 import { Hono } from 'hono';
 import {
   addRepoBodySchema,
+  askAgentBodySchema,
   createReviewBodySchema,
   createThreadBodySchema,
   generateReadingOrderBodySchema,
@@ -72,12 +73,16 @@ import type { EngineRegistry } from '../engine/index.ts';
 import { captureContext } from '../engine/anchor.ts';
 import { projectThreads } from '../engine/threadProjection.ts';
 import { generateReadingOrder, requestThreadReply } from '../agent/runs.ts';
+import type { Invoke } from '../agent/tools.ts';
+import { resolveRunCwd } from '../agent/worktree.ts';
 import { badRequest, conflict, notFound } from './errors.ts';
 import { parseBody, parseQuery } from './validate.ts';
 
 export type RoutesDeps = {
   readonly db: Db;
   readonly registry: EngineRegistry;
+  /** In-process app driver, built by `createApp` before routes are mounted — handed to `runs.ts` for the embedded agent's `review` tools. */
+  readonly invoke: Invoke;
 };
 
 const diffQuerySchema = z.object({ path: z.string().min(1), rev: z.enum(['working', 'head', 'pr']).optional() });
@@ -367,13 +372,13 @@ export function buildRoutes(deps: RoutesDeps): Hono {
 
   app.post('/api/reviews/:id/reading-order/generate', async (c) => {
     const id = c.req.param('id');
-    await requireReview(deps, id);
+    const review = await requireReview(deps, id);
     await parseBody(generateReadingOrderBodySchema, c);
     const engine = await requireEngine(deps, id);
-    const renderCtx = engine.getRenderContext();
     const files = engine.getFileList().files;
-    const run = await generateReadingOrder({ db: deps.db, emit: (e) => dispatch(id, e) }, id, {
-      cwd: renderCtx.cwd,
+    const cwd = await resolveRunCwd({ db: deps.db }, review, engine);
+    const run = await generateReadingOrder({ db: deps.db, invoke: deps.invoke, emit: (e) => dispatch(id, e) }, id, {
+      cwd,
       files,
     });
     return c.json({ run }, 202);
@@ -409,7 +414,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
 
   app.post('/api/reviews/:id/threads', async (c) => {
     const id = c.req.param('id');
-    await requireReview(deps, id);
+    const review = await requireReview(deps, id);
     const body = await parseBody(createThreadBodySchema, c);
     const engine = await requireEngine(deps, id);
     const entry = engine.getFileList().files.find((f) => f.path === body.path);
@@ -447,7 +452,9 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     });
     dispatch(id, { type: 'thread.created', reviewId: id, thread });
 
-    const run = body.askAgent ? await requestThreadReply({ db: deps.db, emit: (e) => dispatch(id, e) }, id, thread.id) : null;
+    const run = body.askAgent
+      ? await requestThreadReply({ db: deps.db, invoke: deps.invoke, emit: (e) => dispatch(id, e) }, review, thread.id, engine)
+      : null;
     return c.json({ thread, run }, 201);
   });
 
@@ -470,9 +477,12 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     const updated = await requireThread(deps, threadId);
     dispatch(thread.reviewId, { type: 'thread.updated', reviewId: thread.reviewId, thread: updated });
 
-    const run = body.askAgent
-      ? await requestThreadReply({ db: deps.db, emit: (e) => dispatch(thread.reviewId, e) }, thread.reviewId, threadId)
-      : null;
+    let run = null;
+    if (body.askAgent) {
+      const review = await requireReview(deps, thread.reviewId);
+      const engine = await requireEngine(deps, thread.reviewId);
+      run = await requestThreadReply({ db: deps.db, invoke: deps.invoke, emit: (e) => dispatch(thread.reviewId, e) }, review, threadId, engine);
+    }
     return c.json({ thread: updated, run }, 201);
   });
 
@@ -485,6 +495,21 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     return c.json({ thread });
   });
 
+  app.post('/api/threads/:id/ask', async (c) => {
+    const threadId = c.req.param('id');
+    const thread = await requireThread(deps, threadId);
+    await parseBody(askAgentBodySchema, c);
+    const review = await requireReview(deps, thread.reviewId);
+    const engine = await requireEngine(deps, thread.reviewId);
+    const run = await requestThreadReply(
+      { db: deps.db, invoke: deps.invoke, emit: (e) => dispatch(thread.reviewId, e) },
+      review,
+      threadId,
+      engine,
+    );
+    return c.json({ run }, 202);
+  });
+
   app.post('/api/comments/:id/reactions', async (c) => {
     const commentId = c.req.param('id');
     const threadId = await getCommentThreadId(deps.db, commentId);
@@ -495,6 +520,15 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     const thread = await requireThread(deps, threadId);
     dispatch(existing.reviewId, { type: 'thread.updated', reviewId: existing.reviewId, thread });
     return c.json({ thread });
+  });
+
+  /** Comment → (threadId, reviewId), for the embedded agent's `react` tool ownership check (`agent/tools.ts`). */
+  app.get('/api/comments/:id', async (c) => {
+    const commentId = c.req.param('id');
+    const threadId = await getCommentThreadId(deps.db, commentId);
+    if (threadId === null) throw notFound(`comment ${commentId} not found`);
+    const thread = await requireThread(deps, threadId);
+    return c.json({ threadId, reviewId: thread.reviewId });
   });
 
   // --- feedback ---
