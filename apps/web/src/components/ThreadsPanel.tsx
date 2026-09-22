@@ -17,12 +17,15 @@ function agentIsLooking(thread: Thread): boolean {
 }
 
 export function ThreadsPanel(): React.JSX.Element {
-  const { threads, threadRuns, toggleThreadsPanel, setSelectedPath, codeViewRef } = useReview();
+  const { threads, threadRuns, toggleThreadsPanel, setSelectedPath, setActiveThreadId, codeViewRef } =
+    useReview();
   const [filter, setFilter] = useState<'open' | 'resolved'>('open');
   const visible = threads.filter((t) => t.status === filter);
 
   const jumpTo = (thread: Thread) => {
     setSelectedPath(thread.path);
+    // Jumping to a thread makes it the one `r` resolves and `]`/`[` continue from.
+    setActiveThreadId(thread.id);
     codeViewRef.current?.scrollTo({
       type: 'line',
       id: thread.path,

@@ -149,6 +149,10 @@ export function ReviewCodeView(): React.JSX.Element {
       // its own dev build too, since it measures on every reconcile.
       __devOnlyValidateItemHeights: import.meta.env.DEV,
       enableGutterUtility: true,
+      // Click (and shift-click / drag) line numbers to select a range; `c`
+      // then opens the composer on it (see useReviewShortcuts.ts). The
+      // gutter `+` still starts a comment directly.
+      enableLineSelection: true,
       // Upstream default is 100 lines per "more unchanged context" click —
       // too much to page through at once for this app's density.
       expansionLineCount: 20,

@@ -1,11 +1,10 @@
 /**
  * Bug 2 fix (keymap audit, 2026-09-11): single-key (unmodified) global
- * shortcuts — `j k n p ] [ c r t u e z v 1 2 3 Enter ?` — must not fire
+ * shortcuts — `j k n p ] [ c r t u e z v 1 2 3 ?` — must not fire
  * while the user is typing into a text field, a contenteditable region, or
  * an open dialog/palette (the command palette is a `cmdk` `Command.Dialog`,
  * which renders `role="dialog"`). `$mod` (Cmd/Ctrl) chords must keep firing
- * there regardless — most importantly `$mod+Enter` ("submit and ask agent")
- * from inside the comment composer.
+ * there regardless (e.g. `$mod+K` from inside the comment composer).
  *
  * Kept as pure, DOM-shape-typed functions (not `Element`/`HTMLElement`) so
  * they're testable with plain mock objects — `apps/web` has no jsdom/happy-dom

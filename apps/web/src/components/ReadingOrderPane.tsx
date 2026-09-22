@@ -10,7 +10,8 @@
  * Threads entry point, since the threads panel slides over this pane.
  */
 import { AlertTriangle, ChevronDown, ChevronRight, MessageSquare, Sparkles } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { resolveCurrentStepIndex } from '../lib/reviewNav.ts';
 import { runUiState } from '../lib/runState.ts';
 import { useReview } from '../state/ReviewContext.tsx';
 import { Markdown } from './Markdown.tsx';
@@ -28,9 +29,27 @@ export function ReadingOrderPane(): React.JSX.Element {
     threadsPanelOpen,
     toggleThreadsPanel,
     threads,
+    currentStepId,
+    setCurrentStepId,
   } = useReview();
   const openThreads = threads.filter((t) => t.status === 'open').length;
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  // The step `n`/`p` move from (same rule the shortcuts use), highlighted
+  // below. Arriving at a step the reader had folded unfolds it, so its
+  // explanation is on screen when you land.
+  const currentStepIndex =
+    readingOrder === null ? -1 : resolveCurrentStepIndex(readingOrder.steps, currentStepId, selectedPath);
+  const currentStepKey = readingOrder?.steps[currentStepIndex]?.id ?? null;
+  useEffect(() => {
+    if (currentStepKey === null) return;
+    setCollapsed((prev) => {
+      if (!prev.has(currentStepKey)) return prev;
+      const next = new Set(prev);
+      next.delete(currentStepKey);
+      return next;
+    });
+  }, [currentStepKey]);
 
   const runState = runUiState(readingOrderRun);
   const generating = runState.phase === 'pending';
@@ -40,7 +59,8 @@ export function ReadingOrderPane(): React.JSX.Element {
     await generateReadingOrder();
   };
 
-  const jumpTo = (path: string) => {
+  const jumpTo = (path: string, stepId?: string) => {
+    if (stepId !== undefined) setCurrentStepId(stepId);
     setSelectedPath(path);
     codeViewRef.current?.scrollTo({ type: 'item', id: path, align: 'start' });
   };
@@ -115,8 +135,9 @@ export function ReadingOrderPane(): React.JSX.Element {
             <ol className="flex flex-col gap-1">
               {readingOrder.steps.map((step, idx) => {
                 const isCollapsed = collapsed.has(step.id);
+                const isCurrent = idx === currentStepIndex;
                 return (
-                  <li key={step.id}>
+                  <li key={step.id} aria-current={isCurrent ? 'step' : undefined}>
                     <button
                       type="button"
                       onClick={() =>
@@ -131,7 +152,9 @@ export function ReadingOrderPane(): React.JSX.Element {
                       className="group flex w-full items-center gap-2 rounded-md py-1.5 pl-1.5 pr-2 text-left text-body text-chrome-fg transition-colors hover:bg-chrome-bg-hover"
                     >
                       <span
-                        className="w-5 shrink-0 text-right font-mono text-micro tabular-nums text-chrome-fg-subtle group-hover:text-chrome-fg-muted"
+                        className={`w-5 shrink-0 text-right font-mono text-micro tabular-nums ${
+                          isCurrent ? 'text-chrome-accent' : 'text-chrome-fg-subtle group-hover:text-chrome-fg-muted'
+                        }`}
                         aria-hidden
                       >
                         {String(idx + 1).padStart(2, '0')}
@@ -164,7 +187,7 @@ export function ReadingOrderPane(): React.JSX.Element {
                               path={f.path}
                               title={f.noteMd ?? undefined}
                               selected={selectedPath === f.path}
-                              onClick={() => jumpTo(f.path)}
+                              onClick={() => jumpTo(f.path, step.id)}
                             />
                           ))}
                         </ul>

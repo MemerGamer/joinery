@@ -350,6 +350,7 @@ export function CommandPalette({
                           side: t.side === 'old' ? 'deletions' : 'additions',
                         });
                         // Open (not toggle) — jumping to a thread shouldn't close an already-open panel.
+                        review.setActiveThreadId(t.id);
                         review.setThreadsPanelOpen(true);
                         close();
                       }}

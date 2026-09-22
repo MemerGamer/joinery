@@ -178,6 +178,20 @@ export interface ReviewEngine extends ReviewEngineState {
   toggleThreadsPanel: () => void;
   selectedPath: string | null;
   setSelectedPath: (path: string | null) => void;
+  /**
+   * The reading-order step the reader is on (SPEC §11 `n`/`p`), by step id.
+   * Set by `n`/`p` and by clicking a file inside a step; `null` until then.
+   * Only a hint — a stale id (after regeneration) simply matches no step.
+   */
+  currentStepId: string | null;
+  setCurrentStepId: (id: string | null) => void;
+  /**
+   * The "current thread" for `r` (resolve) and the start point for `]`/`[`:
+   * the thread last navigated to with `]`/`[` or the threads panel, or last
+   * clicked/focused inline. `null` when there is none.
+   */
+  activeThreadId: string | null;
+  setActiveThreadId: (id: string | null) => void;
   setRevision: (revision: Revision) => Promise<void>;
   /** Set a file's "viewed" check explicitly. */
   setViewed: (path: string, viewed: boolean) => Promise<void>;
@@ -285,6 +299,8 @@ export function ReviewProvider({
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const [threadsPanelOpen, setThreadsPanelOpen] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [currentStepId, setCurrentStepId] = useState<string | null>(null);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [draftThread, setDraftThread] = useState<DraftThread | null>(null);
   const codeViewRef = useRef<CodeViewHandle<ThreadAnnotationMeta, undefined> | null>(null);
 
@@ -1073,6 +1089,10 @@ export function ReviewProvider({
     toggleComments: () => setCommentsVisible((v) => !v),
     selectedPath,
     setSelectedPath,
+    currentStepId,
+    setCurrentStepId,
+    activeThreadId,
+    setActiveThreadId,
     setRevision,
     setViewed,
     toggleViewed,
@@ -1115,7 +1135,7 @@ export function ReviewProvider({
  * anchoring would need hooking into Pierre's internal row layout, which
  * isn't part of the public `CodeViewHandle` surface; see IMPROVEMENTS.md).
  */
-function captureTopVisiblePath(
+export function captureTopVisiblePath(
   handle: CodeViewHandle<ThreadAnnotationMeta, undefined> | null,
 ): string | null {
   const instance = handle?.getInstance();

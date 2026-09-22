@@ -21,8 +21,6 @@ export interface KeymapActions {
   nextThread?: () => void;
   prevThread?: () => void;
   commentOnSelection?: () => void;
-  submitComment?: () => void;
-  submitCommentAskAgent?: () => void;
   resolveThread?: () => void;
   toggleLeftPanel?: () => void;
   toggleRightPanel?: () => void;
@@ -82,8 +80,9 @@ function buildKeymap(actionsRef: { current: KeymapActions }): Record<string, (e:
     ...bind(']', 'nextThread'),
     ...bind('[', 'prevThread'),
     ...bind('c', 'commentOnSelection'),
-    ...bind('Enter', 'submitComment'),
-    ...bind(`${MOD.primary}+Enter`, 'submitCommentAskAgent'),
+    // Submitting a comment is not a global binding: the composer's own
+    // textarea handles `$mod+Enter` (see CommentComposer.tsx), and plain
+    // `Enter` there inserts a newline.
     ...bind('r', 'resolveThread'),
     ...bind(`${MOD.primary}+b`, 'toggleLeftPanel'),
     // Bug 1 fix: bind the physical key code (`KeyB`), not the character
@@ -117,8 +116,112 @@ function buildKeymap(actionsRef: { current: KeymapActions }): Record<string, (e:
     // is case-insensitive between the chord's key and `event.key`.
     ...bind(`${MOD.primary}+p`, 'openPaletteFiles'),
     ...bind(`${MOD.primary}+Shift+p`, 'openPaletteCommands'),
-    ...bind('?', 'showHelp'),
+    // `?` is Shift+/ on most layouts, and tinykeys rejects a press that holds
+    // a modifier the chord doesn't list — so a bare `'?'` never matched.
+    // `[Shift]` marks Shift as allowed-but-not-required.
+    ...bind('[Shift]+?', 'showHelp'),
   };
+}
+
+/** One row of the shortcut-help dialog (`?`). */
+export interface ShortcutHelpRow {
+  /** Chords as bound above (tinykeys syntax); alternatives render side by side. */
+  chords: readonly string[];
+  label: string;
+}
+
+export interface ShortcutHelpGroup {
+  title: string;
+  rows: readonly ShortcutHelpRow[];
+}
+
+/**
+ * What the `?` dialog lists, grouped for reading. Chords are spelled exactly
+ * as in `buildKeymap` above (same `MOD` map), so `formatChord` renders them
+ * with the platform's real modifier names. Keep the two in step when adding
+ * a binding.
+ */
+export const SHORTCUT_HELP: readonly ShortcutHelpGroup[] = [
+  {
+    title: 'Navigate',
+    rows: [
+      { chords: ['j', 'k'], label: 'Next / previous hunk' },
+      { chords: ['n', 'p'], label: 'Next / previous reading-order step' },
+      { chords: [']', '['], label: 'Next / previous open thread' },
+      { chords: ['g h'], label: 'Go to Homebase' },
+    ],
+  },
+  {
+    title: 'Comment',
+    rows: [
+      { chords: ['c'], label: 'Comment on selected lines' },
+      { chords: [`${MOD.primary}+Enter`], label: 'Submit comment (in the composer)' },
+      { chords: ['r'], label: 'Resolve current thread' },
+      { chords: ['Shift+c'], label: 'Show / hide comments' },
+    ],
+  },
+  {
+    title: 'Diff',
+    rows: [
+      { chords: ['e'], label: 'Expand context around the current hunk' },
+      { chords: ['Shift+e'], label: 'Expand the whole file' },
+      { chords: ['z'], label: 'Collapse / expand the focused file' },
+      { chords: ['v'], label: 'Mark file viewed' },
+      { chords: ['u'], label: 'Unified / split' },
+      { chords: ['1', '2', '3'], label: 'Revision: working / head / pr' },
+    ],
+  },
+  {
+    title: 'Panels',
+    rows: [
+      { chords: [`${MOD.primary}+b`], label: 'Toggle file tree' },
+      { chords: [`${MOD.primary}+${MOD.opt}+KeyB`], label: 'Toggle reading order' },
+      { chords: ['t'], label: 'Toggle threads panel' },
+    ],
+  },
+  {
+    title: 'Palette',
+    rows: [
+      { chords: [`${MOD.primary}+k`], label: 'Command palette' },
+      { chords: [`${MOD.primary}+p`], label: 'Jump to file' },
+      { chords: [`${MOD.primary}+Shift+p`], label: 'Commands' },
+      { chords: ['?'], label: 'This help' },
+    ],
+  },
+];
+
+/**
+ * Same platform test `tinykeys` uses to resolve `$mod` (Meta on Apple
+ * platforms, Control elsewhere), so what we display is what it binds.
+ */
+function isApplePlatform(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+}
+
+const KEY_LABELS: Record<string, string> = {
+  Enter: '↵',
+  Escape: 'Esc',
+  ArrowUp: '↑',
+  ArrowDown: '↓',
+};
+
+/**
+ * Renders a tinykeys chord for display, as a list of keycaps per step of a
+ * sequence: `$mod+Shift+p` → `[['⌘', '⇧', 'P']]` on a Mac and
+ * `[['Ctrl', 'Shift', 'P']]` elsewhere; `g h` → `[['G'], ['H']]`.
+ */
+export function formatChord(chord: string, apple: boolean = isApplePlatform()): string[][] {
+  const modLabel: Record<string, string> = apple
+    ? { $mod: '⌘', Meta: '⌘', Control: '⌃', Alt: '⌥', Shift: '⇧' }
+    : { $mod: 'Ctrl', Meta: 'Meta', Control: 'Ctrl', Alt: 'Alt', Shift: 'Shift' };
+  return chord.split(' ').map((press) => {
+    // `+` is the separator; a chord never binds the literal `+` key here.
+    const parts = press.split('+');
+    const key = parts.pop() ?? '';
+    const keyLabel = KEY_LABELS[key] ?? (/^Key[A-Z]$/.test(key) ? key.slice(3) : key.length === 1 ? key.toUpperCase() : key);
+    return [...parts.map((m) => modLabel[m] ?? m), keyLabel];
+  });
 }
 
 /**

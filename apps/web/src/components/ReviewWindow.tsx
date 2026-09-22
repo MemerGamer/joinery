@@ -3,8 +3,9 @@
  * order — plus the header, divergence banner, staged-refresh pill, and the
  * global keymap + command palette.
  */
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ReviewProvider, useReview } from '../state/ReviewContext.tsx';
+import { useReviewShortcuts } from '../state/useReviewShortcuts.ts';
 import { useGlobalKeymap } from '../lib/keymap.ts';
 import { useResizableWidth } from '../lib/useResizableWidth.ts';
 import { goHomebase } from '../lib/router.ts';
@@ -16,6 +17,7 @@ import { ReadingOrderPane } from './ReadingOrderPane.tsx';
 import { RefreshPill } from './RefreshPill.tsx';
 import { ResizeHandle } from './ResizeHandle.tsx';
 import { ReviewCodeView } from './ReviewCodeView.tsx';
+import { ShortcutHelp } from './ShortcutHelp.tsx';
 
 export function ReviewWindow({ reviewId }: { reviewId: string }): React.JSX.Element {
   return (
@@ -34,6 +36,9 @@ function ReviewWindowInner(): React.JSX.Element {
   // same open, and re-set on every shortcut so a repeat press can switch views
   // even while the palette is already up.
   const [paletteMode, setPaletteMode] = useState<'command' | 'file' | undefined>(undefined);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const closeHelp = useCallback(() => setHelpOpen(false), []);
+  const shortcuts = useReviewShortcuts();
 
   const openPaletteIn = (nextMode: 'command' | 'file' | undefined) => {
     setPaletteMode(nextMode);
@@ -46,6 +51,9 @@ function ReviewWindowInner(): React.JSX.Element {
   const rightPanel = useResizableWidth('right', { defaultWidth: 320, min: 220, max: 640 });
 
   useGlobalKeymap({
+    // j/k, n/p, ]/[, c, r, e/Shift+E — see state/useReviewShortcuts.ts.
+    ...shortcuts,
+    showHelp: () => setHelpOpen((v) => !v),
     toggleLeftPanel: review.toggleLeftPanel,
     toggleRightPanel: review.toggleRightPanel,
     toggleThreadsPanel: review.toggleThreadsPanel,
@@ -63,14 +71,6 @@ function ReviewWindowInner(): React.JSX.Element {
     openPalette: () => openPaletteIn(undefined),
     openPaletteFiles: () => openPaletteIn('file'),
     openPaletteCommands: () => openPaletteIn('command'),
-    // `nextHunk` (bound to `j` in SPEC §11) has no implementation yet —
-    // hunk-level navigation lives inside Pierre's own scroll model and
-    // there's no hunk index API wired up. Deliberately not passed here:
-    // binding `j` to a handler that only calls `preventDefault()` and does
-    // nothing would be worse than not binding it at all (it would eat the
-    // keystroke — including inside the guard's allowance for plain letters
-    // outside text fields — while doing nothing visible). Leaving it
-    // unbound means `j` is simply inert until hunk navigation exists.
     toggleFocusedFileCollapsed: () => {
       if (review.selectedPath !== null) review.toggleFileCollapsed(review.selectedPath);
     },
@@ -145,6 +145,7 @@ function ReviewWindowInner(): React.JSX.Element {
       </div>
       <RefreshPill />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} initialMode={paletteMode} />
+      <ShortcutHelp open={helpOpen} onClose={closeHelp} />
     </div>
   );
 }

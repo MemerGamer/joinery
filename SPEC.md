@@ -1193,8 +1193,8 @@ window, a dock icon, and frees most of the rest.
 | `n` / `p` | next / previous step |
 | `]` / `[` | next / previous thread |
 | `c` | comment on selected lines |
-| `Enter` | submit comment |
-| `Cmd+Enter` | submit and ask an agent to reply |
+| `Cmd+Enter` | submit comment (in the composer; `Enter` inserts a newline) |
+| composer's **Ask** button | submit and ask an agent to reply (no shortcut) |
 | `r` | resolve thread |
 | `Cmd+B` | toggle left panel (file tree) |
 | `Cmd+Opt+B` | toggle right panel (reading order) |

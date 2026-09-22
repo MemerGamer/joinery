@@ -190,12 +190,20 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-button,
-input,
-textarea,
-select {
-  font: inherit;
-  color: inherit;
+/*
+ * In `@layer base` so Tailwind utilities on a control (`text-xs`,
+ * `text-chrome-accent`, ...) win over it. Unlayered, this rule beat every
+ * layered utility, so buttons silently ignored their text size and color
+ * classes and took the parent's instead.
+ */
+@layer base {
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+    color: inherit;
+  }
 }
 
 :focus-visible {

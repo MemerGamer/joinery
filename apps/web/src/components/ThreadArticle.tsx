@@ -73,7 +73,13 @@ export function ThreadArticle({
   thread: Thread;
   onChanged: () => void;
 }): React.JSX.Element {
-  const { threadRuns, askAgent } = useReview();
+  const { threadRuns, askAgent, activeThreadId, setActiveThreadId } = useReview();
+  // Interacting with a thread makes it the "current thread" that `r`
+  // resolves and `]`/`[` continue from (see ReviewContext `activeThreadId`).
+  const active = activeThreadId === thread.id;
+  const markActive = () => {
+    if (!active) setActiveThreadId(thread.id);
+  };
   const [replying, setReplying] = useState(false);
   // Resolved threads start collapsed; resolving/reopening re-syncs the
   // default (same derive-from-props pattern as `collapsedOutdated` below),
@@ -116,7 +122,10 @@ export function ThreadArticle({
     return (
       <article
         aria-label={`Thread on ${thread.path} line ${thread.startLine} (collapsed)`}
-        className="w-full max-w-2xl font-sans"
+        aria-current={active ? 'true' : undefined}
+        onPointerDownCapture={markActive}
+        onFocusCapture={markActive}
+        className={`w-full max-w-2xl rounded-[4px] font-sans ${active ? 'ring-1 ring-chrome-accent' : ''}`}
       >
         <button
           type="button"
@@ -143,9 +152,15 @@ export function ThreadArticle({
   return (
     <article
       aria-label={`Thread on ${thread.path} line ${thread.startLine}`}
-      className={`my-1.5 flex w-full max-w-2xl flex-col rounded-lg bg-chrome-bg-raised font-sans text-chrome-fg shadow-chrome ring-1 ring-chrome-fg/8 ${
-        resolved ? 'opacity-80' : ''
-      }`}
+      aria-current={active ? 'true' : undefined}
+      onPointerDownCapture={markActive}
+      onFocusCapture={markActive}
+      // The current thread (`r` target) swaps the hairline ring for an
+      // accent one — a ring is a box-shadow, so it never changes the
+      // annotation's measured height.
+      className={`my-1.5 flex w-full max-w-2xl flex-col rounded-lg bg-chrome-bg-raised font-sans text-chrome-fg shadow-chrome ring-1 ${
+        active ? 'ring-chrome-accent' : 'ring-chrome-fg/8'
+      } ${resolved ? 'opacity-80' : ''}`}
     >
       <div className={`flex items-center gap-1.5 pl-2 pr-3 pt-2 ${hasBadges ? 'pb-0.5' : '-mb-1.5'}`}>
         <button
