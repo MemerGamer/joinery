@@ -174,33 +174,34 @@ export function Homebase(): React.JSX.Element {
                 </div>
               ) : (
                 <>
-                  {(
-                    <section className="flex flex-col gap-3">
-                      <SectionHeading
-                        title="Currently reviewing"
-                        count={list.length}
-                        action={
+                  <section className="flex flex-col gap-3">
+                    <SectionHeading
+                      title="Currently reviewing"
+                      count={list.length}
+                      action={
+                        // Ordering one (or no) review changes nothing, so the tabs only show when there's something to reorder.
+                        list.length > 1 ? (
                           <div role="tablist" aria-label="Order" className="flex gap-1">
                             <OrderTab label="Lightest first" selected={order === 'effort'} onSelect={() => setOrder('effort')} />
                             <OrderTab label="Recent" selected={order === 'recent'} onSelect={() => setOrder('recent')} />
                           </div>
-                        }
-                      />
-                      {reviewing.length === 0 ? (
-                        <p className="rounded-lg border border-dashed border-chrome-border px-4 py-6 text-center text-xs text-chrome-fg-muted">
-                          Nothing in review — pick something up from the queue
-                        </p>
-                      ) : (
-                        <ul className="flex flex-col gap-2">
-                          {list.map((r) => (
-                            <ReviewCard key={r.review.id} review={r} you={youName} onGenerateReadingOrder={generateReadingOrder} />
-                          ))}
-                        </ul>
-                      )}
-                    </section>
-                  )}
+                        ) : undefined
+                      }
+                    />
+                    {reviewing.length === 0 ? (
+                      <p className="rounded-lg border border-dashed border-chrome-border px-4 py-6 text-center text-xs text-chrome-fg-muted">
+                        Nothing in review — pick something up from the queue
+                      </p>
+                    ) : (
+                      <ul className="flex flex-col gap-2">
+                        {list.map((r) => (
+                          <ReviewCard key={r.review.id} review={r} you={youName} onGenerateReadingOrder={generateReadingOrder} />
+                        ))}
+                      </ul>
+                    )}
+                  </section>
 
-                  {(
+                  {done.length > 0 && (
                     <section className="flex flex-col gap-3">
                       <SectionHeading
                         title="Cleared"
@@ -220,7 +221,6 @@ export function Homebase(): React.JSX.Element {
                       </ul>
                     </section>
                   )}
-
                 </>
               )}
             </div>
@@ -364,19 +364,18 @@ function ReviewCard({
               ))}
               {showReadingOrderAction &&
                 (summary.agentRunning ? (
-                  <button
-                    type="button"
-                    disabled
-                    className="pointer-events-auto inline-flex h-5 items-center gap-1 rounded-md bg-chrome-accent-soft px-1.5 text-micro font-medium whitespace-nowrap text-chrome-accent"
+                  <span
+                    role="status"
+                    className="inline-flex h-5 items-center gap-1 rounded-md bg-chrome-accent-soft px-1.5 text-micro font-medium whitespace-nowrap text-chrome-accent"
                   >
                     <Loader2 size={11} strokeWidth={2} className="animate-spin" aria-hidden />
-                    Generating…
-                  </button>
+                    Generating reading order…
+                  </span>
                 ) : (
                   <button
                     type="button"
                     onClick={() => void onGenerateReadingOrder(review.id)}
-                    className="pointer-events-auto inline-flex h-5 items-center gap-1 rounded-md bg-chrome-accent-soft px-1.5 text-micro font-medium whitespace-nowrap text-chrome-accent transition-[filter] hover:brightness-110"
+                    className="pointer-events-auto inline-flex h-5 items-center gap-1 rounded-md bg-chrome-accent-soft px-1.5 text-micro font-medium whitespace-nowrap text-chrome-accent! transition-[filter] hover:brightness-110"
                   >
                     <Sparkles size={11} strokeWidth={2} aria-hidden />
                     Generate reading order

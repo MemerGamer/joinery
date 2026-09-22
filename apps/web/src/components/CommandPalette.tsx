@@ -57,6 +57,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { callApi } from '../lib/apiClient.ts';
 import { goReview } from '../lib/router.ts';
 import { listThemeOptions, type ThemeOption } from '../lib/themes.ts';
+import { threadSummary } from '../lib/threadSummary.ts';
 import { useReview } from '../state/ReviewContext.tsx';
 import { useTheme } from '../state/ThemeContext.tsx';
 
@@ -348,14 +349,15 @@ export function CommandPalette({
                           lineNumber: t.startLine,
                           side: t.side === 'old' ? 'deletions' : 'additions',
                         });
-                        review.toggleThreadsPanel();
+                        // Open (not toggle) — jumping to a thread shouldn't close an already-open panel.
+                        review.setThreadsPanelOpen(true);
                         close();
                       }}
                       className={ITEM_CLASS}
                     >
                       <MessageSquare size={14} strokeWidth={1.5} aria-hidden />
                       <span className="truncate">
-                        {t.path}:{t.startLine} — {t.comments[0]?.bodyMd.slice(0, 60) ?? ''}
+                        {t.path}:{t.startLine} — {threadSummary(t.comments[0]?.bodyMd ?? '') || '(empty)'}
                       </span>
                     </Command.Item>
                   ))}

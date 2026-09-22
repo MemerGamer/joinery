@@ -325,15 +325,17 @@ export function Explore(): React.JSX.Element {
                       onClick={() => setRepoIdState(r.id)}
                       aria-pressed={selected}
                       title={r.rootPath}
-                      className={`flex h-7 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors ${
+                      // Text colours carry `!`: the unlayered global `button { color: inherit }`
+                      // in styles/index.css otherwise beats layered Tailwind utilities.
+                      className={`flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors ${
                         selected
-                          ? 'bg-chrome-fg text-chrome-bg'
-                          : 'bg-chrome-bg-hover text-chrome-fg-muted hover:bg-chrome-bg-active hover:text-chrome-fg'
+                          ? 'border-chrome-accent bg-chrome-accent-soft text-chrome-accent!'
+                          : 'border-transparent bg-chrome-bg-hover text-chrome-fg-muted! hover:bg-chrome-bg-active hover:text-chrome-fg!'
                       }`}
                     >
                       <FolderGit2 size={13} strokeWidth={1.75} aria-hidden />
                       {repoLabel(r)}
-                      <span className={`tabular-nums ${selected ? 'opacity-60' : 'text-chrome-fg-subtle'}`}>{countFor(r.id)}</span>
+                      <span className={`tabular-nums ${selected ? 'opacity-70' : 'text-chrome-fg-subtle'}`}>{countFor(r.id)}</span>
                     </button>
                   );
                 })}
@@ -377,7 +379,7 @@ export function Explore(): React.JSX.Element {
                   <button
                     type="button"
                     onClick={() => setAddingRepo(true)}
-                    className="flex h-7 items-center gap-1.5 rounded-full border border-dashed border-chrome-border-strong px-3 text-xs font-medium text-chrome-fg-muted transition-colors hover:border-chrome-fg-subtle hover:text-chrome-fg"
+                    className="flex h-7 items-center gap-1.5 rounded-full border border-dashed border-chrome-border-strong px-3 text-xs font-medium text-chrome-fg-muted! transition-colors hover:border-chrome-fg-subtle hover:text-chrome-fg!"
                   >
                     <Plus size={13} strokeWidth={1.75} aria-hidden />
                     Add repository
@@ -469,7 +471,11 @@ export function Explore(): React.JSX.Element {
             </span>
             <div className="flex-1" />
             {repo !== undefined && (
-              <span>{branchesRaw.length === BRANCH_LIMIT ? '50 most recent branches — type to search the rest' : `${String(branchesRaw.length)} branches`}</span>
+              <span>
+                {branchesRaw.length === BRANCH_LIMIT
+                  ? `${String(BRANCH_LIMIT)} most recent branches — type to search the rest`
+                  : `${String(branches.length)} ${branches.length === 1 ? 'branch' : 'branches'}`}
+              </span>
             )}
           </div>
         </main>
