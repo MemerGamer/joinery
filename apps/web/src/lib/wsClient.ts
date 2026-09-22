@@ -26,9 +26,13 @@ export class EventsClient {
   private reconnectDelay = 500;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private closedByUser = false;
+  /** Whether this connection wants `reviews.changed` (Homebase). */
+  private homeSubscribed = false;
 
+  /** Idempotent: a no-op while a connection is already open or opening. */
   connect(): void {
     this.closedByUser = false;
+    if (this.ws !== null && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
     this.open();
   }
 
@@ -47,6 +51,7 @@ export class EventsClient {
       for (const [reviewId, revision] of this.subscribed) {
         this.sendRaw({ type: 'subscribe', reviewId, ...(revision === undefined ? {} : { revision }) });
       }
+      if (this.homeSubscribed) this.sendRaw({ type: 'subscribeHome' });
     });
 
     ws.addEventListener('message', (ev: MessageEvent<string>) => {
@@ -97,6 +102,17 @@ export class EventsClient {
   unsubscribe(reviewId: string): void {
     this.subscribed.delete(reviewId);
     this.sendRaw({ type: 'unsubscribe', reviewId });
+  }
+
+  /** Receive `reviews.changed` whenever anything Homebase shows changes. */
+  subscribeHome(): void {
+    this.homeSubscribed = true;
+    this.sendRaw({ type: 'subscribeHome' });
+  }
+
+  unsubscribeHome(): void {
+    this.homeSubscribed = false;
+    this.sendRaw({ type: 'unsubscribeHome' });
   }
 
   focus(reviewId: string): void {

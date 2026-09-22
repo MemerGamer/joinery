@@ -43,6 +43,8 @@ export class EngineRegistry {
   readonly #db: Db;
   readonly #engines = new Map<string, EngineEntry>();
   readonly #listeners = new Map<string, Set<EventListener>>();
+  /** Homebase connections (`subscribeHome`), told whenever any review's rows change. */
+  readonly #homeListeners = new Set<EventListener>();
   readonly #creating = new Map<string, Promise<ReviewEngine | null>>();
   readonly #sweepTimer: ReturnType<typeof setInterval>;
 
@@ -122,6 +124,21 @@ export class EngineRegistry {
    */
   dispatch(reviewId: string, event: ServerEvent): void {
     this.#dispatch(reviewId, event);
+    this.notifyHome(reviewId);
+  }
+
+  /** Tell every Homebase connection its summaries are stale (`reviews.changed`). */
+  notifyHome(reviewId: string | null): void {
+    const event: ServerEvent = { type: 'reviews.changed', reviewId };
+    for (const listener of this.#homeListeners) listener(event);
+  }
+
+  /** Subscribe to `reviews.changed` (Homebase). Returns an unsubscribe function. */
+  subscribeHome(listener: EventListener): () => void {
+    this.#homeListeners.add(listener);
+    return () => {
+      this.#homeListeners.delete(listener);
+    };
   }
 
   #dispatch(reviewId: string, event: ServerEvent): void {
@@ -171,6 +188,7 @@ export class EngineRegistry {
     for (const entry of this.#engines.values()) entry.engine.dispose();
     this.#engines.clear();
     this.#listeners.clear();
+    this.#homeListeners.clear();
   }
 
   dispose(reviewId: string): void {

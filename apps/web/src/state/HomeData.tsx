@@ -10,6 +10,7 @@ import type { Branch, Me, Pull, Repo, Review, ReviewSummary } from '@review/core
 import { useEffect, useSyncExternalStore } from 'react';
 import { ApiError, callApi } from '../lib/apiClient.ts';
 import { goReview } from '../lib/router.ts';
+import { eventsClient } from '../lib/wsClient.ts';
 
 export type Bucket = 'attention' | 'done';
 
@@ -51,8 +52,8 @@ export interface HomeActions {
 }
 
 const AUTO_REFRESH_THROTTLE_MS = 30_000;
-const GENERATE_POLL_INTERVAL_MS = 3_000;
-const GENERATE_POLL_TIMEOUT_MS = 10 * 60_000;
+/** Coalesces a burst of `reviews.changed` (one action often sends several) into one refetch. */
+const LIVE_REFRESH_DEBOUNCE_MS = 250;
 
 function defaultSummary(reviewId: string): ReviewSummary {
   return {
@@ -108,6 +109,7 @@ let snapshot: HomeSnapshot = {
 const listeners = new Set<() => void>();
 let inFlight: Promise<void> | null = null;
 let windowListenersRegistered = false;
+let liveUpdatesRegistered = false;
 
 function setSnapshot(next: HomeSnapshot): void {
   snapshot = next;
@@ -277,14 +279,6 @@ async function generateReadingOrder(id: string): Promise<void> {
     patch({ error: errorMessage(err, 'Failed to generate reading order') });
   }
   await refresh();
-  // The POST returns as soon as the run starts; the agent works in the
-  // background. Home has no per-review event stream, so poll until this
-  // review's summary stops reporting a running agent.
-  const deadline = Date.now() + GENERATE_POLL_TIMEOUT_MS;
-  while (Date.now() < deadline && snapshot.reviews.find((r) => r.review.id === id)?.summary.agentRunning === true) {
-    await new Promise((resolve) => setTimeout(resolve, GENERATE_POLL_INTERVAL_MS));
-    await refresh();
-  }
 }
 
 async function addRepo(path: string): Promise<Repo> {
@@ -305,6 +299,41 @@ function shouldSkipAutoRefresh(): boolean {
 function onWindowRefocus(): void {
   if (shouldSkipAutoRefresh()) return;
   void refresh();
+}
+
+let liveRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+let liveMounts = 0;
+
+/**
+ * Live updates while a Homebase/Explore screen is mounted: the server sends
+ * `reviews.changed` whenever something a card shows changes (a thread, a
+ * run starting or ending, a review created or archived, ...), and the store
+ * refetches. Subscribed only while mounted, so an open review window
+ * doesn't trigger background Homebase refetches on every comment; coming
+ * back refetches once to catch up. Returns the unmount half.
+ */
+function mountLiveUpdates(): () => void {
+  if (!liveUpdatesRegistered) {
+    liveUpdatesRegistered = true;
+    eventsClient.onEvent((event) => {
+      if (event.type !== 'reviews.changed' || liveMounts === 0) return;
+      if (liveRefreshTimer !== null) clearTimeout(liveRefreshTimer);
+      liveRefreshTimer = setTimeout(() => {
+        liveRefreshTimer = null;
+        void refresh();
+      }, LIVE_REFRESH_DEBOUNCE_MS);
+    });
+  }
+  liveMounts += 1;
+  if (liveMounts === 1) {
+    eventsClient.connect();
+    eventsClient.subscribeHome();
+    if (snapshot.lastLoadedAt !== null) void refresh();
+  }
+  return () => {
+    liveMounts -= 1;
+    if (liveMounts === 0) eventsClient.unsubscribeHome();
+  };
 }
 
 /**
@@ -343,6 +372,8 @@ export function useHomeData(): HomeSnapshot & HomeActions {
       void refresh();
     }
   }, []);
+
+  useEffect(() => mountLiveUpdates(), []);
 
   return { ...state, ...actions };
 }

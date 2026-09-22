@@ -22,6 +22,22 @@ import { useEffect, useMemo, useRef } from 'react';
 import type { FileStatus } from '@review/core';
 import { compareFileEntries } from '@review/core';
 import { useReview } from '../state/ReviewContext.tsx';
+
+/**
+ * Row decorations render inside the tree's shadow DOM as `<use href="#id">`
+ * against its sprite sheet, so a `lucide-react` component can't be passed
+ * directly. These symbols carry lucide's own path data (`check`, `cog`,
+ * 24×24, stroked with `currentColor`) so they match the icons elsewhere.
+ */
+const LUCIDE_SYMBOL_ATTRS =
+  'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+const DECORATION_SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+<symbol id="review-decoration-viewed" ${LUCIDE_SYMBOL_ATTRS}><path d="M20 6 9 17l-5-5"/></symbol>
+<symbol id="review-decoration-generated" ${LUCIDE_SYMBOL_ATTRS}><path d="M11 10.27 7 3.34"/><path d="m11 13.73-4 6.93"/><path d="M12 22v-2"/><path d="M12 2v2"/><path d="M14 12h8"/><path d="m17 20.66-1-1.73"/><path d="m17 3.34-1 1.73"/><path d="M2 12h2"/><path d="m20.66 17-1.73-1"/><path d="m20.66 7-1.73 1"/><path d="m3.34 17 1.73-1"/><path d="m3.34 7 1.73 1"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="12" r="8"/></symbol>
+</svg>`;
+const DECORATION_ICON = { viewBox: '0 0 24 24', width: 13, height: 13 } as const;
+const DECORATION_ICON_VIEWED = { name: 'review-decoration-viewed', ...DECORATION_ICON };
+const DECORATION_ICON_GENERATED = { name: 'review-decoration-generated', ...DECORATION_ICON };
 import { useTheme } from '../state/ThemeContext.tsx';
 
 const STATUS_MAP: Record<FileStatus, GitStatusEntry['status']> = {
@@ -118,7 +134,7 @@ export function FileTreePane(): React.JSX.Element {
   const { model } = useFileTree({
     preparedInput,
     gitStatus,
-    icons: 'standard',
+    icons: { set: 'standard', spriteSheet: DECORATION_SPRITE },
     // `density`/`itemHeight` are only read once, at construction (`useFileTree`
     // is a bare `useState` initializer — see the capture-at-mount comment on
     // `liveRef` below), and the model writes its *resolved* row height and
@@ -153,8 +169,8 @@ export function FileTreePane(): React.JSX.Element {
     renderRowDecoration: ({ item }): FileTreeRowDecoration | null => {
       const entry = liveRef.current.byPath.get(item.path);
       if (entry === undefined) return null;
-      if (entry.generated) return { text: 'gen', title: 'Generated / vendored file' };
-      if (liveRef.current.isViewed(entry)) return { text: '✓', title: 'Viewed' };
+      if (entry.generated) return { icon: DECORATION_ICON_GENERATED, title: 'Generated / vendored file' };
+      if (liveRef.current.isViewed(entry)) return { icon: DECORATION_ICON_VIEWED, title: 'Viewed' };
       return null;
     },
     onSelectionChange: (selected) => {

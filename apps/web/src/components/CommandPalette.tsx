@@ -29,11 +29,8 @@
  * (typing `#`/`>`/`@` while forced into `file` mode switches away from it
  * immediately) and that's cleared whenever the palette closes.
  *
- * There is no standalone "ask agent" command here: the API only supports
- * asking an agent as part of posting a thread reply (`createThread`/`reply`'s
- * `askAgent` flag, bound to `Cmd+Enter` in the comment composer) — there is
- * no draft-thread context inside the palette to attach that to, so it does
- * not pretend to have one.
+ * There is deliberately no "ask agent" command here: asking an agent
+ * happens from a thread (its composer's `Cmd+Enter` or its Ask agent button).
  */
 import { Command, defaultFilter } from 'cmdk';
 import {
@@ -402,7 +399,10 @@ export function CommandPalette({
                   Generate reading order
                 </Command.Item>
               )}
-              {(['working', 'head', 'pr'] as const).map((rev) => (
+              {/* Only revisions that exist for this review right now (e.g. no
+                * `working` for a review that isn't checked out, no `pr`
+                * without a PR) — the server's `availableRevisions`. */}
+              {(review.reviewState?.availableRevisions ?? []).map((rev) => (
                 <Command.Item
                   key={rev}
                   value={`switch revision ${rev}`}

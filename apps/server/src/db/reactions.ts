@@ -77,3 +77,8 @@ export async function listReactionsForComments(
   }
   return byComment;
 }
+
+/** Remove every `(agent, kind)` reaction — e.g. `eyes` working indicators left behind by runs a restart cut off. */
+export async function clearAgentReactions(db: Db, kind: ReactionKind): Promise<void> {
+  await db.delete(reaction).where(and(eq(reaction.actor, 'agent'), eq(reaction.kind, kind)));
+}

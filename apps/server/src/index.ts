@@ -1,13 +1,16 @@
 /**
  * Server entrypoint (SPEC §3, §10): run migrations, ensure the data dir and
  * bearer token, start the HTTP + WS server bound to `127.0.0.1` only, log
- * the URL, and dispose engines/cat-file processes cleanly on shutdown.
+ * the URL, and dispose engines/cat-file processes cleanly on shutdown. Also
+ * fails agent runs orphaned by the previous process and keeps the agent
+ * worktree cache pruned (`agent/maintenance.ts`).
  */
 import { resolve } from 'node:path';
 import { DEFAULT_HOST, DEFAULT_PORT } from '@review/core';
 import { initDataDir, openDb, readToken, runMigrations } from './db/index.ts';
 import { EngineRegistry } from './engine/index.ts';
 import { createApp } from './http/app.ts';
+import { failOrphanedRuns, startWorktreeSweep } from './agent/maintenance.ts';
 
 async function main(): Promise<void> {
   const paths = await initDataDir();
@@ -15,6 +18,10 @@ async function main(): Promise<void> {
   await runMigrations(sqlite, { log: (message) => console.log(`[migrate] ${message}`) });
 
   const token = await readToken(paths);
+
+  const orphaned = await failOrphanedRuns(db);
+  if (orphaned > 0) console.log(`[runs] marked ${String(orphaned)} run(s) interrupted by the last shutdown as errored`);
+  const stopWorktreeSweep = startWorktreeSweep(db);
 
   const registry = new EngineRegistry(db);
   const webDistDir = resolve(import.meta.dirname, '..', '..', 'web', 'dist');
@@ -39,6 +46,7 @@ async function main(): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log('shutting down...');
+    stopWorktreeSweep();
     registry.disposeAll();
     server.stop();
     sqlite.close();

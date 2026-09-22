@@ -255,10 +255,13 @@ git diff <head>..<pr>    →  also renders YOUR commits as deletions   ❌
 
 Two-dot is wrong in precisely the diverged case it would be reached for.
 
-**Changes since you last looked.** We persist the PR head SHA last rendered, so
-beyond the three revisions the picker offers an incremental view — diff
-`last_seen_pr → pr_head` — showing only what the coworker pushed rather than
-re-reading the whole PR. Threads on lines they touched get the "changed since you
+**Changes since you last looked** *(not built yet)*. Planned as a commit/SHA
+range picker, as on GitHub's "Files changed" tab: beyond the three revisions,
+pick any commit or range of commits on the branch and view just that slice —
+`<from-sha> → <to-sha>` — instead of the whole PR. "Since you last looked" is
+then one preset of that picker: the PR head SHA last rendered (persisted as
+`last_seen_pr_sha`, currently unused) to the current head, showing only what
+the coworker pushed. Threads on lines they touched get the "changed since you
 commented" badge (§4, *Following a live worktree*).
 
 **Default revision does not silently flip.** When attached, `working` stays the
@@ -386,7 +389,9 @@ Therefore:
   SQLite keyed by `(review, path, blob-sha)`, never by directory path.
 - **Deletion is always safe.** `rm -rf data/worktrees`, plus scoped removal of
   our own registry entries, costs at most one rebuild before the next agent run.
-- Removed on review close; swept by age; scoped registry sweep on startup.
+- Swept by age: any worktree unused for 7 days is removed (directory plus its
+  own registry entry) at startup and then hourly for as long as the server runs
+  (`agent/maintenance.ts`).
 - Keep `refs/review/<review-id>` at each reviewed SHA so the commit survives GC.
   **This ref is what makes a directory optional** — it is why rendering can live
   entirely in the object store, and it matters more under this design, not less.
@@ -1060,49 +1065,73 @@ uncommitted work is still there after you commit, push, and open a PR.
 
 ## 9. Agent integration
 
-`@anthropic-ai/claude-agent-sdk`, following the t3code adapter pattern.
+`@anthropic-ai/claude-agent-sdk`, embedded in the server.
 
-### Session management
-- **One long-lived `query()` per thread**, in streaming-input mode: `prompt` is
-  an `AsyncIterable<SDKUserMessage>` fed from a queue, so follow-ups push into a
-  live session rather than respawning. `Map<runId, SessionContext>` holds them.
-- `includePartialMessages: true` → token-level streaming for the work-in-progress UI.
-- `canUseTool` → permission decisions (§ read-only enforcement).
-- `resume` + `sessionId` + a persisted cursor
-  (`{resume, resumeSessionAt: lastAssistantUuid, turnCount}`) so runs survive a
-  server restart.
-- `settingSources: ['user','project','local']` → your own `CLAUDE.md`, skills,
-  and settings load, exactly like real Claude Code.
+### Runs
+- **One `query()` per run.** A run is started by a button, the CLI, or the
+  HTTP API; the request returns the `running` run immediately and the agent
+  works in the background, reporting through `run.started` / `run.delta` /
+  `run.ended` on the event channel. No HTTP request is held open for the
+  length of a run.
+- `includePartialMessages: true` → token-level `run.delta` events for the
+  work-in-progress UI (thread replies). The deltas are forwarded live only;
+  the complete SDK messages are what get persisted.
 - `systemPrompt: {type:'preset', preset:'claude_code', append: <harness instructions>}`.
-- `cwd` = the review root.
-- `startup()` to pre-warm a subprocess so the first reply doesn't pay spawn cost.
-- Concurrency is unlimited: N concurrent `query()` calls, N subprocesses.
+- `cwd` = the attached root when the review's branch is checked out, otherwise
+  a cached detached agent worktree at the review's head (§4).
+- `settingSources: []` — the reviewed repo's `.claude/settings*.json` (and your
+  own settings) are **not** loaded, so a branch under review can't grant the
+  agent tools this run deliberately withholds.
+- Concurrency is unlimited: N concurrent runs, N subprocesses.
+- **A server restart ends in-flight runs.** At startup, any run still
+  `pending`/`running` is marked `error` ("the server restarted") and its
+  working-indicator reaction is cleared.
+
+**Not built yet** (deliberately deferred): long-lived sessions per thread fed
+from a message queue so follow-ups push into a live run, `resume` +
+`sessionId` + a persisted cursor so runs survive a restart, and `startup()`
+pre-warming. The `session_id` / `resume_cursor` columns exist for that.
 
 ### Read-only enforcement
-- `disallowedTools: ['Write','Edit','NotebookEdit']`.
-- `Read`, `Grep`, `Glob` auto-approved.
-- `Bash` gated through `canUseTool` against a read-only allowlist:
-  `git log|show|diff|blame|status`, `rg`, `ls`, `cat`, `head`, `sed -n`, and the
-  `review` CLI itself.
+The embedded agent has **no shell and no write tools**:
+- `disallowedTools: ['Write','Edit','NotebookEdit','Bash']`.
+- `canUseTool` allows `Read`, `Grep`, `Glob` only for paths that resolve
+  (through symlinks) under the run's `cwd`, and only with relative Glob
+  patterns / Grep globs that don't climb out with `..`.
+- It allows the in-process `review` tools (below); everything else — including
+  any tool the SDK adds later — is denied by default.
+
+### The `review` tools
+Everything the agent does to the app goes through an in-process MCP server
+(`agent/tools.ts`) whose tools are thin wrappers over the app's own HTTP routes,
+invoked in-process — so validation, events, and side effects are exactly the
+route's. Every tool is bound to the run's review; ids the model passes are
+checked to belong to it.
+
+Read: `get_review`, `list_files`, `get_diff`, `get_file`, `get_reading_order`,
+`list_threads`, `get_thread`. Write: `reply`, `create_thread`,
+`resolve_thread`, `react`, `mark_viewed`, `set_reading_order`,
+`set_review_status`.
 
 ### Run kinds
 | Kind | Trigger | Does |
 |---|---|---|
-| `reading_order` | "Generate reading order" button, or `review reading-order generate` | Explores the review root, then calls `review reading-order set --file plan.json` |
-| `thread_reply` | "Ask agent" on a comment or reply | Seeded with the thread, its code context, and the review's reading order; answers in markdown via `review reply` |
+| `reading_order` | "Generate reading order" button, or `review reading-order generate` | Explores the review root and returns a plan as structured output (`json_schema`), validated and persisted through the same path as `review reading-order set` |
+| `thread_reply` | "Ask agent" on a thread, `Cmd+Enter` on a comment, or `POST /api/threads/:id/ask` | Seeded with the thread, its anchor and diff, and the review's reading order; puts an `eyes` reaction on the latest user comment while working, then acts through the `review` tools (reply, react, ...). If it ends having written nothing, a short fallback reply is posted |
 
-Every SDK message is persisted to `agent_event(run_id, seq, type, payload)`, so
-the work-in-progress UI is replayable and survives a page reload.
+Every complete SDK message is persisted to `agent_event(run_id, seq, type, payload)`,
+so a run's work is replayable (`GET /api/runs/:id`) and survives a page reload.
 
 ```
 agent_run (id, review_id, thread_id?, kind, status, session_id,
            resume_cursor, started_at, ended_at, error)
 ```
 
-### Why the CLI, not MCP
-The agent drives the app through Bash exactly as a human would through the UI.
-One surface, three consumers: in-app buttons (straight to the HTTP API), the
-reading-order and reply agents, and any outside Claude Code session.
+### Tools for the embedded agent, the CLI for everyone else
+The embedded agent uses the in-process `review` tools rather than a shell:
+no shell means no allowlist to get wrong, and the tools can be scoped to one
+review. The `review` CLI stays the surface for humans and any outside Claude
+Code session (`SKILL.md`) — both end up on the same HTTP routes.
 
 ---
 
@@ -1126,11 +1155,14 @@ Bearer token from `data/token` (or `$REVIEW_DATA_DIR/token`). Every CLI command 
 | `GET` | `/api/threads/:id` | `review thread <id>` |
 | `POST` | `/api/threads/:id/replies` | `review reply <id> --body-file r.md` |
 | `POST` | `/api/threads/:id/resolve` | `review resolve <id>` |
+| `POST` | `/api/threads/:id/ask` | — ("Ask agent" in the UI) |
+| `GET` | `/api/comments/:id` | — (the agent's `react` ownership check) |
+| `POST` | `/api/comments/:id/reactions` | `review react <commentId> <kind> [--off] [--actor user\|agent]` |
 | `GET` | `/api/reviews/:id/feedback?format=markdown` | `review feedback <id> [--unresolved]` |
 | `POST` | `/api/reviews/:id/revision` | `review revision <id> <working\|head\|pr>` |
 | `POST` | `/api/reviews/:id/viewed` | `review viewed <id> <path>` |
 | `GET` | `/api/runs/:id` | `review run <id>` |
-| `WS` | `/api/events` | — |
+| `WS` | `/api/events` | — (per-review events; `subscribeHome` adds `reviews.changed` for Homebase) |
 
 `SKILL.md` ships alongside the CLI and documents the two workflows end to end:
 producing a reading order, and answering a thread.
@@ -1140,7 +1172,9 @@ producing a reading order, and answering a thread.
 ## 11. Keyboard and command palette
 
 `Cmd+K` command palette (`cmdk`): jump to review, jump to file, jump to step,
-jump to thread, switch revision, switch theme, generate reading order, ask agent.
+jump to thread, switch revision (only the revisions that exist for the review),
+switch theme, generate reading order. Asking an agent is deliberately not a
+palette command — it happens from a thread.
 
 Panel toggles follow the editor convention: `Cmd+B` for the left pane,
 `Cmd+Opt+B` for the right. `T` alone toggles the threads panel, which overlays
@@ -1169,7 +1203,7 @@ window, a dock icon, and frees most of the rest.
 | `e` / `Shift+E` | expand hunk context / expand whole file |
 | `v` | mark file viewed |
 | `1` / `2` / `3` | revision: working / head / pr |
-| `g h` / `g s` | go homebase / go steps |
+| `g h` | go homebase |
 | `?` | shortcut help |
 
 ---

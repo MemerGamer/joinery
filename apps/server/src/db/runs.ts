@@ -6,7 +6,7 @@
 import { agentEvent, agentRun } from '@review/core/db';
 import type { AgentRun, RunKind, RunStatus } from '@review/core';
 import { runId as newRunId, runKindSchema, runStatusSchema } from '@review/core';
-import { asc, eq, max } from 'drizzle-orm';
+import { asc, eq, inArray, max } from 'drizzle-orm';
 import type { Db } from './client.ts';
 import { narrowUnion } from './narrow.ts';
 
@@ -45,6 +45,12 @@ export async function createRun(db: Db, input: CreateRunInput): Promise<AgentRun
   const row = rows[0];
   if (row === undefined) throw new Error('createRun: insert returned no row');
   return toAgentRun(row);
+}
+
+/** Runs still `pending` or `running` — at boot, necessarily orphans of a previous process. */
+export async function listUnfinishedRuns(db: Db): Promise<AgentRun[]> {
+  const rows = await db.select().from(agentRun).where(inArray(agentRun.status, ['pending', 'running']));
+  return rows.map(toAgentRun);
 }
 
 export async function getRun(db: Db, id: string): Promise<AgentRun | null> {

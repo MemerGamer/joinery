@@ -50,6 +50,16 @@ export function createApp(options: CreateAppOptions): CreatedApp {
 
   const websocket = mountWebSocket(app, options.registry);
 
+  // Any successful write through the API can change what Homebase shows
+  // (a review created or archived, a file viewed, a repo added, ...), so
+  // tell Homebase connections to refetch. Row events a route dispatches
+  // (and a background agent run's end) also notify via
+  // `EngineRegistry.dispatch`; the duplicate is harmless, clients debounce.
+  app.use('/api/*', async (c, next) => {
+    await next();
+    if (c.req.method !== 'GET' && c.res.status < 400) options.registry.notifyHome(null);
+  });
+
   // Built before the routes are mounted (`buildRoutes` needs it in
   // `RoutesDeps`, to hand to `runs.ts`) but only ever *called* later, once
   // `app.route('/', routes)` below has populated the same `app` instance —

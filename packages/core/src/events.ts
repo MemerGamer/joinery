@@ -71,6 +71,16 @@ export const serverEventSchema = z.discriminatedUnion('type', [
     repoId: z.string(),
     reason: z.string(),
   }),
+  /**
+   * Something Homebase shows changed (a review created, archived, commented
+   * on, run, ...) — sent to connections that sent `subscribeHome`. Carries
+   * no data: Homebase just refetches its summaries. `reviewId` is set when
+   * the change is known to concern one review.
+   */
+  z.object({
+    type: z.literal('reviews.changed'),
+    reviewId: z.string().nullable(),
+  }),
 ]);
 export type ServerEvent = z.infer<typeof serverEventSchema>;
 export type ServerEventType = ServerEvent['type'];
@@ -90,5 +100,8 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('focus'), reviewId: z.string() }),
   z.object({ type: z.literal('blur'), reviewId: z.string() }),
   z.object({ type: z.literal('ping') }),
+  /** Start/stop receiving `reviews.changed` (Homebase's live refresh). */
+  z.object({ type: z.literal('subscribeHome') }),
+  z.object({ type: z.literal('unsubscribeHome') }),
 ]);
 export type ClientMessage = z.infer<typeof clientMessageSchema>;

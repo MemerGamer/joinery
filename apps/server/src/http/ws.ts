@@ -29,6 +29,7 @@ export function mountWebSocket(app: Hono, registry: EngineRegistry) {
       // never sent a revision).
       const subscribedRevision = new Map<string, Revision | undefined>();
       let focusedReviewId: string | null = null;
+      let unsubscribeHome: (() => void) | null = null;
 
       const send = (ws: { send: (data: string) => void }, event: ServerEvent): void => {
         ws.send(JSON.stringify(event));
@@ -86,6 +87,15 @@ export function mountWebSocket(app: Hono, registry: EngineRegistry) {
               await registry.blur(message.reviewId);
               break;
             }
+            case 'subscribeHome': {
+              unsubscribeHome ??= registry.subscribeHome((event) => send(ws, event));
+              break;
+            }
+            case 'unsubscribeHome': {
+              unsubscribeHome?.();
+              unsubscribeHome = null;
+              break;
+            }
             case 'ping':
               break;
           }
@@ -93,6 +103,7 @@ export function mountWebSocket(app: Hono, registry: EngineRegistry) {
         onClose() {
           for (const unsubscribe of unsubscribers.values()) unsubscribe();
           unsubscribers.clear();
+          unsubscribeHome?.();
           if (focusedReviewId !== null) void registry.blur(focusedReviewId);
         },
       };
