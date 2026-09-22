@@ -9,7 +9,7 @@
 import { WorkerPoolContextProvider, useWorkerPool } from '@pierre/diffs/react';
 import type { LineDiffTypes } from '@pierre/diffs';
 import { type ReactNode, useMemo, useRef } from 'react';
-import { DEFAULT_DIFF_THEME, ensurePierreThemesRegistered } from './themes.ts';
+import { DEFAULT_DIFF_THEME } from './themes.ts';
 
 // Vite's worker factory: `worker.format: 'es'` in vite.config.ts is what
 // makes this an ES module worker instead of the default (broken) 'iife'.
@@ -30,8 +30,6 @@ const highlighterOptions = {
   lineDiffType: 'word-alt' as LineDiffTypes,
   tokenizeMaxLineLength: 3000,
 };
-
-ensurePierreThemesRegistered();
 
 export function DiffWorkerPoolProvider({ children }: { children: ReactNode }): React.JSX.Element {
   return (

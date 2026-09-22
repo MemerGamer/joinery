@@ -18,11 +18,9 @@ import {
   Check,
   Compass,
   GitPullRequest,
-  Inbox,
   Loader2,
   MessageSquare,
   RefreshCw,
-  Search,
   Sparkles,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -33,10 +31,9 @@ import { relativeTime } from '../lib/relativeTime.ts';
 import { goExplore, goReview } from '../lib/router.ts';
 import { useHomeData, type HomeReview } from '../state/HomeData.tsx';
 import { BackdropPicker } from './home/BackdropPicker.tsx';
-import { Avatar, Chip, CiIcon, CoverBand, DiffStat, EffortMeter, Kbd, ProgressBar, SectionHeading, type Tone } from './home/primitives.tsx';
+import { Avatar, Chip, CiIcon, CoverBand, DiffStat, EffortMeter, ProgressBar, SectionHeading, type Tone } from './home/primitives.tsx';
 import { TopBar } from './TopBar.tsx';
 
-type Focus = 'reviewing' | 'replies' | 'done' | null;
 type Order = 'effort' | 'recent';
 
 function greeting(): string {
@@ -67,7 +64,6 @@ function reviewLastActivityAt(hr: HomeReview): number {
 export function Homebase(): React.JSX.Element {
   const { repos, reviews, pullsByRepo, pullsAvailable, me, loading, refreshing, error, refresh, openPull, archiveReview, generateReadingOrder } =
     useHomeData();
-  const [focus, setFocus] = useState<Focus>(null);
   const [order, setOrder] = useState<Order>('effort');
   const [openingKeys, setOpeningKeys] = useState<ReadonlySet<string>>(new Set());
   const [backdrop, setBackdrop] = useBackdrop();
@@ -77,15 +73,12 @@ export function Homebase(): React.JSX.Element {
 
   const reviewing = useMemo(() => reviews.filter((r) => r.bucket === 'attention'), [reviews]);
   const done = useMemo(() => reviews.filter((r) => r.bucket === 'done').sort((a, b) => reviewLastActivityAt(b) - reviewLastActivityAt(a)), [reviews]);
-  const unread = reviewing.reduce((n, r) => n + r.summary.unreadAgentReplies, 0);
-  const withReplies = reviewing.filter((r) => r.summary.unreadAgentReplies > 0);
 
   const list = useMemo(() => {
-    const base = focus === 'replies' ? withReplies : reviewing;
-    return [...base].sort((a, b) =>
+    return [...reviewing].sort((a, b) =>
       order === 'effort' ? effortOf(a.summary).score - effortOf(b.summary).score : reviewLastActivityAt(b) - reviewLastActivityAt(a),
     );
-  }, [focus, order, reviewing, withReplies]);
+  }, [order, reviewing]);
 
   // The queue: every open PR across every repo that has no review yet,
   // lightest first — so "I have twenty minutes" has an obvious answer.
@@ -104,8 +97,6 @@ export function Homebase(): React.JSX.Element {
         ),
     [pullsByRepo],
   );
-
-  const toggle = (f: Exclude<Focus, null>) => () => setFocus((cur) => (cur === f ? null : f));
 
   const handleOpenPull = (repoId: string, pull: Pull) => {
     const key = `${repoId}:${String(pull.number)}`;
@@ -136,11 +127,6 @@ export function Homebase(): React.JSX.Element {
       <BackdropPicker value={backdrop} onChange={setBackdrop} />
       <div className="mx-auto flex h-full w-full max-w-6xl min-h-0 flex-col gap-2">
         <TopBar title="Homebase">
-          <button type="button" className="chrome-btn bg-transparent text-chrome-fg-subtle">
-            <Search size={13} strokeWidth={1.75} aria-hidden />
-            Jump to…
-            <Kbd>⌘K</Kbd>
-          </button>
           <button type="button" onClick={goExplore} className="chrome-btn">
             <Compass size={13} strokeWidth={1.75} aria-hidden />
             Explore
@@ -188,41 +174,10 @@ export function Homebase(): React.JSX.Element {
                 </div>
               ) : (
                 <>
-                  {/* One strip of numbers, each a filter. Said once, here — the
-                      cards below carry the detail, so no prose restating them. */}
-                  <div className="flex items-stretch divide-x divide-chrome-border rounded-lg border border-chrome-border">
-                    <Stat
-                      value={reviewing.length}
-                      label="reviewing"
-                      icon={<Inbox size={14} strokeWidth={1.75} aria-hidden />}
-                      active={focus === 'reviewing'}
-                      onClick={toggle('reviewing')}
-                    />
-                    <Stat
-                      value={unread}
-                      label="agent replies"
-                      icon={<Sparkles size={14} strokeWidth={1.75} aria-hidden />}
-                      active={focus === 'replies'}
-                      onClick={toggle('replies')}
-                    />
-                    <Stat
-                      value={done.length}
-                      label="cleared"
-                      icon={<Check size={14} strokeWidth={1.75} aria-hidden />}
-                      active={focus === 'done'}
-                      onClick={toggle('done')}
-                    />
-                    <Stat
-                      value={queue.length}
-                      label="up for review"
-                      icon={<GitPullRequest size={14} strokeWidth={1.75} aria-hidden />}
-                    />
-                  </div>
-
-                  {focus !== 'done' && (
+                  {(
                     <section className="flex flex-col gap-3">
                       <SectionHeading
-                        title={focus === 'replies' ? 'Agent replies to read' : 'Currently reviewing'}
+                        title="Currently reviewing"
                         count={list.length}
                         action={
                           <div role="tablist" aria-label="Order" className="flex gap-1">
@@ -245,7 +200,7 @@ export function Homebase(): React.JSX.Element {
                     </section>
                   )}
 
-                  {(focus === null || focus === 'done') && (
+                  {(
                     <section className="flex flex-col gap-3">
                       <SectionHeading
                         title="Cleared"
@@ -266,11 +221,6 @@ export function Homebase(): React.JSX.Element {
                     </section>
                   )}
 
-                  {focus !== null && (
-                    <button type="button" onClick={() => setFocus(null)} className="self-start text-xs text-chrome-accent hover:underline">
-                      Show everything
-                    </button>
-                  )}
                 </>
               )}
             </div>
@@ -345,35 +295,6 @@ function OrderTab({ label, selected, onSelect }: { label: string; selected: bool
       }`}
     >
       {label}
-    </button>
-  );
-}
-
-function Stat({
-  value,
-  label,
-  icon,
-  active = false,
-  onClick,
-}: {
-  value: number;
-  label: string;
-  icon: React.ReactNode;
-  active?: boolean;
-  onClick?: () => void;
-}): React.JSX.Element {
-  const body = (
-    <span className="flex items-center gap-1.5 text-xs text-chrome-fg-muted">
-      <span className={active ? 'text-chrome-accent' : 'text-chrome-fg-subtle'}>{icon}</span>
-      <span className="text-xl font-semibold leading-none tracking-tight tabular-nums text-chrome-fg">{value}</span>
-      {label}
-    </span>
-  );
-  const cls = `flex min-w-0 flex-1 items-center px-4 py-3 text-left transition-colors ${active ? 'bg-chrome-accent-soft/50' : ''}`;
-  if (onClick === undefined) return <div className={cls}>{body}</div>;
-  return (
-    <button type="button" onClick={onClick} aria-pressed={active} className={`${cls} hover:bg-chrome-bg-hover`}>
-      {body}
     </button>
   );
 }
