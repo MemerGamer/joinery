@@ -101,10 +101,9 @@ export function buildThreadReplyPrompt(input: {
 }
 
 /**
- * Runs the agent for one `thread_reply` run and returns once it's fully
- * done (its status already set to `done`/`error` and `run.ended` emitted).
- * `runs.ts` owns creating/ending the run row so both this and a future
- * failure path share exactly one place that does so.
+ * Runs the agent for one `thread_reply` run and resolves once the agent
+ * has finished (or rejects if it failed). It never touches the run row's
+ * status: `runs.ts` owns creating and ending the run, and emits `run.ended`.
  */
 export async function runThreadReplyAgent(
   deps: ThreadReplyDeps,
@@ -146,19 +145,27 @@ export async function runThreadReplyAgent(
     },
   });
 
+  // Partial `stream_event` messages (one per streamed text chunk) are only
+  // forwarded live as `run.delta` — never persisted. The complete
+  // assistant/user/result messages that follow them carry the same content,
+  // so storing every chunk would only multiply `agent_event` rows.
+  let deltaSeq = 0;
   for await (const message of stream as AsyncIterable<SDKMessage>) {
-    const record = await appendEvent(deps.db, runId, message.type, message);
     const deltaText = extractDeltaText(message);
     if (deltaText !== null) {
+      deltaSeq += 1;
       deps.emit({
         type: 'run.delta',
         reviewId: review.id,
         runId,
-        seq: record.seq,
+        seq: deltaSeq,
         messageType: message.type,
         payload: { text: deltaText },
       });
+      continue;
     }
+    if (message.type === 'stream_event') continue;
+    await appendEvent(deps.db, runId, message.type, message);
   }
 
   if (!tools.wasWritten()) {

@@ -51,6 +51,8 @@ export interface HomeActions {
 }
 
 const AUTO_REFRESH_THROTTLE_MS = 30_000;
+const GENERATE_POLL_INTERVAL_MS = 3_000;
+const GENERATE_POLL_TIMEOUT_MS = 10 * 60_000;
 
 function defaultSummary(reviewId: string): ReviewSummary {
   return {
@@ -275,6 +277,14 @@ async function generateReadingOrder(id: string): Promise<void> {
     patch({ error: errorMessage(err, 'Failed to generate reading order') });
   }
   await refresh();
+  // The POST returns as soon as the run starts; the agent works in the
+  // background. Home has no per-review event stream, so poll until this
+  // review's summary stops reporting a running agent.
+  const deadline = Date.now() + GENERATE_POLL_TIMEOUT_MS;
+  while (Date.now() < deadline && snapshot.reviews.find((r) => r.review.id === id)?.summary.agentRunning === true) {
+    await new Promise((resolve) => setTimeout(resolve, GENERATE_POLL_INTERVAL_MS));
+    await refresh();
+  }
 }
 
 async function addRepo(path: string): Promise<Repo> {

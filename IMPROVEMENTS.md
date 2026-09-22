@@ -1338,3 +1338,21 @@ verified: `bun run typecheck` clean across all four workspaces, `bun test`
 while working looks identical`), and a successful `apps/web` build. The
 three open questions at the end of PLAN.md's R6 were taken at their
 bracketed defaults.
+
+### Follow-up review fixes
+
+- **Agent runs no longer hold the HTTP request open.** `generateReadingOrder`
+  and `requestThreadReply` (`agent/runs.ts`) now record the run as
+  `running`, return it, and finish the agent in the background, reporting
+  the outcome through `run.ended`. The web keeps an already-received end
+  from being overwritten by the start response (`laterRun`), and Homebase
+  polls its summaries until the review's agent stops running, since it has
+  no per-review event stream.
+- **Streamed text chunks are no longer persisted.** The thread-reply agent
+  forwards `stream_event` deltas as `run.delta` only; the complete messages
+  after them are what land in `agent_event`.
+- **Glob/Grep patterns are fenced too.** `makeAgentCanUseTool` denies an
+  absolute or `..`-climbing Glob `pattern` / Grep `glob`, which the `path`
+  check alone didn't cover.
+- **The unused Bash allowlist (`isReadOnlyBashCommand`) and its tests are
+  gone**, since the embedded agent has no shell.

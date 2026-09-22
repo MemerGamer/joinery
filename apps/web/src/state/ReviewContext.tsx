@@ -831,12 +831,12 @@ export function ReviewProvider({
     setState((s) => ({ ...s, readingOrderRun: localRun(reviewId, 'pending') }));
     try {
       const res = await callApi('generateReadingOrder', { params: [reviewId], body: {} });
-      // The response's `run` may already report `status: "error"` (a 200
-      // carrying a failed run, SPEC §9) — store it as-is and let
-      // `runUiState` (lib/runState.ts) interpret it; a later `run.started`/
-      // `run.ended` WS event for the same run just overwrites this with the
-      // same or a more up-to-date copy.
-      setState((s) => ({ ...s, readingOrderRun: res.run }));
+      // The response's `run` is the just-started one (`running`); the
+      // agent finishes in the background and its `run.ended` WS event
+      // carries the outcome. Let `runUiState` (lib/runState.ts) interpret
+      // whichever copy is newest — `laterRun` keeps an end that already
+      // arrived from being undone by this response.
+      setState((s) => ({ ...s, readingOrderRun: laterRun(s.readingOrderRun, res.run) }));
     } catch (err) {
       // Genuinely thrown: network failure or non-2xx, no run object at all.
       setState((s) => ({
@@ -872,7 +872,8 @@ export function ReviewProvider({
         const res = await callApi('askAgent', { params: [threadId], body: {} });
         setState((s) => {
           const threadRuns = new Map(s.threadRuns);
-          threadRuns.set(threadId, { run: res.run, lastDelta: threadRuns.get(threadId)?.lastDelta ?? '' });
+          const prev = threadRuns.get(threadId);
+          threadRuns.set(threadId, { run: laterRun(prev?.run ?? null, res.run), lastDelta: prev?.lastDelta ?? '' });
           return { ...s, threadRuns };
         });
       } catch (err) {
@@ -1173,6 +1174,16 @@ function annotationsEqual(
     }
   }
   return true;
+}
+
+/**
+ * The POST that starts a run returns it while still `running`; the agent
+ * works in the background and its `run.ended` WS event can land first when
+ * it finishes quickly. Never let that stale response undo a known end.
+ */
+function laterRun(current: AgentRun | null, fromResponse: AgentRun): AgentRun {
+  const ended = current !== null && current.id === fromResponse.id && current.endedAt !== null;
+  return ended && fromResponse.endedAt === null ? current : fromResponse;
 }
 
 /** `run.delta`'s payload is `unknown` on the wire (events.ts) — read the
