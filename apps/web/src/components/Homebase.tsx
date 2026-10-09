@@ -26,7 +26,7 @@ import {
   RefreshCw,
   Sparkles,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { effortOf } from '../lib/effort.ts';
 import { backdropProps, coverPainting, paintingUrl, useBackdrop } from '../lib/covers.ts';
 import { firstName, personFrom } from '../lib/people.ts';
@@ -49,6 +49,11 @@ function greeting(): string {
 }
 
 const HERO_HEIGHT = 'clamp(220px, 50vh, 500px)';
+/** Space above Explore: this much normally, shrinking toward the minimum so its header still peeks in when the panels end on screen. */
+const EXPLORE_GAP_MAX = 72;
+const EXPLORE_GAP_MIN = 24;
+/** How much of Explore must show at the fold to read as "more below": its header and a sliver of body. */
+const EXPLORE_PEEK = 48;
 const HERO_MASK = 'linear-gradient(to bottom, black 0%, black 55%, transparent 100%)';
 /** Glows the text in the page colour so it reads over the painting. */
 const GLOW_BG = '0 0 18px var(--chrome-bg-sunken), 0 0 6px var(--chrome-bg-sunken)';
@@ -76,6 +81,32 @@ export function Homebase(): React.JSX.Element {
   const [order, setOrder] = useState<Order>('effort');
   const [openingKeys, setOpeningKeys] = useState<ReadonlySet<string>>(new Set());
   const [backdrop, setBackdrop] = useBackdrop();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const topRef = useRef<HTMLDivElement>(null);
+  const [exploreGap, setExploreGap] = useState(EXPLORE_GAP_MAX);
+
+  // When the panels end inside the first screen, pull Explore up just enough
+  // that its header shows at the fold — a cue that the page scrolls. Past
+  // the fold there's nothing to do: cut-off cards already say so.
+  useLayoutEffect(() => {
+    const scroller = scrollRef.current;
+    const top = topRef.current;
+    if (scroller === null || top === null) return;
+    const measure = () => {
+      const topBottom = top.getBoundingClientRect().bottom - scroller.getBoundingClientRect().top + scroller.scrollTop;
+      if (topBottom >= scroller.clientHeight) {
+        setExploreGap(EXPLORE_GAP_MAX);
+        return;
+      }
+      const room = scroller.clientHeight - topBottom - EXPLORE_PEEK;
+      setExploreGap(Math.min(EXPLORE_GAP_MAX, Math.max(EXPLORE_GAP_MIN, room)));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(scroller);
+    ro.observe(top);
+    return () => ro.disconnect();
+  }, []);
   const painting = coverPainting(backdrop);
 
   const youName = me?.name ?? me?.login ?? null;
@@ -145,7 +176,7 @@ export function Homebase(): React.JSX.Element {
       >
         <RefreshCw size={15} strokeWidth={1.75} className={refreshing || loading ? 'animate-spin' : ''} aria-hidden />
       </button>
-      <div className="relative h-full overflow-y-auto">
+      <div ref={scrollRef} className="relative h-full overflow-y-auto">
         {/* Hero band: the painting dissolves into the page over its lower ~45%. */}
         {painting !== null && (
           <div className="pointer-events-none absolute inset-x-0 top-0 overflow-hidden" style={{ height: HERO_HEIGHT }} aria-hidden>
@@ -178,7 +209,7 @@ export function Homebase(): React.JSX.Element {
           className="relative mx-auto flex max-w-6xl flex-col gap-6 px-2 pb-10"
           style={{ paddingTop: topPad }}
         >
-          <div className="flex flex-col gap-6">
+          <div ref={topRef} className="flex flex-col gap-6">
             {/* mb-6 on top of the gap lets the panels start just past the hero's edge, not on it. */}
             <header className="mb-6 flex flex-col items-center gap-1">
               <p className="text-xs text-chrome-fg-muted" style={{ textShadow: GLOW_BG }}>
@@ -322,7 +353,8 @@ export function Homebase(): React.JSX.Element {
 
           {!showSkeleton && (
             // A chapter break, not just a gap: what's in hand above, everything else below.
-            <div className="pt-12">
+            // The column's own gap-6 (24px) counts toward the space above.
+            <div style={{ paddingTop: exploreGap - EXPLORE_GAP_MIN }}>
               <ExploreSection />
             </div>
           )}
