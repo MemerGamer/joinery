@@ -2,8 +2,8 @@
  * Backdrops for Homebase and Explore. Three kinds:
  *
  *  - solid     the plain sunken shell
- *  - glow      a two-colour landscape painted in CSS (`GlowScene`), in the
- *              same hero band as the paintings
+ *  - glow      a two-colour gradient (`GlowScene`), in the same hero band
+ *              as the paintings
  *  - image     a public-domain painting as a cover band at the top of the
  *              page island (Notion-style), the shell itself staying plain
  *

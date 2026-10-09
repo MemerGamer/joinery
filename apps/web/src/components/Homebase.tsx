@@ -9,7 +9,7 @@
  * Behind the panels sits a backdrop — solid, a glow rising from the
  * bottom, or a painting — chosen from the corner switcher and remembered,
  * so the screen has a mood rather than a flat grey. A painting (or a
- * glow, painted as a small landscape by `GlowScene`) fills a
+ * glow's gradient, `GlowScene`) fills a
  * full-width hero band that dissolves into the page; the greeting sits
  * centred on its lower edge, the two columns below it, and Explore — the
  * finder over every branch and pull request — below those, a scroll away.
@@ -181,7 +181,7 @@ export function Homebase(): React.JSX.Element {
         <RefreshCw size={15} strokeWidth={1.75} className={refreshing || loading ? 'animate-spin' : ''} aria-hidden />
       </button>
       <div ref={scrollRef} className="relative h-full overflow-y-auto">
-        {/* Hero band: the painting (or a glow's painted scene) dissolves into the page over its lower ~45%. */}
+        {/* Hero band: the painting (or a glow's gradient) dissolves into the page over its lower ~45%. */}
         {hasHero && (
           <div className="pointer-events-none absolute inset-x-0 top-0 overflow-hidden" style={{ height: HERO_HEIGHT }} aria-hidden>
             {painting !== null ? (

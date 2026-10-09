@@ -579,13 +579,3 @@ body {
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
   pointer-events: none;
 }
-
-/* GlowScene's clouds: a slow sideways drift (applied motion-safe only). */
-@keyframes home-drift {
-  from {
-    transform: translateX(-3%);
-  }
-  to {
-    transform: translateX(3%);
-  }
-}
