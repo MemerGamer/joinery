@@ -1,12 +1,12 @@
+import { DEFAULT_AGENT_MODEL, type AgentModel } from '@review/core';
+
 /**
- * The Claude model used for agent runs (§9). A named constant so it's a
- * one-line change later — never inline the literal elsewhere.
- *
- * Haiku, deliberately: reading-order generation runs on every "Generate
- * reading order" click, so it should be cheap to iterate on while testing.
+ * The Claude model used for thread replies when the request names none
+ * (§9). Replies normally carry the model picked in the composer; this is
+ * the fallback, and matches the picker's default.
  * Do not append a date suffix to this id.
  */
-export const AGENT_MODEL_ID = 'claude-haiku-4-5';
+export const AGENT_MODEL_ID: AgentModel = DEFAULT_AGENT_MODEL;
 
-/** The model for reading-order generation alone; thread replies stay on `AGENT_MODEL_ID`. */
+/** The model for reading-order generation, which has no picker. Haiku: it runs on every "Generate reading order" click. */
 export const READING_ORDER_MODEL_ID = 'claude-haiku-5-5';

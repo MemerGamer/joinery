@@ -5,10 +5,12 @@
  * open. Resolve/reopen and reply round-trip through the API and then ask the
  * parent to reload threads.
  */
-import { AlertTriangle, Bot, Check, ChevronDown, History, Loader2, MessageSquare, Sparkles, User } from 'lucide-react';
+import { AlertTriangle, Bot, Check, ChevronDown, History, Loader2, MessageSquare, User } from 'lucide-react';
 import { useState } from 'react';
 import type { Thread } from '@review/core';
+import { getAgentModel } from '../lib/agentModel.ts';
 import { callApi } from '../lib/apiClient.ts';
+import { AskButton } from './AskButton.tsx';
 import { CommentComposer } from './CommentComposer.tsx';
 import { Markdown } from './Markdown.tsx';
 import { ReactionBar } from './ReactionBar.tsx';
@@ -103,7 +105,10 @@ export function ThreadArticle({
   };
 
   const reply = async (bodyMd: string, askAgent: boolean) => {
-    await callApi('reply', { params: [thread.id], body: { bodyMd, author: 'user', askAgent } });
+    await callApi('reply', {
+      params: [thread.id],
+      body: { bodyMd, author: 'user', askAgent, ...(askAgent ? { model: getAgentModel() } : {}) },
+    });
     setReplying(false);
     onChanged();
   };
@@ -196,16 +201,6 @@ export function ThreadArticle({
           )}
           </>
         )}
-        <button
-          type="button"
-          onClick={() => void askAgent(thread.id)}
-          disabled={runLive}
-          aria-label="Ask agent"
-          title="Ask agent to reply, without composing a new comment"
-          className="chrome-icon-btn ml-auto size-6 text-chrome-fg-subtle disabled:opacity-50"
-        >
-          <Sparkles size={13} strokeWidth={1.75} aria-hidden />
-        </button>
       </div>
 
       {thread.outdated && collapsedOutdated ? (
@@ -270,13 +265,18 @@ export function ThreadArticle({
             onCancel={() => setReplying(false)}
           />
         ) : (
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center justify-end gap-1.5">
             <button type="button" onClick={() => setReplying(true)} className="chrome-btn">
               Reply
             </button>
             <button type="button" onClick={() => void resolve(!resolved)} className="chrome-btn">
               {resolved ? 'Reopen' : 'Resolve'}
             </button>
+            <AskButton
+              onAsk={() => void askAgent(thread.id)}
+              disabled={runLive}
+              title="Ask {model} to reply, without composing a new comment"
+            />
           </div>
         )}
       </div>

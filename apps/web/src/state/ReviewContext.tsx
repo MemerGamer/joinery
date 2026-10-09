@@ -54,6 +54,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { getAgentModel } from '../lib/agentModel.ts';
 import { ApiError, callApi } from '../lib/apiClient.ts';
 import { blobPairKey, loadFileDiff, placeholderFileDiff } from '../lib/diffLoader.ts';
 import { toggleReactionLocally } from '../lib/reactions.ts';
@@ -885,7 +886,7 @@ export function ReviewProvider({
         return { ...s, threadRuns };
       });
       try {
-        const res = await callApi('askAgent', { params: [threadId], body: {} });
+        const res = await callApi('askAgent', { params: [threadId], body: { model: getAgentModel() } });
         setState((s) => {
           const threadRuns = new Map(s.threadRuns);
           const prev = threadRuns.get(threadId);
@@ -1052,6 +1053,7 @@ export function ReviewProvider({
             endLine: draft.endLine,
             bodyMd,
             askAgent,
+            ...(askAgent ? { model: getAgentModel() } : {}),
           },
         });
         setDraftThread(null);

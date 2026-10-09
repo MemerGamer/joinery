@@ -9,7 +9,7 @@
  * silently.
  */
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import type { Review, ServerEvent, Thread } from '@review/core';
+import type { AgentModel, Review, ServerEvent, Thread } from '@review/core';
 import { AGENT_MODEL_ID } from './model.ts';
 import { makeAgentCanUseTool } from './permissions.ts';
 import { createReviewTools, trimToLines, type Invoke } from './tools.ts';
@@ -111,6 +111,7 @@ export async function runThreadReplyAgent(
   review: Review,
   thread: Thread,
   engine: EngineForCwd,
+  model: AgentModel = AGENT_MODEL_ID,
 ): Promise<void> {
   const cwd = await resolveRunCwd({ db: deps.db }, review, engine);
 
@@ -134,7 +135,7 @@ export async function runThreadReplyAgent(
     prompt: userMessage,
     options: {
       cwd,
-      model: AGENT_MODEL_ID,
+      model,
       disallowedTools: ['Write', 'Edit', 'NotebookEdit', 'Bash'],
       canUseTool: makeAgentCanUseTool({ cwd }),
       mcpServers: { review: tools.server },

@@ -67,6 +67,17 @@ export const markViewedBodySchema = z.object({
   blobSha: z.string().optional(),
   viewed: z.boolean().default(true),
 });
+/** The models a thread reply can run on, in picker order. Ids are exact; never add a date suffix. */
+export const AGENT_MODELS = [
+  { id: 'claude-fable-5-1', label: 'Fable 5.1' },
+  { id: 'claude-opus-5-5', label: 'Opus 5.5' },
+  { id: 'claude-sonnet-5-5', label: 'Sonnet 5.5' },
+  { id: 'claude-haiku-5-5', label: 'Haiku 5.5' },
+] as const;
+export const agentModelSchema = z.enum(['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5']);
+export type AgentModel = z.infer<typeof agentModelSchema>;
+export const DEFAULT_AGENT_MODEL: AgentModel = 'claude-haiku-5-5';
+
 export const createThreadBodySchema = z.object({
   path: z.string().min(1),
   side: z.enum(['old', 'new']),
@@ -76,15 +87,18 @@ export const createThreadBodySchema = z.object({
   author: z.enum(['user', 'agent']).default('user'),
   /** Post the comment, then immediately ask an agent to reply (Cmd+Enter). */
   askAgent: z.boolean().default(false),
+  /** The model for that reply; the server default when absent. */
+  model: agentModelSchema.optional(),
 });
 export const replyBodySchema = z.object({
   bodyMd: z.string().min(1),
   author: z.enum(['user', 'agent']).default('user'),
   agentRunId: z.string().optional(),
   askAgent: z.boolean().default(false),
+  model: agentModelSchema.optional(),
 });
 export const generateReadingOrderBodySchema = z.object({});
-export const askAgentBodySchema = z.object({});
+export const askAgentBodySchema = z.object({ model: agentModelSchema.optional() });
 export const setReactionBodySchema = z.object({
   kind: reactionKindSchema,
   actor: z.enum(['user', 'agent']).default('user'),

@@ -18,7 +18,7 @@
  * agent itself runs in the background and reports back through `run.*`
  * events, so no HTTP request is held open for the length of an agent run.
  */
-import type { AgentRun, FileEntry, Review, ServerEvent } from '@review/core';
+import type { AgentModel, AgentRun, FileEntry, Review, ServerEvent } from '@review/core';
 import {
   appendEvent,
   createRun,
@@ -90,7 +90,13 @@ export async function generateReadingOrder(deps: RunsDeps, reviewId: string, con
  * `runThreadReplyAgent`) decides whether that means the attached root or a
  * cached detached worktree.
  */
-export async function requestThreadReply(deps: RunsDeps, review: Review, threadId: string, engine: EngineForCwd): Promise<AgentRun> {
+export async function requestThreadReply(
+  deps: RunsDeps,
+  review: Review,
+  threadId: string,
+  engine: EngineForCwd,
+  model?: AgentModel,
+): Promise<AgentRun> {
   const reviewId = review.id;
   const created = await createRun(deps.db, { reviewId, threadId, kind: 'thread_reply' });
   deps.emit({ type: 'run.started', reviewId, run: created });
@@ -111,7 +117,7 @@ export async function requestThreadReply(deps: RunsDeps, review: Review, threadI
   runInBackground(deps, reviewId, run.id, async () => {
     try {
       if (thread === null) throw new Error(`thread ${threadId} not found`);
-      await runThreadReplyAgent(deps, run.id, review, thread, engine);
+      await runThreadReplyAgent(deps, run.id, review, thread, engine, model);
     } catch (err) {
       const message = err instanceof Error ? err.message : `thread-reply agent run failed: ${String(err)}`;
       await deps.invoke('POST', `/api/threads/${encodeURIComponent(threadId)}/replies`, {

@@ -453,7 +453,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     dispatch(id, { type: 'thread.created', reviewId: id, thread });
 
     const run = body.askAgent
-      ? await requestThreadReply({ db: deps.db, invoke: deps.invoke, emit: (e) => dispatch(id, e) }, review, thread.id, engine)
+      ? await requestThreadReply({ db: deps.db, invoke: deps.invoke, emit: (e) => dispatch(id, e) }, review, thread.id, engine, body.model)
       : null;
     return c.json({ thread, run }, 201);
   });
@@ -481,7 +481,13 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     if (body.askAgent) {
       const review = await requireReview(deps, thread.reviewId);
       const engine = await requireEngine(deps, thread.reviewId);
-      run = await requestThreadReply({ db: deps.db, invoke: deps.invoke, emit: (e) => dispatch(thread.reviewId, e) }, review, threadId, engine);
+      run = await requestThreadReply(
+        { db: deps.db, invoke: deps.invoke, emit: (e) => dispatch(thread.reviewId, e) },
+        review,
+        threadId,
+        engine,
+        body.model,
+      );
     }
     return c.json({ thread: updated, run }, 201);
   });
@@ -498,7 +504,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
   app.post('/api/threads/:id/ask', async (c) => {
     const threadId = c.req.param('id');
     const thread = await requireThread(deps, threadId);
-    await parseBody(askAgentBodySchema, c);
+    const body = await parseBody(askAgentBodySchema, c);
     const review = await requireReview(deps, thread.reviewId);
     const engine = await requireEngine(deps, thread.reviewId);
     const run = await requestThreadReply(
@@ -506,6 +512,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
       review,
       threadId,
       engine,
+      body.model,
     );
     return c.json({ run }, 202);
   });
