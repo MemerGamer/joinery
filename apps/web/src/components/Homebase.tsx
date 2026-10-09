@@ -206,7 +206,9 @@ export function Homebase(): React.JSX.Element {
         )}
 
         <div
-          className="relative mx-auto flex max-w-6xl flex-col gap-6 px-2 pb-10"
+          // Without the queue pane the cards would stretch across the whole
+          // column, so it narrows to roughly the width they have beside it.
+          className={`relative mx-auto flex flex-col gap-6 px-2 pb-10 ${showQueue ? 'max-w-6xl' : 'max-w-4xl'}`}
           style={{ paddingTop: topPad }}
         >
           <div ref={topRef} className="flex flex-col gap-6">
@@ -466,7 +468,8 @@ function ReviewCard({
                   <button
                     type="button"
                     onClick={() => void onGenerateReadingOrder(review.id)}
-                    className="pointer-events-auto inline-flex h-5 items-center gap-1 rounded-md bg-chrome-accent-soft px-1.5 text-micro font-medium whitespace-nowrap text-chrome-accent! transition-[filter] hover:brightness-110"
+                    // Grey until hovered: it repeats on most cards, so in accent it would shout.
+                    className="pointer-events-auto inline-flex h-5 items-center gap-1 rounded-md bg-chrome-bg-hover px-1.5 text-micro font-medium whitespace-nowrap text-chrome-fg-muted! transition-colors hover:bg-chrome-accent-soft hover:text-chrome-accent!"
                   >
                     <Sparkles size={11} strokeWidth={2} aria-hidden />
                     Generate reading order
