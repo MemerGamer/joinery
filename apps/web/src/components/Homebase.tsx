@@ -181,7 +181,7 @@ export function Homebase(): React.JSX.Element {
         {painting !== null && (
           <div className="pointer-events-none absolute inset-x-0 top-0 overflow-hidden" style={{ height: HERO_HEIGHT }} aria-hidden>
             <img
-              src={paintingUrl(painting, 2400)}
+              src={paintingUrl(painting, 'full')}
               alt=""
               className="absolute inset-0 size-full object-cover"
               style={{ objectPosition: '50% 35%', maskImage: HERO_MASK, WebkitMaskImage: HERO_MASK }}

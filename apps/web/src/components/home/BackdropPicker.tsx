@@ -110,7 +110,7 @@ export function BackdropPicker({ value, onChange }: { value: Backdrop; onChange:
                       selected ? 'ring-2 ring-chrome-fg' : ''
                     }`}
                   >
-                    <img src={paintingUrl(p, 320)} alt="" loading="lazy" className="size-full object-cover" />
+                    <img src={paintingUrl(p, 'thumb')} alt="" loading="lazy" className="size-full object-cover" />
                     {selected && (
                       <span className="absolute inset-0 flex items-center justify-center bg-black/30">
                         <Check size={14} strokeWidth={3} className="text-white" aria-hidden />

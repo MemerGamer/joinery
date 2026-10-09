@@ -7,8 +7,10 @@
  *  - image     a public-domain painting as a cover band at the top of the
  *              page island (Notion-style), the shell itself staying plain
  *
- * Paintings are served from Wikimedia Commons at render time (all public
- * domain); vendoring them into `public/` is a later decision.
+ * Paintings (all public domain, from Wikimedia Commons) are vendored in
+ * `public/paintings/`, so they're served by this machine and work offline:
+ * `<id>.jpg` at most 2400px wide for the cover band, `<id>-thumb.jpg` at
+ * 320px for the picker.
  */
 import { useCallback, useState } from 'react';
 
@@ -32,7 +34,7 @@ export interface Painting {
   id: string;
   name: string;
   artist: string;
-  /** File name on Wikimedia Commons. */
+  /** File name on Wikimedia Commons, where `public/paintings/<id>.jpg` came from. */
   file: string;
 }
 
@@ -47,8 +49,8 @@ export const PAINTINGS: Painting[] = [
   { id: 'comp8', name: 'Composition 8', artist: 'Kandinsky', file: 'Vassily_Kandinsky,_1923_-_Composition_8,_huile_sur_toile,_140_cm_x_201_cm,_Musée_Guggenheim,_New_York.jpg' },
 ];
 
-export function paintingUrl(p: Painting, width: number): string {
-  return `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(p.file)}?width=${String(width)}`;
+export function paintingUrl(p: Painting, size: 'full' | 'thumb'): string {
+  return size === 'full' ? `/paintings/${p.id}.jpg` : `/paintings/${p.id}-thumb.jpg`;
 }
 
 export type Backdrop = { kind: 'solid' } | { kind: 'glow'; id: string } | { kind: 'image'; id: string };
