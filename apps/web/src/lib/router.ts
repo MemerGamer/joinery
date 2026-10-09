@@ -4,7 +4,6 @@
  * pulled in for two routes.
  */
 import { useEffect, useState } from 'react';
-import { flushSync } from 'react-dom';
 
 export type Route =
   | { name: 'homebase' }
@@ -20,20 +19,8 @@ function parseHash(hash: string): Route {
 export function useRoute(): Route {
   const [route, setRoute] = useState<Route>(() => parseHash(location.hash));
   useEffect(() => {
-    // Route changes go through the View Transitions API where it exists:
-    // the browser snapshots the old screen, we swap the route synchronously
-    // inside the callback (flushSync, so React commits before the snapshot
-    // of the new screen), and the CSS in index.css animates between them.
-    const onChange = () => {
-      const next = parseHash(location.hash);
-      if (typeof document.startViewTransition !== 'function') {
-        setRoute(next);
-        return;
-      }
-      document.startViewTransition(() => {
-        flushSync(() => setRoute(next));
-      });
-    };
+    // Route changes swap instantly — no transition between screens.
+    const onChange = () => setRoute(parseHash(location.hash));
     window.addEventListener('hashchange', onChange);
     return () => window.removeEventListener('hashchange', onChange);
   }, []);
