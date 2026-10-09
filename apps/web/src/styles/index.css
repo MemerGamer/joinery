@@ -34,6 +34,10 @@
   --chrome-success-bg: rgba(42, 154, 95, 0.12);
   --chrome-focus-ring: #5b63d3;
   --chrome-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.04);
+  /* Island frame (chrome-island); lib/deriveChrome.ts re-sets these per theme. */
+  --chrome-island-highlight: rgba(255, 255, 255, 0.7);
+  --chrome-island-sheen: transparent;
+  --chrome-island-shadow: 0 1px 2px rgba(20, 22, 30, 0.06), 0 2px 6px rgba(20, 22, 30, 0.03);
   --chrome-radius-sm: 4px;
   --chrome-radius-md: 6px;
   --chrome-radius-lg: 10px;
@@ -102,6 +106,9 @@
     --chrome-success-bg: rgba(76, 195, 138, 0.14);
     --chrome-focus-ring: #8b95f2;
     --chrome-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 16px rgba(0, 0, 0, 0.35);
+    --chrome-island-highlight: rgba(255, 255, 255, 0.06);
+    --chrome-island-sheen: rgba(255, 255, 255, 0.02);
+    --chrome-island-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
     color-scheme: dark;
   }
 }
@@ -128,6 +135,9 @@
   --chrome-success-bg: rgba(76, 195, 138, 0.14);
   --chrome-focus-ring: #8b95f2;
   --chrome-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 16px rgba(0, 0, 0, 0.35);
+  --chrome-island-highlight: rgba(255, 255, 255, 0.06);
+  --chrome-island-sheen: rgba(255, 255, 255, 0.02);
+  --chrome-island-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
   color-scheme: dark;
 }
 
@@ -435,28 +445,29 @@ body {
 
 /*
  * Islands wear the same frame as Homebase's panels (`.home-panel`): a 1px
- * hairline (a ring, so it takes no layout), a 1px inner top highlight, the
- * surface nudged 2% toward white under a faint top-to-bottom sheen, and a
- * soft shadow. The highlight is a `::before` overlay rather than an inset
- * shadow so the island's own content backgrounds can't paint over it —
- * hence `position: relative`. Light themes get their own, gentler values.
+ * hairline (a ring, so it takes no layout), a 1px inner top highlight, a
+ * faint top-to-bottom sheen, and a soft shadow. Every colour is a theme
+ * token — the hairline is the theme's own border, the rest are the
+ * `--chrome-island-*` tokens that lib/deriveChrome.ts sets from whether the
+ * theme is dark — never `light-dark()`, which follows `color-scheme`, not
+ * the selected theme. The highlight is a `::before` overlay rather than an
+ * inset shadow so the island's content backgrounds can't paint over it —
+ * hence `position: relative`.
  */
 @utility chrome-island {
   position: relative;
   border-radius: var(--chrome-radius-lg);
-  background:
-    linear-gradient(to bottom, light-dark(rgb(255 255 255 / 0.5), rgb(255 255 255 / 0.02)), transparent),
-    color-mix(in srgb, var(--chrome-bg) 98%, white);
+  background: linear-gradient(to bottom, var(--chrome-island-sheen), transparent), var(--chrome-bg);
   box-shadow:
-    0 0 0 1px light-dark(rgba(20, 22, 30, 0.1), rgb(255 255 255 / 0.06)),
-    0 1px 2px light-dark(rgba(20, 22, 30, 0.06), rgb(0 0 0 / 0.25));
+    0 0 0 1px var(--chrome-border),
+    var(--chrome-island-shadow);
   overflow: hidden;
   &::before {
     content: '';
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    box-shadow: inset 0 1px 0 light-dark(rgb(255 255 255 / 0.7), rgb(255 255 255 / 0.06));
+    box-shadow: inset 0 1px 0 var(--chrome-island-highlight);
     pointer-events: none;
   }
 }

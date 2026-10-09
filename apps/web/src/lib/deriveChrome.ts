@@ -10,7 +10,7 @@
  * re-derives the chrome's surface, border, and text tokens from them, so
  * the chrome always sits on the same hue family as the code it frames.
  *
- * Only *surfaces and text* are derived. The accent and the semantic colours
+ * Only *surfaces, text and the island frame* are derived. The accent and the semantic colours
  * (danger/warning/success) stay as authored: they carry meaning across
  * themes, and a theme's `textLink.foreground` is not reliably a good
  * button colour.
@@ -37,6 +37,9 @@ const DERIVED_PROPS = [
   '--chrome-fg',
   '--chrome-fg-muted',
   '--chrome-fg-subtle',
+  '--chrome-island-highlight',
+  '--chrome-island-sheen',
+  '--chrome-island-shadow',
 ] as const;
 
 function mix(a: string, b: string, pctOfB: number): string {
@@ -101,4 +104,9 @@ export async function applyDerivedChrome(themeName: string, isStale: () => boole
   set('--chrome-fg', fg);
   set('--chrome-fg-muted', muted);
   set('--chrome-fg-subtle', mix(muted, bg, 35));
+  // The island frame (chrome-island): a white top highlight and sheen read
+  // on dark surfaces only; light ones lean on the hairline and shadow.
+  set('--chrome-island-highlight', dark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(255, 255, 255, 0.7)');
+  set('--chrome-island-sheen', dark ? 'rgba(255, 255, 255, 0.02)' : 'transparent');
+  set('--chrome-island-shadow', dark ? '0 1px 2px rgba(0, 0, 0, 0.25)' : '0 1px 2px rgba(20, 22, 30, 0.06), 0 2px 6px rgba(20, 22, 30, 0.03)');
 }
