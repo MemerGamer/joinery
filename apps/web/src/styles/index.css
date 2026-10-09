@@ -585,7 +585,8 @@ body {
  * of home-card's firmer border and shadow. A plain selector so it beats the
  * layered home-card utility's own background.
  */
-/* The hover token is a translucent tint, so it's layered over the card's own colour. */
+/* Half the usual hover tint, layered over the card's own colour (the token is translucent). */
 .home-card-hover:hover {
-  background: linear-gradient(var(--chrome-bg-hover), var(--chrome-bg-hover)), var(--chrome-bg);
+  --home-card-tint: color-mix(in srgb, var(--chrome-bg-hover) 50%, transparent);
+  background: linear-gradient(var(--home-card-tint), var(--home-card-tint)), var(--chrome-bg);
 }
