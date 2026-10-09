@@ -11,7 +11,8 @@
  * so the screen has a mood rather than a flat grey. A painting fills a
  * full-width hero band that dissolves into the page; the greeting sits
  * centred on its lower edge, the two columns below it, and Explore — the
- * finder over every branch and pull request — below those, a scroll away.
+ * finder over every branch and pull request — below those, its search
+ * field peeking above the fold.
  *
  * Everything here comes from `useHomeData()`.
  */
@@ -19,7 +20,7 @@ import type { Pull, Repo, Review, ReviewSummary } from '@review/core';
 import {
   Archive,
   Check,
-  Compass,
+  Clock,
   GitPullRequest,
   Loader2,
   MessageSquare,
@@ -49,6 +50,8 @@ function greeting(): string {
 }
 
 const HERO_HEIGHT = 'clamp(220px, 50vh, 500px)';
+/** How much of Explore — its header, search field and repo pills — peeks above the fold, as a call to scroll. */
+const EXPLORE_PEEK = '250px';
 const HERO_MASK = 'linear-gradient(to bottom, black 0%, black 55%, transparent 100%)';
 /** Glows the text in the page colour so it reads over the painting. */
 const GLOW_BG = '0 0 18px var(--chrome-bg-sunken), 0 0 6px var(--chrome-bg-sunken)';
@@ -129,6 +132,7 @@ export function Homebase(): React.JSX.Element {
 
   const showSkeleton = loading && reviews.length === 0;
   const showNoRepos = !showSkeleton && repos.length === 0;
+  const topPad = painting !== null ? `calc(${HERO_HEIGHT} - 84px)` : '2.5rem';
   const noPullsAvailable = repos.length > 0 && repos.every((r) => pullsAvailable.get(r.id) === false);
 
   return (
@@ -174,146 +178,154 @@ export function Homebase(): React.JSX.Element {
 
         <div
           className="relative mx-auto flex max-w-6xl flex-col gap-6 px-2 pb-10"
-          style={{ paddingTop: painting !== null ? `calc(${HERO_HEIGHT} - 84px)` : '2.5rem' }}
+          style={{ paddingTop: topPad }}
         >
-          <header className="flex flex-col items-center gap-1">
-            <p className="text-xs text-chrome-fg-muted" style={{ textShadow: GLOW_BG }}>
-              {DATE.format(new Date())}
-            </p>
-            <h1 className="text-center text-2xl font-semibold tracking-tight text-chrome-fg" style={{ textShadow: GLOW_BG }}>
-              {greeting()}
-              {youName !== null ? `, ${youName}` : ''}
-            </h1>
-          </header>
+          {/* At least a screen tall, less the peek, so the first view ends on Explore's search field. */}
+          <div className="flex flex-col gap-6" style={{ minHeight: `calc(100dvh - ${topPad} - ${EXPLORE_PEEK})` }}>
+            {/* mb-6 on top of the gap lets the panels start just past the hero's edge, not on it. */}
+            <header className="mb-6 flex flex-col items-center gap-1">
+              <p className="text-xs text-chrome-fg-muted" style={{ textShadow: GLOW_BG }}>
+                {DATE.format(new Date())}
+              </p>
+              <h1 className="text-center text-2xl font-semibold tracking-tight text-chrome-fg" style={{ textShadow: GLOW_BG }}>
+                {greeting()}
+                {youName !== null ? `, ${youName}` : ''}
+              </h1>
+            </header>
 
-          {error !== null && (
-            <div className="flex items-center justify-center gap-2 text-xs text-chrome-danger">
-              <span>{error}</span>
-              <button type="button" onClick={() => void refresh({ force: true })} className="chrome-btn">
-                Retry
-              </button>
-            </div>
-          )}
-
-          <div className="flex min-h-0 items-start gap-3">
-            <main className="flex min-w-0 flex-1 flex-col gap-3">
-              {showSkeleton ? (
-                <div className="flex flex-col gap-2">
-                  <SkeletonBlocks />
-                </div>
-              ) : showNoRepos ? (
-                <Panel title="Currently reviewing">
-                  <div className="flex flex-col items-center gap-3 py-16 text-center">
-                    <p className="text-xs text-chrome-fg-muted">No repositories yet</p>
-                    <button type="button" onClick={goExplore} className="chrome-btn">
-                      Add one in Explore
-                    </button>
-                  </div>
-                </Panel>
-              ) : (
-                <>
-                  <Panel
-                    icon={<GitPullRequest aria-hidden />}
-                    title="Currently reviewing"
-                    count={list.length}
-                    bodyClassName="px-2 pb-2"
-                    actions={
-                      // Ordering one (or no) review changes nothing, so the tabs only show when there's something to reorder.
-                      list.length > 1 ? (
-                        <div role="tablist" aria-label="Order" className="flex gap-1">
-                          <OrderTab label="Lightest first" selected={order === 'effort'} onSelect={() => setOrder('effort')} />
-                          <OrderTab label="Recent" selected={order === 'recent'} onSelect={() => setOrder('recent')} />
-                        </div>
-                      ) : undefined
-                    }
-                  >
-                    {reviewing.length === 0 ? (
-                      <p className="rounded-lg border border-dashed border-chrome-border px-4 py-6 text-center text-xs text-chrome-fg-muted">
-                        Nothing in review — pick something up from the queue
-                      </p>
-                    ) : (
-                      <ul className="flex flex-col gap-2">
-                        {list.map((r) => (
-                          <ReviewCard key={r.review.id} review={r} you={youName} onGenerateReadingOrder={generateReadingOrder} />
-                        ))}
-                      </ul>
-                    )}
-                  </Panel>
-
-                  {done.length > 0 && (
-                    <Panel
-                      icon={<Check aria-hidden />}
-                      title={
-                        <>
-                          Cleared <span className="font-normal text-chrome-fg-subtle">· all files viewed, nothing open</span>
-                        </>
-                      }
-                      count={done.length}
-                      bodyClassName="px-0 pb-0"
-                      actions={
-                        <button type="button" onClick={handleArchiveAll} className="chrome-btn bg-transparent">
-                          <Archive size={13} strokeWidth={1.75} aria-hidden />
-                          Archive all
-                        </button>
-                      }
-                    >
-                      <ul className="divide-y divide-chrome-border border-t border-chrome-border">
-                        {done.map((r) => (
-                          <DoneRow key={r.review.id} review={r} onArchive={archiveReview} />
-                        ))}
-                      </ul>
-                    </Panel>
-                  )}
-                </>
-              )}
-            </main>
-
-            <Panel
-              icon={<Sparkles aria-hidden />}
-              title="Up for review"
-              count={queue.length}
-              className="sticky top-4 max-h-[calc(100vh-2rem)] w-80 shrink-0"
-              bodyClassName="flex flex-col px-0 pb-0"
-            >
-              {showSkeleton ? (
-                <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pt-1 pb-2">
-                  <SkeletonBlocks height={92} />
-                </div>
-              ) : noPullsAvailable ? (
-                <div className="px-2 pt-1 pb-2">
-                  <p className="rounded-lg border border-dashed border-chrome-border px-4 py-6 text-center text-xs text-chrome-fg-muted">
-                    Install and sign in to <code>gh</code> to see open pull requests here.
-                  </p>
-                </div>
-              ) : (
-                <ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pt-1 pb-2">
-                  {queue.map(({ repoId, pull }) => {
-                    const key = `${repoId}:${String(pull.number)}`;
-                    const repo = repos.find((r) => r.id === repoId);
-                    return (
-                      <QueueRow
-                        key={key}
-                        repoName={repo !== undefined ? repoDisplayName(repo) : repoId}
-                        repoId={repoId}
-                        pull={pull}
-                        you={youName}
-                        opening={openingKeys.has(key)}
-                        onOpen={handleOpenPull}
-                      />
-                    );
-                  })}
-                </ul>
-              )}
-              <div className="shrink-0 border-t border-chrome-border px-2 py-2">
-                <button type="button" onClick={goExplore} className="chrome-btn w-full justify-center bg-transparent">
-                  <Compass size={13} strokeWidth={1.75} aria-hidden />
-                  Browse branches too
+            {error !== null && (
+              <div className="flex items-center justify-center gap-2 text-xs text-chrome-danger">
+                <span>{error}</span>
+                <button type="button" onClick={() => void refresh({ force: true })} className="chrome-btn">
+                  Retry
                 </button>
               </div>
-            </Panel>
+            )}
+
+            {/* Both columns share one height: the row's, set by the reviews (with a floor); the queue scrolls inside it. */}
+            <div className="flex min-h-72 items-stretch gap-3">
+              <main className="flex min-w-0 flex-1 flex-col gap-3">
+                {showSkeleton ? (
+                  <div className="flex flex-col gap-2">
+                    <SkeletonBlocks />
+                  </div>
+                ) : showNoRepos ? (
+                  <Panel title="Currently reviewing" className="flex-1">
+                    <div className="flex flex-col items-center gap-3 py-16 text-center">
+                      <p className="text-xs text-chrome-fg-muted">No repositories yet</p>
+                      <button type="button" onClick={goExplore} className="chrome-btn">
+                        Add one in Explore
+                      </button>
+                    </div>
+                  </Panel>
+                ) : (
+                  <>
+                    <Panel
+                      icon={<GitPullRequest aria-hidden />}
+                      title="Currently reviewing"
+                      count={list.length}
+                      className="flex-1"
+                      bodyClassName="px-2 pb-2"
+                      actions={
+                        // Ordering one (or no) review changes nothing, so the tabs only show when there's something to reorder.
+                        list.length > 1 ? (
+                          <div role="tablist" aria-label="Order" className="flex gap-1">
+                            <OrderTab label="Lightest first" selected={order === 'effort'} onSelect={() => setOrder('effort')} />
+                            <OrderTab label="Recent" selected={order === 'recent'} onSelect={() => setOrder('recent')} />
+                          </div>
+                        ) : undefined
+                      }
+                    >
+                      {reviewing.length === 0 ? (
+                        <p className="rounded-lg border border-dashed border-chrome-border px-4 py-6 text-center text-xs text-chrome-fg-muted">
+                          Nothing in review — pick something up from the queue
+                        </p>
+                      ) : (
+                        <ul className="flex flex-col gap-2">
+                          {list.map((r) => (
+                            <ReviewCard key={r.review.id} review={r} you={youName} onGenerateReadingOrder={generateReadingOrder} />
+                          ))}
+                        </ul>
+                      )}
+                    </Panel>
+
+                    {done.length > 0 && (
+                      <Panel
+                        icon={<Check aria-hidden />}
+                        title={
+                          <>
+                            Cleared <span className="font-normal text-chrome-fg-subtle">· all files viewed, nothing open</span>
+                          </>
+                        }
+                        count={done.length}
+                        bodyClassName="px-0 pb-0"
+                        actions={
+                          <button type="button" onClick={handleArchiveAll} className="chrome-btn bg-transparent">
+                            <Archive size={13} strokeWidth={1.75} aria-hidden />
+                            Archive all
+                          </button>
+                        }
+                      >
+                        <ul className="divide-y divide-chrome-border border-t border-chrome-border">
+                          {done.map((r) => (
+                            <DoneRow key={r.review.id} review={r} onArchive={archiveReview} />
+                          ))}
+                        </ul>
+                      </Panel>
+                    )}
+                  </>
+                )}
+              </main>
+
+              {/* The absolute box takes the row's height without adding to it, so a long queue scrolls instead of stretching the row. */}
+              <div className="relative w-96 shrink-0">
+                <Panel
+                  icon={<Clock aria-hidden />}
+                  title="Up for review"
+                  count={queue.length}
+                  className="absolute! inset-0"
+                  bodyClassName="flex flex-col px-0 pb-0"
+                >
+                  {showSkeleton ? (
+                    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pt-1 pb-2">
+                      <SkeletonBlocks height={92} />
+                    </div>
+                  ) : noPullsAvailable ? (
+                    <div className="px-2 pt-1 pb-2">
+                      <p className="rounded-lg border border-dashed border-chrome-border px-4 py-6 text-center text-xs text-chrome-fg-muted">
+                        Install and sign in to <code>gh</code> to see open pull requests here.
+                      </p>
+                    </div>
+                  ) : (
+                    <ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pt-1 pb-2">
+                      {queue.map(({ repoId, pull }) => {
+                        const key = `${repoId}:${String(pull.number)}`;
+                        const repo = repos.find((r) => r.id === repoId);
+                        return (
+                          <QueueRow
+                            key={key}
+                            repoName={repo !== undefined ? repoDisplayName(repo) : repoId}
+                            repoId={repoId}
+                            pull={pull}
+                            you={youName}
+                            opening={openingKeys.has(key)}
+                            onOpen={handleOpenPull}
+                          />
+                        );
+                      })}
+                    </ul>
+                  )}
+                </Panel>
+              </div>
+            </div>
           </div>
 
-          {!showSkeleton && <ExploreSection />}
+          {!showSkeleton && (
+            // A chapter break, not just a gap: what's in hand above, everything else below.
+            <div className="pt-12">
+              <ExploreSection />
+            </div>
+          )}
         </div>
       </div>
     </div>
