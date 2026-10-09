@@ -60,21 +60,23 @@ const DIFF_HEADER_HEIGHT = DIFF_LINE_HEIGHT + DIFF_GAP_BLOCK * 3;
  * ReviewWindow.tsx) so file boundaries are unmistakable — previously the end
  * of one file ran straight into the next file's header on one continuous
  * surface. `clip-path` rather than `overflow: clip` so sticky headers keep
- * working. The ring and shadow match `chrome-island` in styles/index.css,
- * from the same theme tokens (custom properties inherit into the shadow
- * root); its inner top highlight is left out, as the sticky header covers
- * that edge.
+ * working. The frame matches `chrome-island` in styles/index.css, from the
+ * same theme tokens (custom properties inherit into the shadow root). The
+ * clip-path would cut off an outer ring or shadow, so the hairline is an
+ * outline drawn 1px *inside* the edge (outlines paint over the content and
+ * follow the radius), and the top highlight is an inset shadow on the
+ * header — 2px tall, so 1px of it shows just under the outline.
  */
 const FILE_CARD_CSS = `
 :host {
   border-radius: 10px;
   clip-path: inset(0 round 10px);
-  box-shadow:
-    0 0 0 1px var(--chrome-border),
-    var(--chrome-island-shadow);
+  outline: 1px solid var(--chrome-border);
+  outline-offset: -1px;
 }
 [data-diffs-header] {
   border-radius: 10px 10px 0 0;
+  box-shadow: inset 0 2px 0 var(--chrome-island-highlight);
 }
 /*
  * Corner masks. While a header is stuck, the file's code scrolls up under

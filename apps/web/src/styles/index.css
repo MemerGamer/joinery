@@ -473,6 +473,17 @@ body {
 }
 
 /*
+ * For an opaque surface laid over a whole island (the threads panel over
+ * the reading-order pane): the island's sheen and top highlight again, which
+ * it would otherwise cover. An inset shadow is enough here — the overlay's
+ * own children have no backgrounds at that edge.
+ */
+@utility chrome-island-fill {
+  background: linear-gradient(to bottom, var(--chrome-island-sheen), transparent), var(--chrome-bg);
+  box-shadow: inset 0 1px 0 var(--chrome-island-highlight);
+}
+
+/*
  * Selected-row treatment shared by the reading-order file rows and the
  * threads list: an accent tint, not a solid accent block. A solid block
  * fights with the diff's own addition/deletion colour and is the single
