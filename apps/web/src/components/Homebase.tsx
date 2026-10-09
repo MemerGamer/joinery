@@ -11,8 +11,7 @@
  * so the screen has a mood rather than a flat grey. A painting fills a
  * full-width hero band that dissolves into the page; the greeting sits
  * centred on its lower edge, the two columns below it, and Explore — the
- * finder over every branch and pull request — below those, its search
- * field peeking above the fold.
+ * finder over every branch and pull request — below those, a scroll away.
  *
  * Everything here comes from `useHomeData()`.
  */
@@ -50,8 +49,6 @@ function greeting(): string {
 }
 
 const HERO_HEIGHT = 'clamp(220px, 50vh, 500px)';
-/** How much of Explore — its header, search field and repo pills — peeks above the fold, as a call to scroll. */
-const EXPLORE_PEEK = '250px';
 const HERO_MASK = 'linear-gradient(to bottom, black 0%, black 55%, transparent 100%)';
 /** Glows the text in the page colour so it reads over the painting. */
 const GLOW_BG = '0 0 18px var(--chrome-bg-sunken), 0 0 6px var(--chrome-bg-sunken)';
@@ -181,8 +178,7 @@ export function Homebase(): React.JSX.Element {
           className="relative mx-auto flex max-w-6xl flex-col gap-6 px-2 pb-10"
           style={{ paddingTop: topPad }}
         >
-          {/* At least a screen tall, less the peek, so the first view ends on Explore's search field. */}
-          <div className="flex flex-col gap-6" style={{ minHeight: `calc(100dvh - ${topPad} - ${EXPLORE_PEEK})` }}>
+          <div className="flex flex-col gap-6">
             {/* mb-6 on top of the gap lets the panels start just past the hero's edge, not on it. */}
             <header className="mb-6 flex flex-col items-center gap-1">
               <p className="text-xs text-chrome-fg-muted" style={{ textShadow: GLOW_BG }}>
