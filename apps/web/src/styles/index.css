@@ -480,6 +480,8 @@ body {
  * own children have no backgrounds at that edge.
  */
 @utility chrome-island-fill {
+  /* The island's radius, so the highlight curves down at the corners exactly as the island's own does. */
+  border-radius: var(--chrome-radius-lg);
   background: color-mix(in srgb, var(--chrome-bg), white var(--chrome-island-lift));
   box-shadow: inset 0 1px 0 var(--chrome-island-highlight);
 }

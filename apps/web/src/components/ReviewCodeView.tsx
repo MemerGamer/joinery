@@ -65,10 +65,19 @@ const DIFF_HEADER_HEIGHT = DIFF_LINE_HEIGHT + DIFF_GAP_BLOCK * 3;
  * clip-path would cut off an outer ring or shadow, so the hairline is an
  * outline drawn 1px *inside* the edge (outlines paint over the content and
  * follow the radius), and the top highlight is an inset shadow on the
- * header — 2px tall, so 1px of it shows just under the outline.
+ * header — 2px tall, so 1px of it shows just under the outline. The card's
+ * surface takes the islands' lift too: `--diffs-bg` is redefined the way
+ * the library defines it (from the theme's light/dark background), mixed
+ * toward white by `--chrome-island-lift`, and every derived diff colour
+ * (context, separators, additions, deletions) follows from it.
  */
 const FILE_CARD_CSS = `
 :host {
+  --diffs-bg: color-mix(
+    in srgb,
+    light-dark(var(--diffs-light-bg, #fff), var(--diffs-dark-bg, #000)),
+    white var(--chrome-island-lift, 0%)
+  );
   border-radius: 10px;
   clip-path: inset(0 round 10px);
   outline: 1px solid var(--chrome-border);
