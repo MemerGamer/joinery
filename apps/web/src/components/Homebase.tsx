@@ -436,7 +436,7 @@ function ReviewCard({
     // The whole card opens the review via an underlay button, so the one
     // real control inside it (generate a reading order) isn't a button
     // nested in a button. Content ignores the pointer except that control.
-    <li className="home-card group relative">
+    <li className="home-card home-card-lift group relative">
       <button type="button" onClick={() => goReview(review.id)} aria-label={`Open ${title}`} className="absolute inset-0 rounded-[inherit]" />
       <div className="pointer-events-none relative flex items-stretch gap-4 p-4">
         <Avatar person={author} size={32} />
