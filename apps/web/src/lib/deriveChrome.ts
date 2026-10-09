@@ -38,7 +38,7 @@ const DERIVED_PROPS = [
   '--chrome-fg-muted',
   '--chrome-fg-subtle',
   '--chrome-island-highlight',
-  '--chrome-island-sheen',
+  '--chrome-island-lift',
   '--chrome-island-shadow',
 ] as const;
 
@@ -104,9 +104,9 @@ export async function applyDerivedChrome(themeName: string, isStale: () => boole
   set('--chrome-fg', fg);
   set('--chrome-fg-muted', muted);
   set('--chrome-fg-subtle', mix(muted, bg, 35));
-  // The island frame (chrome-island): a white top highlight and sheen read
+  // The island frame (chrome-island): a white top highlight and a lift read
   // on dark surfaces only; light ones lean on the hairline and shadow.
   set('--chrome-island-highlight', dark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(255, 255, 255, 0.7)');
-  set('--chrome-island-sheen', dark ? 'rgba(255, 255, 255, 0.02)' : 'transparent');
+  set('--chrome-island-lift', dark ? '2%' : '0%');
   set('--chrome-island-shadow', dark ? '0 1px 2px rgba(0, 0, 0, 0.25)' : '0 1px 2px rgba(20, 22, 30, 0.06), 0 2px 6px rgba(20, 22, 30, 0.03)');
 }

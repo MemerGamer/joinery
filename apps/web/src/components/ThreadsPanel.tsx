@@ -39,7 +39,7 @@ export function ThreadsPanel(): React.JSX.Element {
     <div
       role="region"
       aria-label="Threads"
-      // Covers the reading-order island, so it repeats that island's sheen and highlight.
+      // Covers the reading-order island, so it repeats that island's surface and highlight.
       className="chrome-island-fill absolute inset-0 z-10 flex flex-col"
     >
       <div className="flex h-10 items-center justify-between pl-4 pr-2">

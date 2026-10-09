@@ -36,7 +36,7 @@
   --chrome-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.04);
   /* Island frame (chrome-island); lib/deriveChrome.ts re-sets these per theme. */
   --chrome-island-highlight: rgba(255, 255, 255, 0.7);
-  --chrome-island-sheen: transparent;
+  --chrome-island-lift: 0%;
   --chrome-island-shadow: 0 1px 2px rgba(20, 22, 30, 0.06), 0 2px 6px rgba(20, 22, 30, 0.03);
   --chrome-radius-sm: 4px;
   --chrome-radius-md: 6px;
@@ -107,7 +107,7 @@
     --chrome-focus-ring: #8b95f2;
     --chrome-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 16px rgba(0, 0, 0, 0.35);
     --chrome-island-highlight: rgba(255, 255, 255, 0.06);
-    --chrome-island-sheen: rgba(255, 255, 255, 0.02);
+    --chrome-island-lift: 2%;
     --chrome-island-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
     color-scheme: dark;
   }
@@ -136,7 +136,7 @@
   --chrome-focus-ring: #8b95f2;
   --chrome-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 16px rgba(0, 0, 0, 0.35);
   --chrome-island-highlight: rgba(255, 255, 255, 0.06);
-  --chrome-island-sheen: rgba(255, 255, 255, 0.02);
+  --chrome-island-lift: 2%;
   --chrome-island-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
   color-scheme: dark;
 }
@@ -445,8 +445,9 @@ body {
 
 /*
  * Islands wear the same frame as Homebase's panels (`.home-panel`): a 1px
- * hairline (a ring, so it takes no layout), a 1px inner top highlight, a
- * faint top-to-bottom sheen, and a soft shadow. Every colour is a theme
+ * hairline (a ring, so it takes no layout), a 1px inner top highlight, the
+ * surface lifted a touch toward white (flat, so the file tree's opaque
+ * background can match it exactly), and a soft shadow. Every colour is a theme
  * token — the hairline is the theme's own border, the rest are the
  * `--chrome-island-*` tokens that lib/deriveChrome.ts sets from whether the
  * theme is dark — never `light-dark()`, which follows `color-scheme`, not
@@ -457,7 +458,7 @@ body {
 @utility chrome-island {
   position: relative;
   border-radius: var(--chrome-radius-lg);
-  background: linear-gradient(to bottom, var(--chrome-island-sheen), transparent), var(--chrome-bg);
+  background: color-mix(in srgb, var(--chrome-bg), white var(--chrome-island-lift));
   box-shadow:
     0 0 0 1px var(--chrome-border),
     var(--chrome-island-shadow);
@@ -474,12 +475,12 @@ body {
 
 /*
  * For an opaque surface laid over a whole island (the threads panel over
- * the reading-order pane): the island's sheen and top highlight again, which
+ * the reading-order pane): the island's lifted surface and top highlight again, which
  * it would otherwise cover. An inset shadow is enough here — the overlay's
  * own children have no backgrounds at that edge.
  */
 @utility chrome-island-fill {
-  background: linear-gradient(to bottom, var(--chrome-island-sheen), transparent), var(--chrome-bg);
+  background: color-mix(in srgb, var(--chrome-bg), white var(--chrome-island-lift));
   box-shadow: inset 0 1px 0 var(--chrome-island-highlight);
 }
 

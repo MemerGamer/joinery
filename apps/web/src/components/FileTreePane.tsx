@@ -63,7 +63,11 @@ function chromeToTreeStyles(): TreeThemeStyles {
   const style = getComputedStyle(document.documentElement);
   const chrome = (name: string): string => style.getPropertyValue(name).trim();
   return {
-    '--trees-theme-sidebar-bg': chrome('--chrome-bg'),
+    // The island's own surface (see `chrome-island`), so it runs unbroken
+    // from the "Files" header down through the tree. Opaque, not transparent:
+    // the tree's sticky folder rows reuse this to cover what scrolls beneath.
+    // Left as an expression so it follows a theme change without a re-read.
+    '--trees-theme-sidebar-bg': 'color-mix(in srgb, var(--chrome-bg), white var(--chrome-island-lift))',
     '--trees-theme-sidebar-fg': chrome('--chrome-fg'),
     '--trees-theme-sidebar-header-fg': chrome('--chrome-fg-muted'),
     '--trees-theme-sidebar-border': chrome('--chrome-border'),
