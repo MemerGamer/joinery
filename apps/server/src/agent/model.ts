@@ -7,3 +7,6 @@
  * Do not append a date suffix to this id.
  */
 export const AGENT_MODEL_ID = 'claude-haiku-4-5';
+
+/** The model for reading-order generation alone; thread replies stay on `AGENT_MODEL_ID`. */
+export const READING_ORDER_MODEL_ID = 'claude-haiku-5-5';

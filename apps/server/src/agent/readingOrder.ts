@@ -16,7 +16,7 @@
 import { query, type SDKMessage, type SDKResultMessage } from '@anthropic-ai/claude-agent-sdk';
 import { readingOrderPlanSchema, type FileEntry, type ReadingOrderPlan } from '@review/core';
 import { z } from 'zod';
-import { AGENT_MODEL_ID } from './model.ts';
+import { READING_ORDER_MODEL_ID } from './model.ts';
 import { makeAgentCanUseTool } from './permissions.ts';
 
 const READING_ORDER_JSON_SCHEMA = (() => {
@@ -85,7 +85,7 @@ export async function generateReadingOrderPlan(options: GenerateReadingOrderPlan
     prompt: buildReadingOrderPrompt(options.files),
     options: {
       cwd: options.cwd,
-      model: AGENT_MODEL_ID,
+      model: READING_ORDER_MODEL_ID,
       // `Bash` is removed outright (PLAN.md "agent reply mechanism", design
       // decision 1) rather than gated through a read-only allowlist: no
       // shell at all for the embedded agent, on either run kind.
