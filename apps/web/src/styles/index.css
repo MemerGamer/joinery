@@ -519,12 +519,11 @@ body {
 }
 
 /*
- * The Homebase shell is the ordinary sunken black (or light grey). The
- * chosen backdrop sits between the shell's background and its islands —
- * `isolation` makes the shell a stacking context so the negative z-index
- * lands there and nowhere lower — and the islands are opaque, so it shows
- * only in the gaps. `--cover-bg` is a `background-image` value, set inline
- * (the translucent glow; paintings live inside the page as a cover band).
+ * The Homebase shell is the ordinary sunken black (or light grey). A
+ * `--cover-bg` set inline would sit between the shell's background and its
+ * islands — `isolation` makes the shell a stacking context so the negative
+ * z-index lands there and nowhere lower. Nothing sets it today: glows and
+ * paintings both live inside the page as a hero band.
  */
 @utility home-shell {
   background-color: var(--chrome-bg-sunken);
@@ -579,4 +578,14 @@ body {
   border-radius: calc(var(--radius-lg) - 1px);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
   pointer-events: none;
+}
+
+/* GlowScene's clouds: a slow sideways drift (applied motion-safe only). */
+@keyframes home-drift {
+  from {
+    transform: translateX(-3%);
+  }
+  to {
+    transform: translateX(3%);
+  }
 }

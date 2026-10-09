@@ -8,7 +8,8 @@
  *
  * Behind the panels sits a backdrop — solid, a glow rising from the
  * bottom, or a painting — chosen from the corner switcher and remembered,
- * so the screen has a mood rather than a flat grey. A painting fills a
+ * so the screen has a mood rather than a flat grey. A painting (or a
+ * glow, painted as a small landscape by `GlowScene`) fills a
  * full-width hero band that dissolves into the page; the greeting sits
  * centred on its lower edge, the two columns below it, and Explore — the
  * finder over every branch and pull request — below those, a scroll away.
@@ -28,12 +29,13 @@ import {
 } from 'lucide-react';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { effortOf } from '../lib/effort.ts';
-import { backdropProps, coverPainting, paintingUrl, useBackdrop } from '../lib/covers.ts';
+import { backdropProps, coverGlow, coverPainting, paintingUrl, useBackdrop } from '../lib/covers.ts';
 import { firstName, personFrom } from '../lib/people.ts';
 import { relativeTime } from '../lib/relativeTime.ts';
 import { goExplore, goReview } from '../lib/router.ts';
 import { useHomeData, type HomeReview } from '../state/HomeData.tsx';
 import { BackdropPicker } from './home/BackdropPicker.tsx';
+import { GlowScene } from './home/GlowScene.tsx';
 import { Panel } from './home/Panel.tsx';
 import { Avatar, Chip, CiIcon, DiffStat, EffortMeter, ProgressBar, type Tone } from './home/primitives.tsx';
 import { ExploreSection } from './Explore.tsx';
@@ -108,6 +110,8 @@ export function Homebase(): React.JSX.Element {
     return () => ro.disconnect();
   }, []);
   const painting = coverPainting(backdrop);
+  const glow = coverGlow(backdrop);
+  const hasHero = painting !== null || glow !== null;
 
   const youName = me?.name ?? me?.login ?? null;
 
@@ -160,7 +164,7 @@ export function Homebase(): React.JSX.Element {
 
   const showSkeleton = loading && reviews.length === 0;
   const showNoRepos = !showSkeleton && repos.length === 0;
-  const topPad = painting !== null ? `calc(${HERO_HEIGHT} - 84px)` : '2.5rem';
+  const topPad = hasHero ? `calc(${HERO_HEIGHT} - 84px)` : '2.5rem';
   const noPullsAvailable = repos.length > 0 && repos.every((r) => pullsAvailable.get(r.id) === false);
   const showQueue = showSkeleton || noPullsAvailable || queue.length > 0;
 
@@ -177,15 +181,19 @@ export function Homebase(): React.JSX.Element {
         <RefreshCw size={15} strokeWidth={1.75} className={refreshing || loading ? 'animate-spin' : ''} aria-hidden />
       </button>
       <div ref={scrollRef} className="relative h-full overflow-y-auto">
-        {/* Hero band: the painting dissolves into the page over its lower ~45%. */}
-        {painting !== null && (
+        {/* Hero band: the painting (or a glow's painted scene) dissolves into the page over its lower ~45%. */}
+        {hasHero && (
           <div className="pointer-events-none absolute inset-x-0 top-0 overflow-hidden" style={{ height: HERO_HEIGHT }} aria-hidden>
-            <img
-              src={paintingUrl(painting, 'full')}
-              alt=""
-              className="absolute inset-0 size-full object-cover"
-              style={{ objectPosition: '50% 35%', maskImage: HERO_MASK, WebkitMaskImage: HERO_MASK }}
-            />
+            {painting !== null ? (
+              <img
+                src={paintingUrl(painting, 'full')}
+                alt=""
+                className="absolute inset-0 size-full object-cover"
+                style={{ objectPosition: '50% 35%', maskImage: HERO_MASK, WebkitMaskImage: HERO_MASK }}
+              />
+            ) : (
+              glow !== null && <GlowScene glow={glow} mask={HERO_MASK} />
+            )}
             <div
               className="absolute inset-0"
               style={{
@@ -199,9 +207,11 @@ export function Homebase(): React.JSX.Element {
               style={{ backgroundImage: 'radial-gradient(rgba(0,0,0,0.55) 0.8px, transparent 1px)', backgroundSize: '4px 4px' }}
             />
             {/* Public domain, but still someone's work. */}
-            <span className="absolute top-4 left-4 rounded-md bg-chrome-bg/70 px-1.5 py-0.5 text-micro text-chrome-fg-muted backdrop-blur">
-              {painting.name} · {painting.artist}
-            </span>
+            {painting !== null && (
+              <span className="absolute top-4 left-4 rounded-md bg-chrome-bg/70 px-1.5 py-0.5 text-micro text-chrome-fg-muted backdrop-blur">
+                {painting.name} · {painting.artist}
+              </span>
+            )}
           </div>
         )}
 

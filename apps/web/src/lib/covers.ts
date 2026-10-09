@@ -2,8 +2,8 @@
  * Backdrops for Homebase and Explore. Three kinds:
  *
  *  - solid     the plain sunken shell
- *  - glow      a translucent radial gradient rising from the bottom centre,
- *              laid between the shell's background and its islands
+ *  - glow      a two-colour landscape painted in CSS (`GlowScene`), in the
+ *              same hero band as the paintings
  *  - image     a public-domain painting as a cover band at the top of the
  *              page island (Notion-style), the shell itself staying plain
  *
@@ -55,26 +55,21 @@ export function paintingUrl(p: Painting, size: 'full' | 'thumb'): string {
 
 export type Backdrop = { kind: 'solid' } | { kind: 'glow'; id: string } | { kind: 'image'; id: string };
 
-/** The shell's `--cover-bg`: a translucent bottom-centre glow, tall rather than wide, that fades near the top bar. */
-export function glowCss(g: Glow): string {
-  const [a, b] = g.colors;
-  return `radial-gradient(ellipse 60% 95% at 50% 108%, color-mix(in srgb, ${a} 44%, transparent) 0%, color-mix(in srgb, ${b} 22%, transparent) 40%, transparent 80%)`;
-}
-
 /** The picker's swatch: the same two colours, as a simple diagonal. */
 export function glowSwatch(g: Glow): string {
   const [a, b] = g.colors;
   return `linear-gradient(135deg, ${a}, ${b})`;
 }
 
-/** Inline style for the shell element, plus the data attribute the CSS keys off. Only the glow paints the shell. */
-export function backdropProps(b: Backdrop): { style: React.CSSProperties; 'data-backdrop': Backdrop['kind'] } {
-  let bg = 'none';
-  if (b.kind === 'glow') {
-    const g = GLOWS.find((x) => x.id === b.id);
-    if (g !== undefined) bg = glowCss(g);
-  }
-  return { style: { ['--cover-bg' as string]: bg }, 'data-backdrop': b.kind };
+/** The data attribute the CSS keys off. Glows and paintings both live in the hero band now, so the shell stays plain. */
+export function backdropProps(b: Backdrop): { 'data-backdrop': Backdrop['kind'] } {
+  return { 'data-backdrop': b.kind };
+}
+
+/** The glow to paint as a hero scene, if the backdrop is a glow. */
+export function coverGlow(b: Backdrop): Glow | null {
+  if (b.kind !== 'glow') return null;
+  return GLOWS.find((x) => x.id === b.id) ?? null;
 }
 
 /** The painting to show as a cover band, if the backdrop is an image. */
