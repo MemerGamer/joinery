@@ -581,23 +581,10 @@ body {
 }
 
 /*
- * Review cards (Homebase) lift a couple of pixels on hover, on top of
- * home-card's firmer border and shadow, and settle back on press. A plain
- * selector so its `transition` list (which adds `translate`) beats the
- * layered home-card utility's.
+ * Review cards (Homebase) also take the hover background on hover, on top
+ * of home-card's firmer border and shadow. A plain selector so it beats the
+ * layered home-card utility's own background.
  */
-.home-card-lift {
-  transition:
-    border-color var(--chrome-transition-fast),
-    box-shadow var(--chrome-transition-fast),
-    background-color var(--chrome-transition-fast),
-    translate 160ms ease-out;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .home-card-lift:hover {
-    translate: 0 -2px;
-  }
-  .home-card-lift:active {
-    translate: 0 0;
-  }
+.home-card-hover:hover {
+  background: var(--chrome-bg-hover);
 }
