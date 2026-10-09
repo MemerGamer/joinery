@@ -3,7 +3,7 @@
  *
  *  - solid     the plain sunken shell
  *  - glow      a two-colour gradient (`GlowScene`), in the same hero band
- *              as the paintings
+ *              as the paintings, optionally with a shape layer over it
  *  - image     a public-domain painting as a cover band at the top of the
  *              page island (Notion-style), the shell itself staying plain
  *
@@ -30,6 +30,17 @@ export const GLOWS: Glow[] = [
   { id: 'graphite', name: 'Graphite', colors: ['#adb5bd', '#495057'] },
 ];
 
+/** Shapes drawn over a glow's gradient, in its own colours. */
+export const SHAPES = [
+  { id: 'none', name: 'None' },
+  { id: 'ridges', name: 'Ridges' },
+  { id: 'hills', name: 'Hills' },
+  { id: 'waves', name: 'Waves' },
+  { id: 'sun', name: 'Sun' },
+  { id: 'orbs', name: 'Orbs' },
+] as const;
+export type ShapeId = (typeof SHAPES)[number]['id'];
+
 export interface Painting {
   id: string;
   name: string;
@@ -53,7 +64,7 @@ export function paintingUrl(p: Painting, size: 'full' | 'thumb'): string {
   return size === 'full' ? `/paintings/${p.id}.jpg` : `/paintings/${p.id}-thumb.jpg`;
 }
 
-export type Backdrop = { kind: 'solid' } | { kind: 'glow'; id: string } | { kind: 'image'; id: string };
+export type Backdrop = { kind: 'solid' } | { kind: 'glow'; id: string; shape: ShapeId } | { kind: 'image'; id: string };
 
 /** The picker's swatch: the same two colours, as a simple diagonal. */
 export function glowSwatch(g: Glow): string {
@@ -79,7 +90,7 @@ export function coverPainting(b: Backdrop): Painting | null {
 }
 
 const KEY = 'homebase.backdrop';
-const DEFAULT: Backdrop = { kind: 'glow', id: 'dawn' };
+const DEFAULT: Backdrop = { kind: 'glow', id: 'dawn', shape: 'none' };
 
 function load(): Backdrop {
   try {
@@ -90,7 +101,11 @@ function load(): Backdrop {
     const kind = (parsed as { kind: unknown }).kind;
     const id = 'id' in parsed && typeof (parsed as { id: unknown }).id === 'string' ? (parsed as { id: string }).id : '';
     if (kind === 'solid') return { kind: 'solid' };
-    if (kind === 'glow' && GLOWS.some((g) => g.id === id)) return { kind: 'glow', id };
+    if (kind === 'glow' && GLOWS.some((g) => g.id === id)) {
+      const raw = 'shape' in parsed ? (parsed as { shape: unknown }).shape : undefined;
+      const shape = SHAPES.find((s) => s.id === raw)?.id ?? 'none';
+      return { kind: 'glow', id, shape };
+    }
     if (kind === 'image' && PAINTINGS.some((p) => p.id === id)) return { kind: 'image', id };
     return DEFAULT;
   } catch {

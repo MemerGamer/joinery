@@ -192,7 +192,7 @@ export function Homebase(): React.JSX.Element {
                 style={{ objectPosition: '50% 35%', maskImage: HERO_MASK, WebkitMaskImage: HERO_MASK }}
               />
             ) : (
-              glow !== null && <GlowScene glow={glow} mask={HERO_MASK} />
+              glow !== null && backdrop.kind === 'glow' && <GlowScene glow={glow} shape={backdrop.shape} mask={HERO_MASK} />
             )}
             <div
               className="absolute inset-0"

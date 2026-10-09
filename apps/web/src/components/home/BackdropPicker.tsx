@@ -5,7 +5,8 @@
  */
 import { Check, Palette, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { GLOWS, PAINTINGS, glowSwatch, paintingUrl, type Backdrop } from '../../lib/covers.ts';
+import { GLOWS, PAINTINGS, SHAPES, glowSwatch, paintingUrl, type Backdrop, type ShapeId } from '../../lib/covers.ts';
+import { GlowScene } from './GlowScene.tsx';
 
 type Tab = Backdrop['kind'];
 
@@ -19,6 +20,9 @@ export function BackdropPicker({ value, onChange }: { value: Backdrop; onChange:
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>(value.kind);
   const ref = useRef<HTMLDivElement>(null);
+  // The shape survives switching gradients; previews use the current gradient (or the first).
+  const shape: ShapeId = value.kind === 'glow' ? value.shape : 'none';
+  const previewGlow = GLOWS.find((g) => value.kind === 'glow' && g.id === value.id) ?? GLOWS[0];
 
   useEffect(() => {
     if (!open) return;
@@ -81,7 +85,7 @@ export function BackdropPicker({ value, onChange }: { value: Backdrop; onChange:
                     role="radio"
                     aria-checked={selected}
                     title={g.name}
-                    onClick={() => onChange({ kind: 'glow', id: g.id })}
+                    onClick={() => onChange({ kind: 'glow', id: g.id, shape })}
                     className={`flex aspect-square items-center justify-center rounded-md ring-offset-2 ring-offset-chrome-bg transition-transform hover:scale-105 ${
                       selected ? 'ring-2 ring-chrome-fg' : ''
                     }`}
@@ -91,6 +95,35 @@ export function BackdropPicker({ value, onChange }: { value: Backdrop; onChange:
                   </button>
                 );
               })}
+            </div>
+          )}
+
+          {tab === 'glow' && previewGlow !== undefined && (
+            <div className="flex flex-col gap-2">
+              <p className="px-0.5 text-micro font-medium text-chrome-fg-subtle">Shapes</p>
+              <div role="radiogroup" aria-label="Shape" className="grid grid-cols-3 gap-2">
+                {SHAPES.map((s) => {
+                  const selected = value.kind === 'glow' && shape === s.id;
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      title={s.name}
+                      onClick={() => onChange({ kind: 'glow', id: previewGlow.id, shape: s.id })}
+                      className={`relative aspect-[4/3] overflow-hidden rounded-md ring-offset-2 ring-offset-chrome-bg transition-transform hover:scale-105 ${
+                        selected ? 'ring-2 ring-chrome-fg' : ''
+                      }`}
+                    >
+                      <GlowScene glow={previewGlow} shape={s.id} />
+                      <span className="absolute inset-x-0 bottom-0 bg-black/35 px-1 py-0.5 text-center text-micro font-medium text-white">
+                        {s.name}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
 
