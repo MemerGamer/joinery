@@ -206,9 +206,7 @@ export function Homebase(): React.JSX.Element {
         )}
 
         <div
-          // Without the queue pane the cards would stretch across the whole
-          // column, so it narrows to roughly the width they have beside it.
-          className={`relative mx-auto flex flex-col gap-6 px-2 pb-10 ${showQueue ? 'max-w-6xl' : 'max-w-4xl'}`}
+          className="relative mx-auto flex max-w-6xl flex-col gap-6 px-2 pb-10"
           style={{ paddingTop: topPad }}
         >
           <div ref={topRef} className="flex flex-col gap-6">
@@ -233,7 +231,8 @@ export function Homebase(): React.JSX.Element {
             )}
 
             {/* Both columns share one height: the row's, set by the reviews (with a floor); the queue scrolls inside it. */}
-            <div className="flex min-h-72 items-stretch gap-3">
+            {/* Without the queue pane the cards would stretch across the whole column, so the row narrows to roughly the width they have beside it; Explore keeps the full width. */}
+            <div className={`flex min-h-72 w-full items-stretch gap-3 ${showQueue ? '' : 'mx-auto max-w-4xl'}`}>
               <main className="flex min-w-0 flex-1 flex-col gap-3">
                 {showSkeleton ? (
                   <div className="flex flex-col gap-2">
