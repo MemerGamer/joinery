@@ -41,17 +41,16 @@ import {
   FileText,
   GitBranch,
   GitCommitHorizontal,
-  ListOrdered,
   MessageSquare,
   Palette,
   PanelLeft,
   PanelRight,
   Rows2,
   Search,
-  Sparkles,
   Sun,
   Moon,
   Terminal,
+  Waypoints,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { callApi } from '../lib/apiClient.ts';
@@ -328,7 +327,7 @@ export function CommandPalette({
                       }}
                       className={ITEM_CLASS}
                     >
-                      <ListOrdered size={14} strokeWidth={1.5} aria-hidden />
+                      <Waypoints size={14} strokeWidth={1.5} aria-hidden />
                       <span className="truncate">{step.title}</span>
                     </Command.Item>
                   ))}
@@ -398,7 +397,7 @@ export function CommandPalette({
                   }}
                   className={ITEM_CLASS}
                 >
-                  <Sparkles size={14} strokeWidth={1.5} aria-hidden />
+                  <Waypoints size={14} strokeWidth={1.5} aria-hidden />
                   Generate reading order
                 </Command.Item>
               )}

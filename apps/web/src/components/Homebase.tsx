@@ -24,7 +24,7 @@ import {
   Loader2,
   MessageSquare,
   RefreshCw,
-  Sparkles,
+  Waypoints,
 } from 'lucide-react';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { effortOf } from '../lib/effort.ts';
@@ -470,7 +470,7 @@ function ReviewCard({
                     // Grey until hovered: it repeats on most cards, so in accent it would shout.
                     className="pointer-events-auto inline-flex h-5 items-center gap-1 rounded-md bg-chrome-bg-hover px-1.5 text-micro font-medium whitespace-nowrap text-chrome-fg-muted! transition-colors hover:bg-chrome-accent-soft hover:text-chrome-accent!"
                   >
-                    <Sparkles size={11} strokeWidth={2} aria-hidden />
+                    <Waypoints size={11} strokeWidth={2} aria-hidden />
                     Generate reading order
                   </button>
                 ))}

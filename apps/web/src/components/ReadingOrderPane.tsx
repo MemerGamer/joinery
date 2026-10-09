@@ -9,7 +9,7 @@
  * the initial empty state below. The title row doubles as the home for the
  * Threads entry point, since the threads panel slides over this pane.
  */
-import { AlertTriangle, ChevronDown, ChevronRight, MessageSquare, Sparkles } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, MessageSquare, Waypoints } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { resolveCurrentStepIndex } from '../lib/reviewNav.ts';
 import { runUiState } from '../lib/runState.ts';
@@ -115,7 +115,7 @@ export function ReadingOrderPane(): React.JSX.Element {
               aria-label="Generate reading order"
               className="chrome-btn"
             >
-              <Sparkles size={13} strokeWidth={1.5} aria-hidden />
+              <Waypoints size={13} strokeWidth={1.5} aria-hidden />
               {generating ? 'Generating…' : 'Generate reading order'}
             </button>
           </div>

@@ -215,7 +215,7 @@ export interface ReviewEngine extends ReviewEngineState {
    */
   generateReadingOrder: () => Promise<void>;
   /**
-   * The explicit "Ask agent" trigger (Sparkles button on a thread header, or
+   * The explicit "Ask agent" trigger (the Ask button on a thread card, or
    * the composer's "Ask" split button via `submitDraftThread`/`reply`'s own
    * `askAgent` flag — this action is only the former, standalone case).
    * Seeds a local pending run into `threadRuns` immediately, same pattern as
