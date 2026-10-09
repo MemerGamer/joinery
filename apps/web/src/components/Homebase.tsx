@@ -170,16 +170,19 @@ export function Homebase(): React.JSX.Element {
 
   return (
     <div className="home-shell h-full" {...backdropProps(backdrop)}>
-      <BackdropPicker value={backdrop} onChange={setBackdrop} />
-      <button
-        type="button"
-        aria-label="Refresh"
-        title="Refresh"
-        onClick={() => void refresh({ force: true })}
-        className="chrome-icon-btn absolute top-4 right-4 z-20 bg-chrome-bg/70 backdrop-blur"
-      >
-        <RefreshCw size={15} strokeWidth={1.75} className={refreshing || loading ? 'animate-spin' : ''} aria-hidden />
-      </button>
+      {/* Bottom-right corner: the backdrop switcher, then refresh. */}
+      <div className="absolute right-4 bottom-4 z-20 flex items-end gap-2">
+        <BackdropPicker value={backdrop} onChange={setBackdrop} />
+        <button
+          type="button"
+          aria-label="Refresh"
+          title="Refresh"
+          onClick={() => void refresh({ force: true })}
+          className="home-island flex size-9 items-center justify-center text-chrome-fg-muted transition-colors hover:text-chrome-fg"
+        >
+          <RefreshCw size={16} strokeWidth={1.75} className={refreshing || loading ? 'animate-spin' : ''} aria-hidden />
+        </button>
+      </div>
       <div ref={scrollRef} className="relative h-full overflow-y-auto">
         {/* Hero band: the painting (or a glow's gradient) dissolves into the page over its lower ~45%. */}
         {hasHero && (

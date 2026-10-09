@@ -1,7 +1,7 @@
 /**
  * The bottom-right backdrop switcher: a single quiet button that opens a
  * small panel with three tabs — solid, gradient, image — and the choices
- * under each. Lives in the shell's corner on both Homebase and Explore.
+ * under each. Homebase places it in its bottom-right corner, left of refresh.
  */
 import { Check, Palette, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -41,7 +41,7 @@ export function BackdropPicker({ value, onChange }: { value: Backdrop; onChange:
   }, [open]);
 
   return (
-    <div ref={ref} className="absolute right-4 bottom-4 z-20 flex flex-col items-end gap-2">
+    <div ref={ref} className="relative flex flex-col items-end gap-2">
       {open && (
         <div className="home-island flex w-72 flex-col gap-3 p-3" role="dialog" aria-label="Backdrop">
           <div className="flex items-center gap-1">
