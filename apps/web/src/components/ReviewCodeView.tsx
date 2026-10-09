@@ -66,18 +66,16 @@ const DIFF_HEADER_HEIGHT = DIFF_LINE_HEIGHT + DIFF_GAP_BLOCK * 3;
  * outline drawn 1px *inside* the edge (outlines paint over the content and
  * follow the radius), and the top highlight is an inset shadow on the
  * header — 2px tall, so 1px of it shows just under the outline. The card's
- * surface takes the islands' lift too: `--diffs-bg` is redefined the way
- * the library defines it (from the theme's light/dark background), mixed
- * toward white by `--chrome-island-lift`, and every derived diff colour
- * (context, separators, additions, deletions) follows from it.
+ * surface takes the islands' lift too: `--diffs-bg` (which the library sets
+ * straight to the theme's background) is replaced by `--chrome-bg` — the
+ * same editor background, copied there by lib/deriveChrome.ts — mixed
+ * toward white by `--chrome-island-lift`. It can't build on the library's
+ * own value (a custom property can't reference itself). Every derived diff
+ * colour (context, separators, additions, deletions) follows from it.
  */
 const FILE_CARD_CSS = `
 :host {
-  --diffs-bg: color-mix(
-    in srgb,
-    light-dark(var(--diffs-light-bg, #fff), var(--diffs-dark-bg, #000)),
-    white var(--chrome-island-lift, 0%)
-  );
+  --diffs-bg: color-mix(in srgb, var(--chrome-bg), white var(--chrome-island-lift, 0%));
   border-radius: 10px;
   clip-path: inset(0 round 10px);
   outline: 1px solid var(--chrome-border);
