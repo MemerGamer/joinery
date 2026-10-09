@@ -256,18 +256,12 @@ body {
 
 /*
  * Route changes (lib/router.ts) run inside `document.startViewTransition`.
- * The root cross-fades, quickly; the top bar keeps its name across screens
- * so it morphs in place rather than fading out and back in, which is what
- * makes Homebase → Explore read as one app changing page.
+ * The root cross-fades, quickly.
  */
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation-duration: 160ms;
   animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
-}
-::view-transition-old(topbar),
-::view-transition-new(topbar) {
-  animation-duration: 200ms;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -559,4 +553,30 @@ body {
     0 1px 2px light-dark(rgba(20, 22, 30, 0.06), rgba(0, 0, 0, 0.3)),
     0 8px 24px light-dark(rgba(20, 22, 30, 0.08), rgba(0, 0, 0, 0.35));
   overflow: hidden;
+}
+
+/* Homebase panels */
+
+/*
+ * Dashboard card (components/home/Panel.tsx). The border is a white hairline
+ * at 6% alpha; the `::before` overlay draws a 1px inner top highlight just
+ * inside it, and the background is the page colour nudged 2% toward white
+ * with a faint top-to-bottom sheen. Plain selectors rather than `@utility`:
+ * the unlayered `* { border-color }` rule above would otherwise beat a
+ * layered border-colour utility.
+ */
+.home-panel {
+  border-color: rgb(255 255 255 / 0.06);
+  background:
+    linear-gradient(to bottom, rgb(255 255 255 / 0.02), transparent),
+    color-mix(in srgb, var(--chrome-bg) 98%, white);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+}
+.home-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: calc(var(--radius-lg) - 1px);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+  pointer-events: none;
 }

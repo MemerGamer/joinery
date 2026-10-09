@@ -6,9 +6,12 @@
  * effort score so the lightest thing is always at the top, and both wear
  * the same score glyph so the two columns read as one system.
  *
- * Behind the islands sits a backdrop — solid, a glow rising from the
+ * Behind the panels sits a backdrop — solid, a glow rising from the
  * bottom, or a painting — chosen from the corner switcher and remembered,
- * so the screen has a mood rather than a flat grey.
+ * so the screen has a mood rather than a flat grey. A painting fills a
+ * full-width hero band that dissolves into the page; the greeting sits
+ * centred on its lower edge, the two columns below it, and Explore — the
+ * finder over every branch and pull request — below those, a scroll away.
  *
  * Everything here comes from `useHomeData()`.
  */
@@ -25,14 +28,15 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { effortOf } from '../lib/effort.ts';
-import { backdropProps, coverPainting, useBackdrop } from '../lib/covers.ts';
+import { backdropProps, coverPainting, paintingUrl, useBackdrop } from '../lib/covers.ts';
 import { firstName, personFrom } from '../lib/people.ts';
 import { relativeTime } from '../lib/relativeTime.ts';
 import { goExplore, goReview } from '../lib/router.ts';
 import { useHomeData, type HomeReview } from '../state/HomeData.tsx';
 import { BackdropPicker } from './home/BackdropPicker.tsx';
-import { Avatar, Chip, CiIcon, CoverBand, DiffStat, EffortMeter, ProgressBar, SectionHeading, type Tone } from './home/primitives.tsx';
-import { TopBar } from './TopBar.tsx';
+import { Panel } from './home/Panel.tsx';
+import { Avatar, Chip, CiIcon, DiffStat, EffortMeter, ProgressBar, type Tone } from './home/primitives.tsx';
+import { ExploreSection } from './Explore.tsx';
 
 type Order = 'effort' | 'recent';
 
@@ -43,6 +47,11 @@ function greeting(): string {
   if (hour < 18) return 'Good afternoon';
   return 'Good evening';
 }
+
+const HERO_HEIGHT = 'clamp(220px, 50vh, 500px)';
+const HERO_MASK = 'linear-gradient(to bottom, black 0%, black 55%, transparent 100%)';
+/** Glows the text in the page colour so it reads over the painting. */
+const GLOW_BG = '0 0 18px var(--chrome-bg-sunken), 0 0 6px var(--chrome-bg-sunken)';
 
 const DATE = new Intl.DateTimeFormat('en', { weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -123,71 +132,101 @@ export function Homebase(): React.JSX.Element {
   const noPullsAvailable = repos.length > 0 && repos.every((r) => pullsAvailable.get(r.id) === false);
 
   return (
-    <div className="home-shell flex h-full flex-col p-2" {...backdropProps(backdrop)}>
+    <div className="home-shell h-full" {...backdropProps(backdrop)}>
       <BackdropPicker value={backdrop} onChange={setBackdrop} />
-      <div className="mx-auto flex h-full w-full max-w-6xl min-h-0 flex-col gap-2">
-        <TopBar title="Homebase">
-          <button type="button" onClick={goExplore} className="chrome-btn">
-            <Compass size={13} strokeWidth={1.75} aria-hidden />
-            Explore
-          </button>
-          <button
-            type="button"
-            aria-label="Refresh"
-            title="Refresh"
-            onClick={() => void refresh({ force: true })}
-            className="chrome-icon-btn"
-          >
-            <RefreshCw size={15} strokeWidth={1.75} className={refreshing || loading ? 'animate-spin' : ''} aria-hidden />
-          </button>
-        </TopBar>
+      <button
+        type="button"
+        aria-label="Refresh"
+        title="Refresh"
+        onClick={() => void refresh({ force: true })}
+        className="chrome-icon-btn absolute top-4 right-4 z-20 bg-chrome-bg/70 backdrop-blur"
+      >
+        <RefreshCw size={15} strokeWidth={1.75} className={refreshing || loading ? 'animate-spin' : ''} aria-hidden />
+      </button>
+      <div className="relative h-full overflow-y-auto">
+        {/* Hero band: the painting dissolves into the page over its lower ~45%. */}
+        {painting !== null && (
+          <div className="pointer-events-none absolute inset-x-0 top-0 overflow-hidden" style={{ height: HERO_HEIGHT }} aria-hidden>
+            <img
+              src={paintingUrl(painting, 2400)}
+              alt=""
+              className="absolute inset-0 size-full object-cover"
+              style={{ objectPosition: '50% 35%', maskImage: HERO_MASK, WebkitMaskImage: HERO_MASK }}
+            />
+            <div
+              className="absolute inset-0"
+              style={{
+                background:
+                  'linear-gradient(to bottom, transparent 0%, transparent 40%, color-mix(in srgb, var(--chrome-bg-sunken) 55%, transparent) 75%, var(--chrome-bg-sunken) 100%)',
+              }}
+            />
+            {/* Dither: a fine dot grid over the painting, for a pixel-art feel. */}
+            <div
+              className="absolute inset-0 opacity-30 mix-blend-multiply"
+              style={{ backgroundImage: 'radial-gradient(rgba(0,0,0,0.55) 0.8px, transparent 1px)', backgroundSize: '4px 4px' }}
+            />
+            {/* Public domain, but still someone's work. */}
+            <span className="absolute top-4 left-4 rounded-md bg-chrome-bg/70 px-1.5 py-0.5 text-micro text-chrome-fg-muted backdrop-blur">
+              {painting.name} · {painting.artist}
+            </span>
+          </div>
+        )}
 
-        <div className="flex min-h-0 flex-1 gap-2">
-          <main className="home-island min-w-0 flex-1 overflow-y-auto">
-            {painting !== null && <CoverBand painting={painting} />}
-            <div className={`mx-auto flex max-w-3xl flex-col gap-8 px-8 pb-10 ${painting !== null ? 'pt-4' : 'pt-10'}`}>
-              <header className="flex flex-col gap-1">
-                <p className="text-xs text-chrome-fg-subtle">{DATE.format(new Date())}</p>
-                <h1 className="text-2xl font-semibold tracking-tight text-chrome-fg">
-                  {greeting()}
-                  {youName !== null ? `, ${youName}` : ''}
-                </h1>
-              </header>
+        <div
+          className="relative mx-auto flex max-w-6xl flex-col gap-6 px-2 pb-10"
+          style={{ paddingTop: painting !== null ? `calc(${HERO_HEIGHT} - 84px)` : '2.5rem' }}
+        >
+          <header className="flex flex-col items-center gap-1">
+            <p className="text-xs text-chrome-fg-muted" style={{ textShadow: GLOW_BG }}>
+              {DATE.format(new Date())}
+            </p>
+            <h1 className="text-center text-2xl font-semibold tracking-tight text-chrome-fg" style={{ textShadow: GLOW_BG }}>
+              {greeting()}
+              {youName !== null ? `, ${youName}` : ''}
+            </h1>
+          </header>
 
-              {error !== null && (
-                <div className="flex items-center gap-2 text-xs text-chrome-danger">
-                  <span>{error}</span>
-                  <button type="button" onClick={() => void refresh({ force: true })} className="chrome-btn">
-                    Retry
-                  </button>
-                </div>
-              )}
+          {error !== null && (
+            <div className="flex items-center justify-center gap-2 text-xs text-chrome-danger">
+              <span>{error}</span>
+              <button type="button" onClick={() => void refresh({ force: true })} className="chrome-btn">
+                Retry
+              </button>
+            </div>
+          )}
 
+          <div className="flex min-h-0 items-start gap-3">
+            <main className="flex min-w-0 flex-1 flex-col gap-3">
               {showSkeleton ? (
-                <SkeletonBlocks />
-              ) : showNoRepos ? (
-                <div className="flex flex-col items-center gap-3 py-16 text-center">
-                  <p className="text-xs text-chrome-fg-muted">No repositories yet</p>
-                  <button type="button" onClick={goExplore} className="chrome-btn">
-                    Add one in Explore
-                  </button>
+                <div className="flex flex-col gap-2">
+                  <SkeletonBlocks />
                 </div>
+              ) : showNoRepos ? (
+                <Panel title="Currently reviewing">
+                  <div className="flex flex-col items-center gap-3 py-16 text-center">
+                    <p className="text-xs text-chrome-fg-muted">No repositories yet</p>
+                    <button type="button" onClick={goExplore} className="chrome-btn">
+                      Add one in Explore
+                    </button>
+                  </div>
+                </Panel>
               ) : (
                 <>
-                  <section className="flex flex-col gap-3">
-                    <SectionHeading
-                      title="Currently reviewing"
-                      count={list.length}
-                      action={
-                        // Ordering one (or no) review changes nothing, so the tabs only show when there's something to reorder.
-                        list.length > 1 ? (
-                          <div role="tablist" aria-label="Order" className="flex gap-1">
-                            <OrderTab label="Lightest first" selected={order === 'effort'} onSelect={() => setOrder('effort')} />
-                            <OrderTab label="Recent" selected={order === 'recent'} onSelect={() => setOrder('recent')} />
-                          </div>
-                        ) : undefined
-                      }
-                    />
+                  <Panel
+                    icon={<GitPullRequest aria-hidden />}
+                    title="Currently reviewing"
+                    count={list.length}
+                    bodyClassName="px-2 pb-2"
+                    actions={
+                      // Ordering one (or no) review changes nothing, so the tabs only show when there's something to reorder.
+                      list.length > 1 ? (
+                        <div role="tablist" aria-label="Order" className="flex gap-1">
+                          <OrderTab label="Lightest first" selected={order === 'effort'} onSelect={() => setOrder('effort')} />
+                          <OrderTab label="Recent" selected={order === 'recent'} onSelect={() => setOrder('recent')} />
+                        </div>
+                      ) : undefined
+                    }
+                  >
                     {reviewing.length === 0 ? (
                       <p className="rounded-lg border border-dashed border-chrome-border px-4 py-6 text-center text-xs text-chrome-fg-muted">
                         Nothing in review — pick something up from the queue
@@ -199,74 +238,82 @@ export function Homebase(): React.JSX.Element {
                         ))}
                       </ul>
                     )}
-                  </section>
+                  </Panel>
 
                   {done.length > 0 && (
-                    <section className="flex flex-col gap-3">
-                      <SectionHeading
-                        title="Cleared"
-                        count={done.length}
-                        hint="all files viewed, nothing open"
-                        action={
-                          <button type="button" onClick={handleArchiveAll} className="chrome-btn bg-transparent">
-                            <Archive size={13} strokeWidth={1.75} aria-hidden />
-                            Archive all
-                          </button>
-                        }
-                      />
-                      <ul className="home-card divide-y divide-chrome-border hover:border-chrome-border hover:shadow-none">
+                    <Panel
+                      icon={<Check aria-hidden />}
+                      title={
+                        <>
+                          Cleared <span className="font-normal text-chrome-fg-subtle">· all files viewed, nothing open</span>
+                        </>
+                      }
+                      count={done.length}
+                      bodyClassName="px-0 pb-0"
+                      actions={
+                        <button type="button" onClick={handleArchiveAll} className="chrome-btn bg-transparent">
+                          <Archive size={13} strokeWidth={1.75} aria-hidden />
+                          Archive all
+                        </button>
+                      }
+                    >
+                      <ul className="divide-y divide-chrome-border border-t border-chrome-border">
                         {done.map((r) => (
                           <DoneRow key={r.review.id} review={r} onArchive={archiveReview} />
                         ))}
                       </ul>
-                    </section>
+                    </Panel>
                   )}
                 </>
               )}
-            </div>
-          </main>
+            </main>
 
-          <aside className="home-island flex w-80 shrink-0 flex-col">
-            <div className="flex h-10 shrink-0 items-center gap-2 pl-4 pr-2">
-              <h2 className="text-body font-medium text-chrome-fg">Up for review</h2>
-              <span className="text-xs tabular-nums text-chrome-fg-subtle">{queue.length}</span>
-            </div>
-            {showSkeleton ? (
-              <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pt-1 pb-2">
-                <SkeletonBlocks height={92} />
+            <Panel
+              icon={<Sparkles aria-hidden />}
+              title="Up for review"
+              count={queue.length}
+              className="sticky top-4 max-h-[calc(100vh-2rem)] w-80 shrink-0"
+              bodyClassName="flex flex-col px-0 pb-0"
+            >
+              {showSkeleton ? (
+                <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pt-1 pb-2">
+                  <SkeletonBlocks height={92} />
+                </div>
+              ) : noPullsAvailable ? (
+                <div className="px-2 pt-1 pb-2">
+                  <p className="rounded-lg border border-dashed border-chrome-border px-4 py-6 text-center text-xs text-chrome-fg-muted">
+                    Install and sign in to <code>gh</code> to see open pull requests here.
+                  </p>
+                </div>
+              ) : (
+                <ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pt-1 pb-2">
+                  {queue.map(({ repoId, pull }) => {
+                    const key = `${repoId}:${String(pull.number)}`;
+                    const repo = repos.find((r) => r.id === repoId);
+                    return (
+                      <QueueRow
+                        key={key}
+                        repoName={repo !== undefined ? repoDisplayName(repo) : repoId}
+                        repoId={repoId}
+                        pull={pull}
+                        you={youName}
+                        opening={openingKeys.has(key)}
+                        onOpen={handleOpenPull}
+                      />
+                    );
+                  })}
+                </ul>
+              )}
+              <div className="shrink-0 border-t border-chrome-border px-2 py-2">
+                <button type="button" onClick={goExplore} className="chrome-btn w-full justify-center bg-transparent">
+                  <Compass size={13} strokeWidth={1.75} aria-hidden />
+                  Browse branches too
+                </button>
               </div>
-            ) : noPullsAvailable ? (
-              <div className="px-2 pt-1 pb-2">
-                <p className="rounded-lg border border-dashed border-chrome-border px-4 py-6 text-center text-xs text-chrome-fg-muted">
-                  Install and sign in to <code>gh</code> to see open pull requests here.
-                </p>
-              </div>
-            ) : (
-              <ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pt-1 pb-2">
-                {queue.map(({ repoId, pull }) => {
-                  const key = `${repoId}:${String(pull.number)}`;
-                  const repo = repos.find((r) => r.id === repoId);
-                  return (
-                    <QueueRow
-                      key={key}
-                      repoName={repo !== undefined ? repoDisplayName(repo) : repoId}
-                      repoId={repoId}
-                      pull={pull}
-                      you={youName}
-                      opening={openingKeys.has(key)}
-                      onOpen={handleOpenPull}
-                    />
-                  );
-                })}
-              </ul>
-            )}
-            <div className="shrink-0 border-t border-chrome-border px-2 py-2">
-              <button type="button" onClick={goExplore} className="chrome-btn w-full justify-center bg-transparent">
-                <Compass size={13} strokeWidth={1.75} aria-hidden />
-                Browse branches too
-              </button>
-            </div>
-          </aside>
+            </Panel>
+          </div>
+
+          {!showSkeleton && <ExploreSection />}
         </div>
       </div>
     </div>

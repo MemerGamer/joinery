@@ -1,21 +1,19 @@
 /**
- * Minimal hash router — the three surfaces are Homebase (`#/`), Explore
- * (`#/explore`), and a review window (`#/reviews/:id`). No dependency pulled
- * in for three routes.
+ * Minimal hash router — the two surfaces are Homebase (`#/`, with Explore
+ * as its last section) and a review window (`#/reviews/:id`). No dependency
+ * pulled in for two routes.
  */
 import { useEffect, useState } from 'react';
 import { flushSync } from 'react-dom';
 
 export type Route =
   | { name: 'homebase' }
-  | { name: 'explore' }
   | { name: 'review'; reviewId: string };
 
 function parseHash(hash: string): Route {
   const path = hash.replace(/^#/, '');
   const match = /^\/reviews\/([^/]+)/.exec(path);
   if (match?.[1] !== undefined) return { name: 'review', reviewId: decodeURIComponent(match[1]) };
-  if (path.startsWith('/explore')) return { name: 'explore' };
   return { name: 'homebase' };
 }
 
@@ -46,8 +44,14 @@ export function goHomebase(): void {
   location.hash = '#/';
 }
 
+/** DOM id of the Explore section on Homebase. */
+export const EXPLORE_ID = 'explore';
+
+/** Scrolls Homebase down to its Explore section and focuses the search field. */
 export function goExplore(): void {
-  location.hash = '#/explore';
+  const section = document.getElementById(EXPLORE_ID);
+  section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  section?.querySelector('input')?.focus({ preventScroll: true });
 }
 
 export function goReview(reviewId: string): void {

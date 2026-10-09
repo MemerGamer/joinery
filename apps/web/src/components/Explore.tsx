@@ -1,5 +1,6 @@
 /**
- * Explore — a finder over real repositories.
+ * Explore — a finder over real repositories, the last section of Homebase
+ * (scroll down, or `goExplore()` to jump there).
  *
  * One search field, the repositories as pills, then two plain lists to
  * scroll — pull requests and branches, local and remote. Anything you
@@ -15,15 +16,13 @@ import { Cloud, FolderGit2, GitBranch, HardDrive, Plus, Search } from 'lucide-re
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Branch, Pull, Repo, ReviewStatus } from '@review/core';
 import { ApiError, callApi } from '../lib/apiClient.ts';
-import { backdropProps, coverPainting, useBackdrop } from '../lib/covers.ts';
 import { effortOf } from '../lib/effort.ts';
 import { firstName, personFrom, type Person } from '../lib/people.ts';
 import { relativeTime } from '../lib/relativeTime.ts';
-import { goHomebase } from '../lib/router.ts';
+import { EXPLORE_ID } from '../lib/router.ts';
 import { useHomeData } from '../state/HomeData.tsx';
-import { BackdropPicker } from './home/BackdropPicker.tsx';
-import { Avatar, Chip, CiIcon, CoverBand, EffortMeter, Kbd, SectionHeading } from './home/primitives.tsx';
-import { TopBar } from './TopBar.tsx';
+import { Panel } from './home/Panel.tsx';
+import { Avatar, Chip, CiIcon, EffortMeter, Kbd, SectionHeading } from './home/primitives.tsx';
 
 const REPO_STORAGE_KEY = 'review-ui:explore:repo';
 const BRANCH_DEBOUNCE_MS = 200;
@@ -69,14 +68,12 @@ function persistRepoId(id: string): void {
   }
 }
 
-export function Explore(): React.JSX.Element {
+export function ExploreSection(): React.JSX.Element {
   const { repos, pullsByRepo, pullsAvailable, me, loading, error, openPull, openBranch, addRepo } = useHomeData();
   const you = me?.name ?? me?.login ?? null;
 
   const [repoId, setRepoIdState] = useState<string>(() => readStoredRepoId() ?? '');
   const [q, setQ] = useState('');
-  const [backdrop, setBackdrop] = useBackdrop();
-  const painting = coverPainting(backdrop);
   const needle = q.trim().toLowerCase();
 
   const [highlighted, setHighlighted] = useState<number | null>(null);
@@ -94,7 +91,7 @@ export function Explore(): React.JSX.Element {
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const repoPathInputRef = useRef<HTMLInputElement>(null);
-  const mainRef = useRef<HTMLElement>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
   const rowRefs = useRef(new Map<string, HTMLLIElement>());
 
   const noRepos = !loading && repos.length === 0;
@@ -272,22 +269,19 @@ export function Explore(): React.JSX.Element {
   const displayError = openError ?? error;
 
   return (
-    <div className="home-shell flex h-full flex-col p-2" {...backdropProps(backdrop)}>
-      <BackdropPicker value={backdrop} onChange={setBackdrop} />
-      <div className="mx-auto flex h-full w-full max-w-6xl min-h-0 flex-col gap-2">
-        <TopBar title="Explore" onBack={goHomebase} />
-
-        <main ref={mainRef} className="home-island flex min-h-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {painting !== null && <CoverBand painting={painting} height={160} />}
-            <div className={`mx-auto flex max-w-4xl flex-col gap-7 px-8 pb-8 ${painting !== null ? 'pt-3' : 'pt-8'}`}>
-              <header className="flex flex-col gap-1">
-                <h1 className="text-xl font-semibold tracking-tight text-chrome-fg">Open something</h1>
-                <p className="text-body text-chrome-fg-muted">
-                  Any branch or pull request in your registered repositories. Opening the same thing twice lands on the same review.
-                </p>
-              </header>
-
+    <Panel
+      icon={<Search aria-hidden />}
+      title={
+        <>
+          Open something <span className="font-normal text-chrome-fg-subtle">· any branch or pull request in your repos</span>
+        </>
+      }
+      className="scroll-mt-4"
+      bodyClassName="px-0 pb-0"
+    >
+      {/* `id` on a wrapper rather than the panel so `goExplore()` can find it. */}
+      <div ref={mainRef} id={EXPLORE_ID} className="flex flex-col">
+            <div className="flex flex-col gap-7 px-4 pt-2 pb-6">
               {!noRepos && (
                 <>
                   {/* The search field is the hero of this page: big, borderless
@@ -296,7 +290,6 @@ export function Explore(): React.JSX.Element {
                     <Search size={16} strokeWidth={1.75} className="shrink-0 text-chrome-fg-subtle" aria-hidden />
                     <input
                       ref={searchInputRef}
-                      autoFocus
                       disabled={loading}
                       value={q}
                       onChange={(e) => setQ(e.target.value)}
@@ -456,7 +449,6 @@ export function Explore(): React.JSX.Element {
                 </>
               )}
             </div>
-          </div>
 
           <div className="flex h-8 shrink-0 items-center gap-3 border-t border-chrome-border px-3.5 text-micro text-chrome-fg-subtle">
             <span className="flex items-center gap-1">
@@ -478,9 +470,8 @@ export function Explore(): React.JSX.Element {
               </span>
             )}
           </div>
-        </main>
       </div>
-    </div>
+    </Panel>
   );
 }
 

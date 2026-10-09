@@ -5,7 +5,6 @@
  */
 import { Bot, CircleCheck, CircleDashed, CircleX } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { paintingUrl, type Painting } from '../../lib/covers.ts';
 import type { Ci, Person } from '../../lib/people.ts';
 
 export function Avatar({ person, size = 24 }: { person: Person; size?: number }): React.JSX.Element {
@@ -155,36 +154,5 @@ export function EffortMeter({ level, label, minutes }: { level: 1 | 2 | 3 | 4; l
         ))}
       </span>
     </span>
-  );
-}
-
-/**
- * A Notion-style cover band at the top of a page island: the painting,
- * cropped to a wide strip, fading into the page surface at the bottom so
- * the greeting sits on it rather than under a hard edge. A small caption
- * credits the work; it's public domain but it's still someone's.
- */
-export function CoverBand({ painting, height = 208 }: { painting: Painting; height?: number }): React.JSX.Element {
-  return (
-    <div className="relative w-full shrink-0 overflow-hidden" style={{ height }}>
-      <img
-        src={paintingUrl(painting, 2000)}
-        alt=""
-        className="absolute inset-0 size-full object-cover"
-        style={{ objectPosition: '50% 35%' }}
-      />
-      {/* Eased fade: several stops so the edge doesn't read as a straight ramp. */}
-      <div
-        className="absolute inset-x-0 bottom-0 h-40"
-        style={{
-          background:
-            'linear-gradient(to top, var(--chrome-bg) 0%, color-mix(in srgb, var(--chrome-bg) 88%, transparent) 22%, color-mix(in srgb, var(--chrome-bg) 60%, transparent) 45%, color-mix(in srgb, var(--chrome-bg) 28%, transparent) 68%, color-mix(in srgb, var(--chrome-bg) 8%, transparent) 86%, transparent 100%)',
-        }}
-        aria-hidden
-      />
-      <span className="absolute right-3 bottom-2 rounded-md bg-chrome-bg/70 px-1.5 py-0.5 text-micro text-chrome-fg-muted backdrop-blur">
-        {painting.name} · {painting.artist}
-      </span>
-    </div>
   );
 }
