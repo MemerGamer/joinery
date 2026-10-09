@@ -134,6 +134,7 @@ export function Homebase(): React.JSX.Element {
   const showNoRepos = !showSkeleton && repos.length === 0;
   const topPad = painting !== null ? `calc(${HERO_HEIGHT} - 84px)` : '2.5rem';
   const noPullsAvailable = repos.length > 0 && repos.every((r) => pullsAvailable.get(r.id) === false);
+  const showQueue = showSkeleton || noPullsAvailable || queue.length > 0;
 
   return (
     <div className="home-shell h-full" {...backdropProps(backdrop)}>
@@ -277,46 +278,49 @@ export function Homebase(): React.JSX.Element {
                 )}
               </main>
 
-              {/* The absolute box takes the row's height without adding to it, so a long queue scrolls instead of stretching the row. */}
-              <div className="relative w-96 shrink-0">
-                <Panel
-                  icon={<Clock aria-hidden />}
-                  title="Up for review"
-                  count={queue.length}
-                  className="absolute! inset-0"
-                  bodyClassName="flex flex-col px-0 pb-0"
-                >
-                  {showSkeleton ? (
-                    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pt-1 pb-2">
-                      <SkeletonBlocks height={92} />
-                    </div>
-                  ) : noPullsAvailable ? (
-                    <div className="px-2 pt-1 pb-2">
-                      <p className="rounded-lg border border-dashed border-chrome-border px-4 py-6 text-center text-xs text-chrome-fg-muted">
-                        Install and sign in to <code>gh</code> to see open pull requests here.
-                      </p>
-                    </div>
-                  ) : (
-                    <ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pt-1 pb-2">
-                      {queue.map(({ repoId, pull }) => {
-                        const key = `${repoId}:${String(pull.number)}`;
-                        const repo = repos.find((r) => r.id === repoId);
-                        return (
-                          <QueueRow
-                            key={key}
-                            repoName={repo !== undefined ? repoDisplayName(repo) : repoId}
-                            repoId={repoId}
-                            pull={pull}
-                            you={youName}
-                            opening={openingKeys.has(key)}
-                            onOpen={handleOpenPull}
-                          />
-                        );
-                      })}
-                    </ul>
-                  )}
-                </Panel>
-              </div>
+              {/* No queue, no pane: Currently reviewing takes the full width. The gh hint still shows. */}
+              {showQueue && (
+                // The absolute box takes the row's height without adding to it, so a long queue scrolls instead of stretching the row.
+                <div className="relative w-96 shrink-0">
+                  <Panel
+                    icon={<Clock aria-hidden />}
+                    title="Up for review"
+                    count={queue.length}
+                    className="absolute! inset-0"
+                    bodyClassName="flex flex-col px-0 pb-0"
+                  >
+                    {showSkeleton ? (
+                      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pt-1 pb-2">
+                        <SkeletonBlocks height={92} />
+                      </div>
+                    ) : noPullsAvailable ? (
+                      <div className="px-2 pt-1 pb-2">
+                        <p className="rounded-lg border border-dashed border-chrome-border px-4 py-6 text-center text-xs text-chrome-fg-muted">
+                          Install and sign in to <code>gh</code> to see open pull requests here.
+                        </p>
+                      </div>
+                    ) : (
+                      <ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pt-1 pb-2">
+                        {queue.map(({ repoId, pull }) => {
+                          const key = `${repoId}:${String(pull.number)}`;
+                          const repo = repos.find((r) => r.id === repoId);
+                          return (
+                            <QueueRow
+                              key={key}
+                              repoName={repo !== undefined ? repoDisplayName(repo) : repoId}
+                              repoId={repoId}
+                              pull={pull}
+                              you={youName}
+                              opening={openingKeys.has(key)}
+                              onOpen={handleOpenPull}
+                            />
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </Panel>
+                </div>
+              )}
             </div>
           </div>
 
