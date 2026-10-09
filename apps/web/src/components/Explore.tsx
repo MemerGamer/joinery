@@ -8,24 +8,18 @@
  * the same shape as Homebase's queue so the two screens rhyme without
  * Explore growing a personality of its own.
  *
- * While the search field and pills are below the fold, a copy of them
- * floats docked at the bottom of the screen, so the way in is always in
- * view however long Homebase grows. The copy is only a door: using it
- * scrolls here and hands focus to the real field.
- *
  * Data comes from `useHomeData()` (repos, open pulls) plus a direct,
  * debounced `listBranches` call per repo/query — branches aren't part of
  * the shared snapshot since there can be thousands of them per repo.
  */
 import { Cloud, FolderGit2, GitBranch, HardDrive, Layers, Plus, Search, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import type { Branch, Pull, Repo, ReviewStatus } from '@review/core';
 import { ApiError, callApi } from '../lib/apiClient.ts';
 import { effortOf } from '../lib/effort.ts';
 import { firstName, personFrom, type Person } from '../lib/people.ts';
 import { relativeTime } from '../lib/relativeTime.ts';
-import { EXPLORE_ID, goExplore } from '../lib/router.ts';
+import { EXPLORE_ID } from '../lib/router.ts';
 import { useHomeData } from '../state/HomeData.tsx';
 import { Panel } from './home/Panel.tsx';
 import { Avatar, Chip, CiIcon, EffortMeter, Kbd, SectionHeading } from './home/primitives.tsx';
@@ -92,27 +86,9 @@ export function ExploreSection(): React.JSX.Element {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const repoPathInputRef = useRef<HTMLInputElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
-  const pillsRef = useRef<HTMLDivElement>(null);
-  const [docked, setDocked] = useState(false);
   const rowRefs = useRef(new Map<string, HTMLLIElement>());
 
   const noRepos = !loading && repos.length === 0;
-
-  // Dock the copy while the real pills (and so the search above them)
-  // aren't fully on screen below the fold.
-  useEffect(() => {
-    const el = pillsRef.current;
-    if (el === null) return;
-    const io = new IntersectionObserver(
-      ([entry]) => {
-        if (entry === undefined) return;
-        setDocked(entry.intersectionRatio < 1 && entry.boundingClientRect.top > (entry.rootBounds?.top ?? 0));
-      },
-      { threshold: 1 },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
 
   // Fall back to All if the picked repo goes away.
   useEffect(() => {
@@ -315,64 +291,6 @@ export function ExploreSection(): React.JSX.Element {
   }
 
   const formOpen = addingRepo || noRepos;
-  const placeholder = `Search ${all ? 'all repositories' : repo !== undefined ? repoLabel(repo) : 'this repo'} — a branch, a PR title, or #number`;
-
-  const dock = (
-    // Portalled to <body> so no scroll container or overflow clips it; the
-    // inner column matches Homebase's, so it lines up with the panels.
-    <div
-      inert={!docked}
-      className={`fixed inset-x-0 bottom-5 z-30 transition-[opacity,translate] duration-200 ${
-        docked ? '' : 'pointer-events-none translate-y-3 opacity-0'
-      }`}
-    >
-      <div className="mx-auto max-w-6xl px-2">
-        <div
-          // Inline shadow: `.home-panel`'s own is unlayered and would beat a utility; this one lifts it off the page.
-          className="home-panel relative flex flex-col gap-3 rounded-lg border p-3"
-          style={{ boxShadow: '0 1px 2px rgb(0 0 0 / 0.25), 0 12px 40px rgb(0 0 0 / 0.55)' }}
-        >
-          <button
-            type="button"
-            onClick={goExplore}
-            aria-label="Search branches and pull requests"
-            className="home-card flex h-11 w-full items-center gap-3 px-3.5 text-left"
-          >
-            <Search size={16} strokeWidth={1.75} className="shrink-0 text-chrome-fg-subtle" aria-hidden />
-            <span className="min-w-0 flex-1 truncate text-body text-chrome-fg-subtle">{placeholder}</span>
-          </button>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {repos.length > 1 && (
-              <RepoPill
-                icon={<Layers size={13} strokeWidth={1.75} aria-hidden />}
-                label="All"
-                count={countFor(ALL_REPOS)}
-                selected={all}
-                onSelect={() => {
-                  setRepoIdState(ALL_REPOS);
-                  goExplore();
-                }}
-              />
-            )}
-            {repos.map((r) => (
-              <RepoPill
-                key={r.id}
-                icon={<FolderGit2 size={13} strokeWidth={1.75} aria-hidden />}
-                label={repoLabel(r)}
-                title={r.rootPath}
-                count={countFor(r.id)}
-                selected={r.id === repoId || (all && repos.length === 1)}
-                onSelect={() => {
-                  setRepoIdState(r.id);
-                  goExplore();
-                }}
-              />
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
   const displayError = openError ?? error;
 
   return (
@@ -385,7 +303,6 @@ export function ExploreSection(): React.JSX.Element {
       className="h-[calc(100dvh-5rem)] scroll-mt-10"
       bodyClassName="flex flex-col px-0 pb-0"
     >
-      {!noRepos && createPortal(dock, document.body)}
       {/* `id` on a wrapper rather than the panel so `goExplore()` can find it. */}
       <div ref={mainRef} id={EXPLORE_ID} className="flex min-h-0 flex-1 flex-col">
             <div className="flex min-h-0 flex-1 flex-col gap-7 px-4 pt-2">
@@ -401,7 +318,7 @@ export function ExploreSection(): React.JSX.Element {
                       value={q}
                       onChange={(e) => setQ(e.target.value)}
                       onKeyDown={handleNavKey}
-                      placeholder={placeholder}
+                      placeholder={`Search ${all ? 'all repositories' : repo !== undefined ? repoLabel(repo) : 'this repo'} — a branch, a PR title, or #number`}
                       spellCheck={false}
                       autoComplete="off"
                       aria-label="Search branches and pull requests"
@@ -415,7 +332,7 @@ export function ExploreSection(): React.JSX.Element {
                 </>
               )}
 
-              <div ref={pillsRef} className="flex flex-wrap items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
                 {repos.length > 1 && (
                   <RepoPill
                     icon={<Layers size={13} strokeWidth={1.75} aria-hidden />}
