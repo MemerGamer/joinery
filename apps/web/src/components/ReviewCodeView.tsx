@@ -15,10 +15,11 @@ import type {
   CodeViewItem,
 } from '@pierre/diffs';
 import { Check, ChevronDown, ChevronRight } from 'lucide-react';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { makeLoadDiffFiles } from '../lib/diffLoader.ts';
 import {
   DRAFT_THREAD_ID,
+  pathAtScrollTop,
   useReview,
   type ThreadAnnotationMeta,
 } from '../state/ReviewContext.tsx';
@@ -129,8 +130,27 @@ export function ReviewCodeView(): React.JSX.Element {
     reloadThreads,
     codeViewRef,
     toggleFileCollapsed,
+    setScrolledPath,
   } = useReview();
   const { chromeMode } = useTheme();
+
+  // `onScroll` below only fires once the reader scrolls, so take the first
+  // reading here: the items mount a frame or more after `items` arrives
+  // (virtualized, laid out by CodeView itself), so retry each frame until one
+  // spans the top edge. Re-running on `items` also catches layout changes
+  // that move the top without a scroll, e.g. folding a file.
+  useEffect(() => {
+    if (items.length === 0) return;
+    let frame = 0;
+    let tries = 0;
+    const read = () => {
+      const path = pathAtScrollTop(codeViewRef.current?.getInstance());
+      if (path !== null) setScrolledPath(path);
+      else if (++tries < 60) frame = requestAnimationFrame(read);
+    };
+    frame = requestAnimationFrame(read);
+    return () => cancelAnimationFrame(frame);
+  }, [items, codeViewRef, setScrolledPath]);
 
   const loadDiffFiles = useMemo(
     () => makeLoadDiffFiles(review?.id ?? '', reviewState?.currentRevision),
@@ -207,6 +227,10 @@ export function ReviewCodeView(): React.JSX.Element {
       ref={codeViewRef}
       items={items}
       options={options}
+      // Lets the reading order follow along (it unfolds the step holding
+      // the file being read). React bails out when the path is unchanged,
+      // so this only re-renders as a new file reaches the top.
+      onScroll={(_scrollTop, viewer) => setScrolledPath(pathAtScrollTop(viewer))}
       // `--diffs-gap-block`/`--diffs-line-height` are `@pierre/diffs`' own
       // density knobs (see `dist/style.js`: `padding-block: var(--diffs-gap-block,
       // var(--diffs-gap-fallback))` at 8px, `line-height: var(--diffs-line-height, 20px)`)

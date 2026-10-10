@@ -187,6 +187,13 @@ export interface ReviewEngine extends ReviewEngineState {
   currentStepId: string | null;
   setCurrentStepId: (id: string | null) => void;
   /**
+   * The file at the top of the code view as the reader scrolls (see
+   * `pathAtScrollTop`). Updated by scrolling only — clicks and `n`/`p` go
+   * through `selectedPath` — so the reading order can follow along.
+   */
+  scrolledPath: string | null;
+  setScrolledPath: (path: string | null) => void;
+  /**
    * The "current thread" for `r` (resolve) and the start point for `]`/`[`:
    * the thread last navigated to with `]`/`[` or the threads panel, or last
    * clicked/focused inline. `null` when there is none.
@@ -306,6 +313,7 @@ export function ReviewProvider({
   const [threadsPanelOpen, setThreadsPanelOpen] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [currentStepId, setCurrentStepId] = useState<string | null>(null);
+  const [scrolledPath, setScrolledPath] = useState<string | null>(null);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [draftThread, setDraftThread] = useState<DraftThread | null>(null);
   const codeViewRef = useRef<CodeViewHandle<ThreadAnnotationMeta, undefined> | null>(null);
@@ -1109,6 +1117,8 @@ export function ReviewProvider({
     setSelectedPath,
     currentStepId,
     setCurrentStepId,
+    scrolledPath,
+    setScrolledPath,
     activeThreadId,
     setActiveThreadId,
     setRevision,
@@ -1170,6 +1180,25 @@ export function captureTopVisiblePath(
     }
   }
   return best?.id ?? null;
+}
+
+/**
+ * The id of the item spanning the scroll container's top edge — the file
+ * being read, even when its header is stuck and its top is scrolled off.
+ * Unlike `captureTopVisiblePath`, which wants the first item starting at or
+ * below the edge (a scroll anchor), this follows what is on screen.
+ */
+export function pathAtScrollTop(
+  instance: ReturnType<CodeViewHandle<ThreadAnnotationMeta, undefined>['getInstance']>,
+): string | null {
+  const container = instance?.getContainerElement();
+  if (instance === undefined || container === undefined) return null;
+  const containerTop = container.getBoundingClientRect().top;
+  for (const rendered of instance.getRenderedItems()) {
+    const rect = rendered.element.getBoundingClientRect();
+    if (rect.top <= containerTop + 4 && rect.bottom > containerTop + 4) return rendered.id;
+  }
+  return null;
 }
 
 function nearestSurvivingPath(
