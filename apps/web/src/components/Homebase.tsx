@@ -29,11 +29,13 @@ import {
 } from 'lucide-react';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { effortOf } from '../lib/effort.ts';
+import { useGlobalKeymap } from '../lib/keymap.ts';
 import { backdropProps, coverGlow, coverPainting, paintingUrl, useBackdrop } from '../lib/covers.ts';
 import { firstName, personFrom } from '../lib/people.ts';
 import { relativeTime } from '../lib/relativeTime.ts';
 import { goExplore, goReview } from '../lib/router.ts';
 import { useHomeData, type HomeReview } from '../state/HomeData.tsx';
+import { CommandPalette } from './CommandPalette.tsx';
 import { BackdropPicker } from './home/BackdropPicker.tsx';
 import { GlowScene } from './home/GlowScene.tsx';
 import { Panel } from './home/Panel.tsx';
@@ -86,6 +88,20 @@ export function Homebase(): React.JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null);
   const topRef = useRef<HTMLDivElement>(null);
   const [exploreGap, setExploreGap] = useState(EXPLORE_GAP_MAX);
+  // Cmd+K / Cmd+Shift+P, as on the review page; without a review the palette
+  // offers the reviews, themes and light/dark (see CommandPalette.tsx).
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteMode, setPaletteMode] = useState<'command' | undefined>(undefined);
+  useGlobalKeymap({
+    openPalette: () => {
+      setPaletteMode(undefined);
+      setPaletteOpen(true);
+    },
+    openPaletteCommands: () => {
+      setPaletteMode('command');
+      setPaletteOpen(true);
+    },
+  });
 
   // When the panels end inside the first screen, pull Explore up just enough
   // that its header shows at the fold — a cue that the page scrolls. Past
@@ -381,6 +397,7 @@ export function Homebase(): React.JSX.Element {
           )}
         </div>
       </div>
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} initialMode={paletteMode} />
     </div>
   );
 }

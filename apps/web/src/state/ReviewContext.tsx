@@ -267,6 +267,11 @@ export function useReview(): ReviewEngine {
   return ctx;
 }
 
+/** The open review, or null outside one (the palette on Homebase). */
+export function useOptionalReview(): ReviewEngine | null {
+  return useContext(ReviewCtx);
+}
+
 interface ItemRecord {
   entry: FileEntry;
   item: CodeViewDiffItem<ThreadAnnotationMeta>;
