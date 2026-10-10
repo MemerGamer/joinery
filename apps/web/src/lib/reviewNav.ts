@@ -1,6 +1,5 @@
 /**
- * Pure derivations behind the review window's navigation shortcuts (SPEC §11:
- * `j`/`k` hunks, `n`/`p` steps, `]`/`[` threads). Kept free of React and the
+ * Pure derivations behind the review window's navigation shortcuts (`j`/`k` hunks, `n`/`p` steps, `]`/`[` threads). Kept free of React and the
  * DOM so the ordering rules live in one place; `useReviewShortcuts` does the
  * actual scrolling.
  */

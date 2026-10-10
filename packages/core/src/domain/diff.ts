@@ -3,7 +3,7 @@ import { revisionSchema } from './files.ts';
 
 /**
  * One file's patch, fetched on demand rather than shipped with the file list —
- * a full 200-file patch is 2.5 MB and the list is a few KB (§6).
+ * a full 200-file patch is 2.5 MB and the list is a few KB.
  *
  * Cached client-side by `(oldBlob, newBlob)`, which is immutable, so the cache
  * never expires.
@@ -24,7 +24,7 @@ export type FilePatch = z.infer<typeof filePatchSchema>;
 /**
  * Both sides of a file, for `loadDiffFiles` when the user expands unchanged
  * context. `cacheKey` is each side's blob SHA so the expansion reuses the
- * highlight cache instead of re-tokenizing (§6).
+ * highlight cache instead of re-tokenizing.
  */
 export const fileContentsSchema = z.object({
   path: z.string(),

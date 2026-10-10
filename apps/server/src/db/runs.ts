@@ -1,5 +1,5 @@
 /**
- * `agent_run` + `agent_event` (§9). Every SDK message is persisted with a
+ * `agent_run` + `agent_event`. Every SDK message is persisted with a
  * `seq` monotonic per run, so the work-in-progress UI is replayable and
  * survives a reload or restart.
  */
@@ -24,7 +24,7 @@ function toAgentRun(row: typeof agentRun.$inferSelect): AgentRun {
   };
 }
 
-/** `{resume, resumeSessionAt, turnCount}` (§9), persisted as JSON. */
+/** `{resume, resumeSessionAt, turnCount}`, persisted as JSON. */
 export type ResumeCursor = {
   readonly resume: boolean;
   readonly resumeSessionAt: string | null;

@@ -1,8 +1,8 @@
 /**
  * Review-window state: the file list, the `CodeView` item map, staged
- * live-update refresh, revision switching, and panel/UI state (SPEC §5, §6).
+ * live-update refresh, revision switching, and panel/UI state.
  *
- * The file list is the state (§5): there is no snapshot hash, so change
+ * The file list is the state: there is no snapshot hash, so change
  * detection is `diffFileLists` against the list already held, and `changed`
  * entries mutate that item's `fileDiff` in place plus bump `item.version` —
  * never a fresh object, or `CodeView` and the virtualizer both lose their
@@ -67,7 +67,7 @@ export type DiffStyle = 'split' | 'unified';
  * Per-file collapse overrides an explicit user choice — click a file's
  * header chevron, or the `z` shortcut — as opposed to the automatic
  * binary/generated/large-file default `ensureItem` applies otherwise
- * (SPEC §6). Persisted per review so it survives reloads and live updates:
+ * Persisted per review so it survives reloads and live updates:
  * a file the user expanded stays expanded when its content changes, and
  * vice versa. Keyed by path; `true` = explicitly collapsed, `false` =
  * explicitly expanded.
@@ -137,14 +137,14 @@ interface ReviewEngineState {
   /**
    * The revision the user has asked for while its file list is still in
    * flight, or `null` when what's painted matches what's selected. The
-   * picker paints this as the selected button immediately (SPEC §4) so a
+   * picker paints this as the selected button immediately so a
    * click acknowledges itself without waiting for the round trip;
    * `reviewState.currentRevision` stays the server's truth.
    */
   pendingRevision: Revision | null;
   /**
-   * The latest known run for this review's reading-order generation (SPEC
-   * §9) — drives the Generate button's pending/error feedback. `null` means
+   * The latest known run for this review's reading-order generation — drives
+   * the Generate button's pending/error feedback. `null` means
    * no generation is in flight and none has failed since the last success.
    * Never read `.status`/`.error` off the `generateReadingOrder` API
    * response directly outside this file; go through `runUiState` (see
@@ -152,9 +152,9 @@ interface ReviewEngineState {
    */
   readingOrderRun: AgentRun | null;
   /**
-   * Live `thread_reply` runs, keyed by thread id (SPEC: agent reply
-   * mechanism, R4). Fed by `run.started`/`run.delta`/`run.ended`; a thread
-   * with no live run (or none since load) simply has no entry. `lastDelta`
+   * Live `thread_reply` runs, keyed by thread id. Fed by
+   * `run.started`/`run.delta`/`run.ended`; a thread with no live run (or none
+   * since load) simply has no entry. `lastDelta`
    * is the concatenation of that run's `run.delta` text, trimmed to the
    * last ~200 chars, for the "Thinking…" row's live preview.
    */
@@ -180,7 +180,7 @@ export interface ReviewEngine extends ReviewEngineState {
   selectedPath: string | null;
   setSelectedPath: (path: string | null) => void;
   /**
-   * The reading-order step the reader is on (SPEC §11 `n`/`p`), by step id.
+   * The reading-order step the reader is on (`n`/`p`), by step id.
    * Set by `n`/`p` and by clicking a file inside a step; `null` until then.
    * Only a hint — a stale id (after regeneration) simply matches no step.
    */
@@ -226,9 +226,9 @@ export interface ReviewEngine extends ReviewEngineState {
   /** Toggle the *user's* reaction on a comment; `ReactionBar` is the only caller. */
   setReaction: (commentId: string, kind: ReactionKind, on: boolean) => Promise<void>;
   /**
-   * Moves a `draft`/`archived` review to `open` (SPEC: "Feature: drafts",
-   * D4) so it starts showing up on Homebase. A no-op when there's no review
-   * loaded yet or it's already `open`. Errors are not folded into
+   * Moves a `draft`/`archived` review to `open` so it starts showing up on
+   * Homebase. A no-op when there's no review loaded yet or it's already
+   * `open`. Errors are not folded into
    * `state.error` (that channel is for "the review failed to load", a
    * different failure the whole window reacts to) — they're rethrown so the
    * Header's button can show its own transient message instead.
@@ -254,7 +254,7 @@ export interface ReviewEngine extends ReviewEngineState {
   /**
    * Expand every file not already expanded, except files collapsed by the
    * automatic binary/generated/large default that the user hasn't
-   * overridden — SPEC §6 excludes those from any "expand all" action.
+   * overridden — those are excluded from any "expand all" action.
    */
   expandAllFiles: () => void;
 }
@@ -382,7 +382,7 @@ export function ReviewProvider({
       const annotations = buildAnnotationsFor(entry.path, threads);
       annotationsRef.current.set(entry.path, annotations);
       if (existing === undefined) {
-        // The automatic default (SPEC §6) applies only to files the user
+        // The automatic default applies only to files the user
         // has never touched — an explicit override always wins, so a file
         // the user expanded stays expanded across a live update that
         // recreates its item (e.g. removed then re-added).
@@ -510,7 +510,7 @@ export function ReviewProvider({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reviewId]);
 
-  // Live updates (SPEC §5, §10): subscribe, and stage rather than apply.
+  // Live updates: subscribe, and stage rather than apply.
   useEffect(() => {
     eventsClient.connect();
     eventsClient.subscribe(reviewId);
@@ -690,7 +690,7 @@ export function ReviewProvider({
   }, [state.threads, draftThread, notifyItemMutated, commentsVisible]);
 
   const applyPendingRefresh = useCallback(() => {
-    // Viewport anchor (§5, *Scroll and selection stability*): capture the
+    // Viewport anchor (scroll and selection stability): capture the
     // topmost visible file before applying the delta, then restore it (or
     // the nearest surviving file in reading order if it was removed) after
     // the item list is rebuilt — never a pixel offset, so it survives the
@@ -759,7 +759,7 @@ export function ReviewProvider({
             if (revisionTargetRef.current !== target) continue;
             // Thread positions are only persisted against the review's
             // default revision — switching away from it needs a projected
-            // re-fetch (SPEC §5 "Threads across snapshots"), since the
+            // re-fetch, since the
             // threads this tab was holding may be positioned for whichever
             // revision it was on before.
             const threadsRes = await callApi('listThreads', {
@@ -798,7 +798,7 @@ export function ReviewProvider({
     [state.viewed],
   );
 
-  // The check is keyed by `(path, blob)` (§7), so unchecking deletes the row
+  // The check is keyed by `(path, blob)`, so unchecking deletes the row
   // for the blob the user is actually looking at rather than clearing the
   // path outright — a stale check for some older blob was already not a match
   // and must stay that way.
@@ -818,7 +818,7 @@ export function ReviewProvider({
           body: { path, blobSha: entry.newBlob, viewed },
         });
       } catch {
-        // Optimistic; a reconcile pass on next load corrects drift (§5).
+        // Optimistic; a reconcile pass on next load corrects drift.
       }
     },
     [reviewId, state.fileList],
@@ -827,7 +827,7 @@ export function ReviewProvider({
   const reloadThreads = useCallback(async () => {
     // Scoped to this tab's own revision — positions for any revision other
     // than the review's persisted one are projected server-side at read
-    // time, never persisted (SPEC §5).
+    // time, never persisted.
     const rev = revisionRef.current;
     const res = await callApi('listThreads', {
       params: [reviewId],
@@ -1021,7 +1021,7 @@ export function ReviewProvider({
 
   const expandAllFiles = useCallback(() => {
     for (const [path, rec] of itemsRef.current) {
-      // SPEC §6: binary/over-2000-line/generated files are excluded from
+      // Binary/over-2000-line/generated files are excluded from
       // "expand all" — unless the user has explicitly chosen to expand this
       // one, in which case that choice stands.
       const autoCollapsed = rec.entry.binary || rec.entry.generated || isLargeFile(rec.entry);
@@ -1035,7 +1035,7 @@ export function ReviewProvider({
     setDraftThread(null);
     // The gutter-utility selection lives inside CodeView's own state, not
     // ours — clear it too, or the highlighted range sticks around and blocks
-    // starting a fresh comment (SPEC §6).
+    // starting a fresh comment.
     codeViewRef.current?.clearSelectedLines();
   }, []);
 
@@ -1135,7 +1135,7 @@ export function ReviewProvider({
  * positions against the scroll container — the DOM measurement standing in
  * for a `(path, side, line)` anchor at file granularity (line-level
  * anchoring would need hooking into Pierre's internal row layout, which
- * isn't part of the public `CodeViewHandle` surface; see IMPROVEMENTS.md).
+ * isn't part of the public `CodeViewHandle` surface).
  */
 export function captureTopVisiblePath(
   handle: CodeViewHandle<ThreadAnnotationMeta, undefined> | null,
@@ -1217,7 +1217,7 @@ function extractDeltaText(payload: unknown): string | null {
 }
 
 function isLargeFile(entry: FileEntry): boolean {
-  // SPEC §6: over 2,000 lines or 500 KB collapses by default. Line count
+  // Over 2,000 lines or 500 KB collapses by default. Line count
   // isn't in `FileEntry`; additions+deletions is the closest proxy available
   // without fetching the patch first.
   const total = (entry.additions ?? 0) + (entry.deletions ?? 0);

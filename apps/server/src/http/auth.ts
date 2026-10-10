@@ -1,9 +1,9 @@
 /**
- * Bearer token auth (SPEC §10) from `data/token`, required on every `/api`
+ * Bearer token auth from `data/token`, required on every `/api`
  * route. A WebSocket upgrade request can't set an `Authorization` header
  * from a browser's native `WebSocket`, so the token is also accepted as a
- * `?token=` query parameter there (SPEC doesn't specify the mechanism, only
- * that every `/api` route is gated).
+ * `?token=` query parameter there. The only requirement is that every
+ * `/api` route is gated.
  */
 import type { Context, Next } from 'hono';
 import { unauthorized } from './errors.ts';

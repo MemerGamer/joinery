@@ -1,5 +1,5 @@
 /**
- * `thread` + `comment` — comment threads and anchoring (§8).
+ * `thread` + `comment` — comment threads and anchoring.
  */
 import { comment, thread } from '@review/core/db';
 import type { Comment, Reaction, Thread, ThreadSide } from '@review/core';

@@ -1,11 +1,11 @@
 /**
- * Per-review git stats for Homebase (SPEC §1): diff size, tip commit
+ * Per-review git stats for Homebase: diff size, tip commit
  * metadata, and the file list a git-less summary can't know. Deliberately
  * standalone from `ReviewEngine` — no worktree attachment, no watchers, just
  * enough git to answer "what does this review's head look like right now"
  * for a hundred reviews without waking a hundred engines.
  *
- * Head ladder (SPEC §4, trimmed to what a detached read needs — no attached
+ * Head ladder (trimmed to what a detached read needs — no attached
  * worktree rung, since this never touches one):
  *
  *   a. local branch tip    -> refs/heads/<branch>

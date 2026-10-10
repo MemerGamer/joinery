@@ -1,4 +1,4 @@
-/** Shared shape for every command module (SPEC §10: one per CLI command). */
+/** Shared shape for every command module (one per CLI command). */
 export interface Command {
   /** e.g. "reading-order set" — used in help and error messages. */
   readonly path: string;

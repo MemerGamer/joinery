@@ -1,5 +1,5 @@
 /**
- * A thin typed client over the HTTP API (SPEC §10).
+ * A thin typed client over the HTTP API.
  *
  * It calls through the `api` route map from `@review/core` for method, path,
  * and request/response schemas, so a route or payload change in core is a

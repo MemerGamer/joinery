@@ -1,5 +1,5 @@
 /**
- * Renames (§6). `thread.path` and `file_viewed.path` are path-keyed, so a
+ * Renames: `thread.path` and `file_viewed.path` are path-keyed, so a
  * `git diff -M` rename entry orphans both unless they are rewritten in the
  * same transaction that applies the new file list.
  */

@@ -1,6 +1,6 @@
 /**
  * `agent_worktree` — a cache table keyed by `(repo_id, sha)`, not review
- * state (§4, §9). Deleting every row costs one rebuild before the next agent
+ * state. Deleting every row costs one rebuild before the next agent
  * run.
  */
 import { agentWorktree } from '@review/core/db';
@@ -38,7 +38,7 @@ export async function createWorktree(db: Db, repoId: string, sha: string, path: 
 }
 
 /**
- * The claim-or-create lookup (§4): if a worktree already exists for
+ * The claim-or-create lookup: if a worktree already exists for
  * `(repoId, sha)`, touch it and return its path; otherwise call `create` to
  * materialize one on disk and record it.
  */

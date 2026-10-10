@@ -1,13 +1,13 @@
 /**
- * The `review` MCP server (PLAN.md "agent reply mechanism", design decision
- * 2): every action the embedded agent can take on the app, as a thin
+ * The `review` MCP server: every action the embedded agent can take on the
+ * app, as a thin
  * wrapper over the same in-process `invoke` the HTTP routes themselves run
  * through (`http/app.ts`'s `createApp().invoke`). A handler never touches
  * the database directly — it builds a `Request`, calls `invoke`, and turns
  * the `Response` into the tool result — so validation, events, and side
  * effects are exactly the HTTP route's, never a second implementation.
  *
- * Every tool is bound to the run's `reviewId` (design decision 3): it is
+ * Every tool is bound to the run's `reviewId`: it is
  * closed over here, never accepted as a tool argument, so the model cannot
  * name a different review. Tools that take a thread or comment id
  * (`get_thread`, `reply`, `resolve_thread`, `react`) additionally verify

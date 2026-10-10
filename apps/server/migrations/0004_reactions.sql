@@ -1,4 +1,4 @@
--- Reactions on comments (§8, PLAN.md R1): one row per `(comment, actor, kind)`.
+-- Reactions on comments: one row per `(comment, actor, kind)`.
 -- A user or agent toggling a reaction off simply deletes its row, so the
 -- table carries no identity of its own beyond that triple.
 CREATE TABLE reaction (

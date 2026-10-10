@@ -1,5 +1,5 @@
 /**
- * Engine tests (SPEC §5). Uses `engine.tick()` directly for deterministic
+ * Engine tests. Uses `engine.tick()` directly for deterministic
  * coverage of the table rows rather than racing the fs-watch debounce,
  * except for the dedicated "ticks serialize under a burst" test.
  */
@@ -109,7 +109,7 @@ describe('engine tick', () => {
       workingList.files.map((f) => f.newBlob),
     );
     // `working`'s list is identical, so it fires no event — but `head` is
-    // kept warm proactively too (SPEC §5's table: "head updates" on commit),
+    // kept warm proactively too ("head updates" on commit),
     // and it genuinely changed (headSha moved), so it does.
     const changed = events.filter((e) => e.type === 'files.changed');
     expect(changed).toHaveLength(1);
@@ -157,7 +157,7 @@ describe('engine tick', () => {
     expect(state.root.attachedPath).not.toBeNull();
   });
 
-  test('an attached review with no stored choice defaults to working (§13.2)', async () => {
+  test('an attached review with no stored choice defaults to working', async () => {
     const ctx = await setupRepo('feature');
     cleanups.push(ctx.cleanup);
     const review = await createReview(ctx.db, {
@@ -176,7 +176,7 @@ describe('engine tick', () => {
     expect(state.currentRevision).toBe('working');
   });
 
-  test('a review whose branch is checked out nowhere defaults to head (§13.2)', async () => {
+  test('a review whose branch is checked out nowhere defaults to head', async () => {
     const ctx = await setupRepo('feature');
     cleanups.push(ctx.cleanup);
     runGit(ctx.repoDir, ['checkout', '-q', 'main']);
@@ -197,7 +197,7 @@ describe('engine tick', () => {
     expect(state.root.attachedPath).toBeNull();
   });
 
-  test('an explicit "head" choice on an attached review does not flip to working (§4)', async () => {
+  test('an explicit "head" choice on an attached review does not flip to working', async () => {
     const ctx = await setupRepo('feature');
     cleanups.push(ctx.cleanup);
     const created = await createReview(ctx.db, {
@@ -217,7 +217,7 @@ describe('engine tick', () => {
     expect(state.root.attachedPath).not.toBeNull();
   });
 
-  test('an explicit "working" choice survives detach/reattach without being overwritten (§9)', async () => {
+  test('an explicit "working" choice survives detach/reattach without being overwritten', async () => {
     const ctx = await setupRepo('feature');
     cleanups.push(ctx.cleanup);
     const created = await createReview(ctx.db, {
@@ -391,7 +391,7 @@ describe('engine tick', () => {
     expect(reloaded?.comments).toHaveLength(3); // original + two replies, all intact
     expect(reloaded?.comments.map((c) => c.bodyMd)).toEqual(['first comment', 'a follow-up', 'an agent reply']);
     // The stale line numbers and captured context are preserved for display
-    // against "the code context captured when it was written" (SPEC §8),
+    // against "the code context captured when it was written",
     // not reset or blanked out.
     expect(reloaded?.startLine).toBe(3);
     expect(reloaded?.anchorContext).toBe(context);
@@ -429,7 +429,7 @@ describe('engine tick', () => {
     await engine.tick();
 
     const reloaded = await getThreadWithComments(ctx.db, doomedThread.id);
-    expect(reloaded).not.toBeNull(); // never deleted, per SPEC §8
+    expect(reloaded).not.toBeNull(); // never deleted
     expect(reloaded?.outdated).toBe(true);
     expect(reloaded?.comments).toHaveLength(1);
   });

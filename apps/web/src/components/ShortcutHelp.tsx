@@ -1,5 +1,5 @@
 /**
- * The `?` shortcut sheet (SPEC §11): every binding from `lib/keymap.ts`,
+ * The `?` shortcut sheet: every binding from `lib/keymap.ts`,
  * grouped, with modifiers spelled for this platform (⌘/⌥/⇧ on a Mac,
  * Ctrl/Alt/Shift elsewhere — the same `$mod` reading `tinykeys` binds with).
  *

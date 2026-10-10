@@ -41,7 +41,7 @@ function allCommands(): Command[] {
 }
 
 function printHelp(): void {
-  printLine('review — local-first code review CLI (SPEC.md §10)');
+  printLine('review — local-first code review CLI');
   printLine('');
   printLine('usage: review <command> [args] [--json]');
   printLine('');

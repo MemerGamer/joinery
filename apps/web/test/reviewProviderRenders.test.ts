@@ -2,9 +2,8 @@
  * State-layer smoke test for the centre pane's data path.
  *
  * This is deliberately NOT an end-to-end render test: it never mounts
- * `@pierre/diffs`' `CodeView` (which needs real Web Workers and shadow DOM —
- * see the "what this does NOT cover" note appended to IMPROVEMENTS.md under
- * "render coverage"). What it DOES do is mount the real `ReviewProvider`
+ * `@pierre/diffs`' `CodeView` (which needs real Web Workers and shadow DOM).
+ * What it DOES do is mount the real `ReviewProvider`
  * from `apps/web/src/state/ReviewContext.tsx` — the same component tree the
  * app renders — against a mocked API, using `happy-dom` to give React a real
  * DOM to commit into and `react`'s `act` to flush its effects. It then reads
@@ -316,7 +315,7 @@ describe('ReviewProvider renders a non-empty item list', () => {
     }
   });
 
-  it('applies the SPEC §6 collapse defaults', () => {
+  it('applies the collapse defaults', () => {
     const engine = capturedEngine as { items: { id: string; collapsed?: boolean }[] };
     const byId = new Map(engine.items.map((i) => [i.id, i.collapsed ?? false]));
     expect(byId.get('src/normal.ts')).toBe(false);

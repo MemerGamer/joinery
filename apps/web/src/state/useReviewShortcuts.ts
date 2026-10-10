@@ -1,5 +1,5 @@
 /**
- * The review window's navigation and diff-action shortcuts (SPEC §11): the
+ * The review window's navigation and diff-action shortcuts: the
  * `KeymapActions` that need more than a one-line call into `ReviewContext` —
  * hunks (`j`/`k`, `e`, `Shift+E`), steps (`n`/`p`), threads (`]`/`[`, `r`)
  * and commenting on a line selection (`c`). `ReviewWindow` spreads the

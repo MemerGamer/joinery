@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * A review does not have "a" state; it has a revision picker (§4).
+ * A review does not have "a" state; it has a revision picker.
  *
  * `working` exists only while the branch is attached to a live directory.
  */
@@ -20,7 +20,7 @@ export const NULL_BLOB = '0000000000000000000000000000000000000000';
  */
 export const fileEntrySchema = z.object({
   path: z.string(),
-  /** Present on rename/copy entries so threads and viewed checks can be rewritten (§6). */
+  /** Present on rename/copy entries so threads and viewed checks can be rewritten. */
   oldPath: z.string().nullable(),
   status: fileStatusSchema,
   oldBlob: z.string(),
@@ -36,7 +36,7 @@ export type FileEntry = z.infer<typeof fileEntrySchema>;
 
 /**
  * The state. Sorted by path; never re-sorted on update, so an added file lands
- * in place and nothing else shifts (§5).
+ * in place and nothing else shifts.
  */
 export const fileListSchema = z.object({
   reviewId: z.string(),
@@ -49,7 +49,7 @@ export type FileList = z.infer<typeof fileListSchema>;
 
 /**
  * Git operations that detach HEAD momentarily. While one is in progress the
- * engine holds the last good snapshot rather than flapping the picker (§5).
+ * engine holds the last good snapshot rather than flapping the picker.
  */
 export const gitOperationSchema = z.enum([
   'rebase',
@@ -61,7 +61,7 @@ export const gitOperationSchema = z.enum([
 ]);
 export type GitOperation = z.infer<typeof gitOperationSchema>;
 
-/** `git rev-list --left-right --count <head>...<pr>` (§4). */
+/** `git rev-list --left-right --count <head>...<pr>`. */
 export const divergenceSchema = z.object({
   ahead: z.number().int().nonnegative(),
   behind: z.number().int().nonnegative(),
@@ -79,12 +79,12 @@ export const rootBindingSchema = z.object({
 export type RootBinding = z.infer<typeof rootBindingSchema>;
 
 /**
- * Which rung of the `head` fallback ladder (§4) last resolved a commit for
+ * Which rung of the `head` fallback ladder last resolved a commit for
  * this review: the attached worktree, the local branch tip, the
  * remote-tracking tip, the review's `pinned_sha` column, or the review's own
- * `refs/review/<id>` pin. SPEC §4 forbids silently changing what a revision
- * means, so this rides along on `ReviewState` rather than being folded into
- * an anonymous "head" — the UI labels e.g. `head (origin)` when it's `remote`.
+ * `refs/review/<id>` pin. Silently changing what a revision
+ * means is forbidden, so this rides along on `ReviewState` rather than
+ * being folded into an anonymous "head" — the UI labels e.g. `head (origin)` when it's `remote`.
  */
 export const headSourceSchema = z.enum(['worktree', 'local', 'remote', 'pinned-sha', 'pin']);
 export type HeadSource = z.infer<typeof headSourceSchema>;
@@ -96,7 +96,7 @@ export const reviewStateSchema = z.object({
   currentRevision: revisionSchema,
   root: rootBindingSchema,
   divergence: divergenceSchema.nullable(),
-  /** True when base(main, pr) and base(main, head) no longer coincide (§4). */
+  /** True when base(main, pr) and base(main, head) no longer coincide. */
   basesMismatched: z.boolean(),
   operationInProgress: gitOperationSchema.nullable(),
   prNumber: z.number().int().positive().nullable(),

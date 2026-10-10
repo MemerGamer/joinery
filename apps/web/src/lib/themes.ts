@@ -1,5 +1,5 @@
 /**
- * The diff theme registry (SPEC §6, *Themes — ship all 75*).
+ * The diff theme registry.
  *
  * `@pierre/theming` ships both collections as a map of lazy loader thunks:
  * 65 Shiki themes plus 10 Pierre themes. `@pierre/diffs`' shared highlighter
@@ -16,7 +16,7 @@ export interface ThemeOption {
   displayName: string;
   colorScheme: 'light' | 'dark' | undefined;
   collection: 'pierre' | 'shiki';
-  /** Colorblind-safe Pierre variant — surfaced directly, not buried (§3, §6). */
+  /** Colorblind-safe Pierre variant — surfaced directly, not buried. */
   colorblindSafe: boolean;
 }
 

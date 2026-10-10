@@ -6,7 +6,7 @@ import { createThread, listThreadsByReview } from '../../src/db/threads.ts';
 import { listViewed, markViewed } from '../../src/db/fileViewed.ts';
 import { renamePaths } from '../../src/db/renames.ts';
 
-describe('renamePaths (§6): rewrites thread.path and file_viewed.path atomically', () => {
+describe('renamePaths: rewrites thread.path and file_viewed.path atomically', () => {
   test('both are rewritten together', async () => {
     const { db, close } = await setupTestDb();
     try {

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { makeAgentCanUseTool } from '../../src/agent/permissions.ts';
 
-describe('makeAgentCanUseTool (PLAN.md "agent reply mechanism": no shell, path-fenced reads)', () => {
+describe('makeAgentCanUseTool (no shell, path-fenced reads)', () => {
   const signal = new AbortController().signal;
   const baseOptions = { signal, toolUseID: 'tool_1', requestId: 'req_1' };
   const cwd = process.cwd();

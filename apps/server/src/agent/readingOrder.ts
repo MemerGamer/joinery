@@ -1,9 +1,9 @@
 /**
- * Reading-order generation (SPEC §9's `reading_order` run kind), the
+ * Reading-order generation (the `reading_order` run kind), the
  * straightforward version: one `query()` call per run, no `resume`, no
  * per-message `agent_event` persistence beyond what `runs.ts` records
- * itself. See IMPROVEMENTS.md for what of §9's full session machinery this
- * intentionally does not implement.
+ * itself. Much of the full session machinery is intentionally not
+ * implemented.
  *
  * The agent explores the review root with read-only, path-fenced tools only
  * (`permissions.ts`'s `makeAgentCanUseTool`, no shell) and returns its
@@ -86,9 +86,8 @@ export async function generateReadingOrderPlan(options: GenerateReadingOrderPlan
     options: {
       cwd: options.cwd,
       model: READING_ORDER_MODEL_ID,
-      // `Bash` is removed outright (PLAN.md "agent reply mechanism", design
-      // decision 1) rather than gated through a read-only allowlist: no
-      // shell at all for the embedded agent, on either run kind.
+      // `Bash` is removed outright rather than gated through a read-only
+      // allowlist: no shell at all for the embedded agent, on either run kind.
       disallowedTools: ['Write', 'Edit', 'NotebookEdit', 'Bash'],
       canUseTool: makeAgentCanUseTool({ cwd: options.cwd }),
       // Refuses to load the reviewed repo's own `.claude/settings*.json` —

@@ -1,5 +1,5 @@
 /**
- * WS client over `/api/events` (SPEC §5 *Transport*, §10).
+ * WS client over `/api/events`.
  *
  * The server sends the *current* file list on `files.changed`; there is no
  * delta protocol on the wire — the client set-diffs it against the list it

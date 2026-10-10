@@ -2,7 +2,7 @@
  * `git status --porcelain=v2 --branch -z --untracked-files=all`.
  *
  * The `--branch` header carries `# branch.oid`, so this call also serves as
- * the tick's `rev-parse` (SPEC §5, "The tick", step 2) — one spawn instead
+ * the tick's `rev-parse` — one spawn instead
  * of two.
  *
  * Critically, porcelain v2 does **not** report the worktree blob hash, only
@@ -15,7 +15,7 @@
  * regardless to learn the worktree side.
  *
  * `S...` submodule entries and `u` unmerged entries are skipped rather than
- * fed to `hash-object`, which would choke on a directory (SPEC §6).
+ * fed to `hash-object`, which would choke on a directory.
  *
  * The parser below is a pure function over raw bytes, deliberately
  * independent of `run.ts`, so it is unit-testable without a repo.
@@ -180,7 +180,7 @@ export function parsePorcelainStatusV2(bytes: Uint8Array): ParsedStatus {
     }
 
     if (record.startsWith('u ')) {
-      // Unmerged entry — skip rather than feed to hash-object (SPEC §6).
+      // Unmerged entry — skip rather than feed to hash-object.
       i++;
       continue;
     }

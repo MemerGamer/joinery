@@ -1,6 +1,6 @@
 /**
  * A long-lived `git cat-file --batch` process per repo, for blob hydration
- * (SPEC §6). Measured: 400 blobs in 92 ms batched through one process versus
+ * Measured: 400 blobs in 92 ms batched through one process versus
  * 738 ms spawning `git cat-file` once per blob — never spawn per blob.
  *
  * Framing per the git docs, and it must be parsed byte-exact rather than by

@@ -1,5 +1,5 @@
 /**
- * One inline comment thread (SPEC §8), rendered as a `CodeView` line
+ * One inline comment thread, rendered as a `CodeView` line
  * annotation. Outdated threads collapse to their anchor context by default;
  * "changed since you commented" is a softer warning that keeps the thread
  * open. Resolve/reopen and reply round-trip through the API and then ask the

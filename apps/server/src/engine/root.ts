@@ -1,5 +1,5 @@
 /**
- * Root resolution (SPEC §4, "Root resolution: the decision procedure").
+ * Root resolution.
  *
  * One question: is there a live tree to follow, or not.
  *
@@ -8,7 +8,7 @@
  *   2. Anything else renders from the object store; it never touches the
  *      filesystem to decide where.
  *
- * `git worktree list --porcelain` is re-read on every tick (SPEC §5): no
+ * `git worktree list --porcelain` is re-read on every tick: no
  * path conventions, no filesystem scanning, and a worktree an agent creates
  * mid-session starts being watched on the very next tick.
  */
@@ -20,7 +20,7 @@ export type RootResolution = RootBinding & {
 };
 
 export async function resolveRoot(repo: Repo, review: Review): Promise<RootResolution> {
-  // A detached `(repo, sha)` review has no `working` revision at all (SPEC §4).
+  // A detached `(repo, sha)` review has no `working` revision at all.
   if (review.branch === null) {
     return { attachedPath: null, detachedReason: 'not-checked-out', worktree: null };
   }

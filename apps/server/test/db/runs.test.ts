@@ -4,7 +4,7 @@ import { upsertRepo } from '../../src/db/repos.ts';
 import { createReview } from '../../src/db/reviews.ts';
 import { appendEvent, createRun, getRun, listEvents, setRunResumeCursor, setRunStatus } from '../../src/db/runs.ts';
 
-describe('agent_run / agent_event (§9)', () => {
+describe('agent_run / agent_event', () => {
   test('event seq is monotonic and gapless under concurrent appends to one run', async () => {
     const { db, close } = await setupTestDb();
     try {

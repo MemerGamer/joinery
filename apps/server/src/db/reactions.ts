@@ -1,5 +1,5 @@
 /**
- * `reaction` — one row per `(comment, actor, kind)` (§8). Setting a reaction
+ * `reaction` — one row per `(comment, actor, kind)`. Setting a reaction
  * on is insert-or-ignore, off is a delete; there is no update, since the row
  * carries no state beyond the triple existing.
  */

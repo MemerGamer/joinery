@@ -1,5 +1,5 @@
 /**
- * Every route in SPEC §10's table, driven by the `api` map from
+ * Every route, driven by the `api` map from
  * `@review/core`: validate params through each route's `body`/`query`
  * schema, return exactly its `response` shape.
  */
@@ -233,7 +233,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     // `(headRefName, baseRefName)` before falling into the normal
     // branch/sha identity logic below. A PR review is then identified as
     // `(repo, headRefName)` with `prNumber` set — the SAME identity as a
-    // branch review (SPEC §4), so `findReviewByBranch`'s dedupe already
+    // branch review, so `findReviewByBranch`'s dedupe already
     // handles "open PR #123 twice" without any PR-specific lookup table.
     // Fork PRs are out of scope; same-repo PRs only.
     let branch = body.branch;
@@ -284,7 +284,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     if (repo === null) throw notFound(`repo ${review.repoId} not found`);
     const engine = await requireEngine(deps, id);
     const state = await engine.getState();
-    // Opening the review marks its unread-agent-replies window read (§1):
+    // Opening the review marks its unread-agent-replies window read:
     // must happen after the response is built, so this open is measured
     // against the *previous* `last_opened_at`, not the one it just set.
     await touchOpened(deps.db, id);

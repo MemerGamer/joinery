@@ -1,5 +1,5 @@
 /**
- * The `thread_reply` run kind (SPEC §9; PLAN.md "agent reply mechanism").
+ * The `thread_reply` run kind.
  * Mirrors `readingOrder.ts`'s shape (one `query()` per run, every SDK
  * message persisted via `appendEvent`) but the agent here acts through the
  * `review` MCP tools (`tools.ts`) instead of returning structured output,

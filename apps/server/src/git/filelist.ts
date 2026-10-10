@@ -1,14 +1,14 @@
 /**
- * Build the `FileList` (SPEC §5) for a revision.
+ * Build the `FileList` for a revision.
  *
- * - `working` diffs from the **merge-base**, not from HEAD (SPEC §4
- *   "Following a live worktree"): `git diff <merge-base>` — committed,
+ * - `working` diffs from the **merge-base**, not from HEAD:
+ *   `git diff <merge-base>` — committed,
  *   staged, and unstaged all show up identically, and nothing moves in the
  *   view when an agent commits. Untracked files are invisible to `git diff`
  *   entirely and are listed separately with
  *   `git ls-files --others --exclude-standard` and synthesized as adds.
  * - Commit revisions (`head`/`pr`) read entirely from the object store via
- *   `git diff base...sha` — **3-dot, always** (SPEC §4: 2-dot renders the
+ *   `git diff base...sha` — **3-dot, always** (2-dot renders the
  *   reviewer's own unpushed commits as deletions in exactly the diverged
  *   case it would be reached for).
  * - Renames get `oldPath` filled from `git diff -M`.
@@ -17,7 +17,7 @@
  *   `git check-attr`.
  * - Exactly one `git hash-object` spawn completes the worktree-side blob
  *   SHAs for a `working` revision, because porcelain/diff output never
- *   reports them (SPEC §5).
+ *   reports them.
  */
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -244,7 +244,7 @@ export async function buildFileList(params: BuildFileListParams): Promise<FileEn
     throw new Error(`buildFileList: revision "${params.revision}" requires targetSha`);
   }
 
-  // 3-dot always (SPEC §4): the ...-range syntax on the CLI performs the
+  // 3-dot always: the ...-range syntax on the CLI performs the
   // merge-base comparison for us, but we resolve merge-base explicitly
   // upstream (repo.ts) and pass it as `baseSha` here, so a plain two-operand
   // `diff <base> <target>` already *is* the 3-dot comparison we want,

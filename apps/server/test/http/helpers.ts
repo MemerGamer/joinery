@@ -132,7 +132,7 @@ export async function registerRepo(fixture: HttpFixture): Promise<Repo> {
   });
 }
 
-/** `registerRepo` plus a review attached to `branch`, defaulted to `working` since it's attached (SPEC §13.2). */
+/** `registerRepo` plus a review attached to `branch`, defaulted to `working` since it's attached. */
 export async function setupHttpWithReview(branch = 'feature'): Promise<HttpFixture & { review: Review; repo: Repo }> {
   const fixture = await setupHttp(branch);
   const repo = await registerRepo(fixture);

@@ -1,5 +1,5 @@
 /**
- * Maps an `AgentRun` (SPEC §9) to what the UI should show for it. A 200
+ * Maps an `AgentRun` to what the UI should show for it. A 200
  * response carrying `status: "error"` is the trap this exists to defuse —
  * callers must branch on `run.status`/`run.error`, never on HTTP status
  * alone, and never on the specific error text (the agent side is being

@@ -1,6 +1,6 @@
 /**
- * The keymap (SPEC §11), declared as chords against a single modifier map so
- * a later Ctrl/Alt reading (§14, Windows) costs one table swap, not a
+ * The keymap, declared as chords against a single modifier map so
+ * a later Ctrl/Alt reading (Windows) costs one table swap, not a
  * rewrite. `tinykeys`'s own `$mod` already abstracts Cmd/Ctrl; `MOD.opt` is
  * the one platform-specific piece left for us to swap.
  */
@@ -89,12 +89,12 @@ function buildKeymap(actionsRef: { current: KeymapActions }): Record<string, (e:
     // (`b`) — see the doc comment above.
     ...bind(`${MOD.primary}+${MOD.opt}+KeyB`, 'toggleRightPanel'),
     ...bind('t', 'toggleThreadsPanel'),
-    // Not in SPEC §11: `c` starts a comment, so `Shift+c` hides/shows them.
+    // Not in the key table: `c` starts a comment, so `Shift+c` hides/shows them.
     ...bind('Shift+c', 'toggleComments'),
     ...bind('u', 'toggleUnifiedSplit'),
     ...bind('e', 'expandHunk'),
     ...bind('Shift+e', 'expandWholeFile'),
-    // Not in SPEC §11's table (no key was assigned to per-file
+    // Not in the key table (no key was assigned to per-file
     // collapse/expand there); `z` is free and mirrors vim's fold mnemonic.
     ...bind('z', 'toggleFocusedFileCollapsed'),
     ...bind('v', 'markViewed'),
@@ -225,7 +225,7 @@ export function formatChord(chord: string, apple: boolean = isApplePlatform()): 
 }
 
 /**
- * Global keymap for the review window (SPEC §11 table). `Cmd+W/T/N/Q` are
+ * Global keymap for the review window. `Cmd+W/T/N/Q` are
  * deliberately absent — a browser tab can never yield them, so nothing is
  * bound there.
  *

@@ -1,5 +1,5 @@
 /**
- * Per-review roll-ups for Homebase rows (SPEC §1: "what's waiting on you —
+ * Per-review roll-ups for Homebase rows ("what's waiting on you —
  * no reading order yet, unviewed files, unresolved threads, agent runs in
  * flight"). Everything here is a DB aggregate — a handful of `GROUP BY
  * review_id` queries over the whole id set — so listing a hundred reviews

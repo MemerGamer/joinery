@@ -1,6 +1,5 @@
 /**
- * Display glyphs and titles for the six fixed reaction kinds (SPEC feature:
- * agent reply mechanism and reactions, R1). The contract only names the
+ * Display glyphs and titles for the six fixed reaction kinds. The contract only names the
  * kinds (`packages/core/src/domain/review.ts`) — the web owns how they look.
  */
 import type { Reaction, ReactionKind } from '@review/core';

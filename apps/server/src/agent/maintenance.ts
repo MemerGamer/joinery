@@ -3,11 +3,11 @@
  *
  * - `failOrphanedRuns` runs once at boot: a run still `pending`/`running`
  *   in the database belongs to a previous server process (runs execute
- *   in-process, and don't resume — see IMPROVEMENTS.md), so it is marked
+ *   in-process, and don't resume), so it is marked
  *   `error` rather than left looking busy forever, and any `eyes` working
  *   indicator it left on a comment is cleared.
- * - `startWorktreeSweep` keeps pruning cached agent worktrees (SPEC §4,
- *   "agent worktrees are a cache, not state") for as long as the server
+ * - `startWorktreeSweep` keeps pruning cached agent worktrees
+ *   ("agent worktrees are a cache, not state") for as long as the server
  *   runs: once at start, then on a fixed interval. A worktree unused for
  *   `maxAgeSeconds` is removed from disk, from git's registry, and from
  *   `agent_worktree`; the next run that needs it just rebuilds it.

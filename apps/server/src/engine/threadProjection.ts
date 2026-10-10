@@ -1,6 +1,6 @@
 /**
- * Read-time, non-persisted thread projection (SPEC §5 "Threads across
- * snapshots", extended for multi-revision caching).
+ * Read-time, non-persisted thread projection, extended for multi-revision
+ * caching.
  *
  * Thread rows are re-anchored and written back only against the review's
  * persisted revision (`reviewEngine.ts#tickOnce`) — writing from two

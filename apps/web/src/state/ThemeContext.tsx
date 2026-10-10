@@ -1,6 +1,6 @@
 /**
  * App chrome light/dark + the selected diff theme name(s). The two are one
- * coordinated, debounced action (SPEC §6, *Themes*): flipping chrome
+ * coordinated, debounced action: flipping chrome
  * light/dark also flips which half of the diff theme pair is active, and
  * both go through the worker pool's `setRenderOptions` together.
  *

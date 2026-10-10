@@ -1,7 +1,7 @@
 /**
  * `file_viewed` — per-file "viewed" checks, keyed by `(review_id, path,
- * blob_sha)` (§7). A changed blob simply fails to match and the check clears
- * itself; there is deliberately no invalidation code here (§5).
+ * blob_sha)`. A changed blob simply fails to match and the check clears
+ * itself; there is deliberately no invalidation code here.
  */
 import { fileViewed } from '@review/core/db';
 import { and, eq, inArray } from 'drizzle-orm';
@@ -46,7 +46,7 @@ export async function isViewed(db: Db, reviewId: string, path: string, blobSha: 
 /**
  * `listViewed` for a whole batch of reviews at once (one query), so the
  * Homebase composer can recompute every review's `viewedFiles` against its
- * *current* file list without a query per review (§1).
+ * *current* file list without a query per review.
  */
 export async function listViewedForReviews(
   db: Db,

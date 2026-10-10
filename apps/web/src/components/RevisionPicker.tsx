@@ -1,5 +1,5 @@
 /**
- * The revision picker (SPEC §1, §4): switches `working`/`head`/`pr`, showing
+ * The revision picker: switches `working`/`head`/`pr`, showing
  * only revisions that currently exist.
  */
 import { useEffect, useState } from 'react';
@@ -9,7 +9,7 @@ import { useReview } from '../state/ReviewContext.tsx';
 const LABELS: Record<Revision, string> = { working: 'Working', head: 'Head', pr: 'PR' };
 
 /**
- * SPEC §4 forbids silently changing what `head` means, so when it was
+ * Silently changing what `head` means is forbidden, so when it was
  * resolved from anything other than the checkout or local branch, the button
  * says which rung answered (`ReviewState.headSource`). `worktree`/`local` are
  * the expected case and get no suffix — the label only speaks up when the

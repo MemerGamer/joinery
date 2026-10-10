@@ -1,11 +1,10 @@
 /**
  * Fetches and parses per-file patches on demand, and hydrates full file
- * contents for `loadDiffFiles` (SPEC §6, *Payload and scale* + *Expanding
- * context*).
+ * contents for `loadDiffFiles`.
  *
  * Patches are cached client-side by `(oldBlob, newBlob)`, which is immutable,
  * so the cache never expires — matching the same cache-by-blob-SHA rule as
- * the worker pool's own highlight cache (perf checklist #1).
+ * the worker pool's own highlight cache.
  */
 import { parsePatchFiles, trimPatchContext, type FileDiffLoadedFiles, type FileDiffMetadata } from '@pierre/diffs';
 import { NULL_BLOB, type FileEntry, type Revision } from '@review/core';
@@ -109,8 +108,7 @@ const contentsCache = new Map<string, Promise<FileDiffLoadedFiles>>();
 
 /**
  * `loadDiffFiles` for `CodeView`/`FileDiff`: hydrates a partial diff with
- * full file contents when the user expands unchanged context (SPEC §6,
- * *Expanding context*). Each side's `cacheKey` is its own blob SHA so an
+ * full file contents when the user expands unchanged context. Each side's `cacheKey` is its own blob SHA so an
  * expanded region reuses the highlight cache instead of re-tokenizing.
  */
 export function makeLoadDiffFiles(

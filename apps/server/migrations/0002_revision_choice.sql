@@ -1,9 +1,9 @@
 -- `current_revision` becomes nullable: NULL means the user has never picked a
--- revision, so the default applies (SPEC §13.2 — `working` when the branch is
+-- revision, so the default applies (`working` when the branch is
 -- attached on disk, `head` otherwise). Without a "not chosen" state the engine
 -- cannot tell a stored default from a deliberate choice, and would silently
 -- flip an explicit `head` back to `working` the moment a branch is checked out
--- again — exactly the flip SPEC §4 forbids.
+-- again — exactly the flip that must never happen.
 --
 -- SQLite cannot drop a NOT NULL constraint in place, but dropping and re-adding
 -- an unindexed column is a supported ALTER, so the value round-trips through a
@@ -21,7 +21,7 @@ ALTER TABLE review ADD COLUMN current_revision text;
 UPDATE review SET current_revision = revision_choice;
 ALTER TABLE review DROP COLUMN revision_choice;
 
--- Root attachment is resolved from git on every tick (SPEC §4). Persisting it
+-- Root attachment is resolved from git on every tick. Persisting it
 -- stored a copy that goes stale the moment anything happens while the server is
 -- down, and nothing ever read it — `ReviewState.root.attachedPath` is the live
 -- value the API and UI use.

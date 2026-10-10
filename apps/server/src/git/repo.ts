@@ -1,7 +1,7 @@
 /**
  * Repo facts: default branch, remote owner/name, `$GIT_COMMON_DIR`,
  * merge-base computation, PR divergence, in-progress-operation detection,
- * and `refs/review/<id>` pinning (SPEC §4, §5).
+ * and `refs/review/<id>` pinning.
  */
 import { access } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -94,8 +94,7 @@ export type Divergence = {
 };
 
 /**
- * `git rev-list --left-right --count <head>...<pr>` (SPEC §4, "Local vs
- * remote divergence"). Output is "<ahead>\t<behind>".
+ * `git rev-list --left-right --count <head>...<pr>`. Output is "<ahead>\t<behind>".
  */
 export async function divergence(head: string, pr: string, options: GitCallOptions): Promise<Divergence> {
   const result = await gitOrThrow(
@@ -123,7 +122,7 @@ const OPERATION_MARKERS: { file: string; op: GitOperation }[] = [
 
 /**
  * Detect an in-progress operation by checking for the marker files under
- * `$GIT_DIR` (SPEC §5, "Mid-operation states"). Returns the first one found;
+ * `$GIT_DIR`. Returns the first one found;
  * order matches `OPERATION_MARKERS`, which lists rebase markers first since
  * a rebase can leave `MERGE_HEAD`-like state behind transiently too.
  *
@@ -145,7 +144,7 @@ export async function detectInProgressOperation(gitDir: string): Promise<GitOper
 
 /**
  * Pin `sha` at `refs/review/<reviewId>` so the commit survives GC even
- * without a directory on disk (SPEC §4). This is the one ref-writing
+ * without a directory on disk. This is the one ref-writing
  * operation in the write allowlist.
  */
 export async function pinReviewRef(reviewId: string, sha: string, options: GitCallOptions): Promise<void> {

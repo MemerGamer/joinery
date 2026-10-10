@@ -16,7 +16,7 @@ const DEFAULT_PORT = 7317;
 const TOKEN_PLACEHOLDER = '__REVIEW_TOKEN_PLACEHOLDER__';
 
 /**
- * Hands the browser the bearer token at page load (SPEC §3).
+ * Hands the browser the bearer token at page load.
  *
  * Only in dev: `vite build` leaves the placeholder in `dist/index.html` so the
  * server substitutes the current token at serve time, and a rotated token does
@@ -46,7 +46,7 @@ export default defineConfig({
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
-  // Required by @pierre/diffs' worker pool (SPEC §6.2): the highlighting
+  // Required by @pierre/diffs' worker pool: the highlighting
   // workers are ES modules, and the default 'iife' format silently breaks them.
   worker: { format: 'es' },
   server: {
@@ -60,7 +60,7 @@ export default defineConfig({
     },
   },
   build: {
-    // No SSR — this is a localhost app (SPEC §6.8).
+    // No SSR — this is a localhost app.
     target: 'es2023',
     sourcemap: true,
   },

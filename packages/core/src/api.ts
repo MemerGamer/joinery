@@ -1,5 +1,5 @@
 /**
- * The HTTP contract (§10), imported by the server, the web app, and the CLI.
+ * The HTTP contract, imported by the server, the web app, and the CLI.
  *
  * Each entry carries its method, a path builder, and zod schemas for body and
  * response — so renaming a route or changing a payload is a compile error in
@@ -37,7 +37,7 @@ export const errorResponseSchema = z.object({
       'internal',
     ]),
     message: z.string(),
-    /** Actionable next step, e.g. the exact `git worktree repair` command (§4). */
+    /** Actionable next step, e.g. the exact `git worktree repair` command. */
     hint: z.string().optional(),
   }),
 });
@@ -280,7 +280,7 @@ export const api = {
     /**
      * `rev` scopes the returned line positions to a revision other than the
      * review's persisted current one — projected at read time, never
-     * persisted (SPEC §5 "Threads across snapshots"). Omitted means the
+     * persisted. Omitted means the
      * persisted revision's stored positions, as before.
      */
     query: z.object({ status: z.enum(['open', 'resolved']).optional(), rev: revisionSchema.optional() }),

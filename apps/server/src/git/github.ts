@@ -1,6 +1,5 @@
 /**
- * PR discovery via the `gh` CLI (SPEC §5, remote poll; SPEC §4 "open any
- * branch or PR from the web UI"). Every function here follows the same
+ * PR discovery via the `gh` CLI. Every function here follows the same
  * rule: a missing or unauthenticated `gh` is data ("no PR known", "gh
  * unavailable"), never a thrown error — the caller never has to wrap these
  * in a try/catch to stay up.
@@ -39,7 +38,7 @@ export async function findOpenPrNumberForBranch(
 
 // `statusCheckRollup` items come in two incompatible shapes depending on
 // whether the check is a GitHub Actions "check run" or a legacy commit
-// "status context" — see PLAN.md §2b. Every field is optional and the
+// "status context" — every field is optional and the
 // object is `.passthrough()`, so a shape gh changes tomorrow just carries no
 // signal instead of throwing; the whole array further `.catch([])`s so a
 // totally different `statusCheckRollup` shape degrades this PR's `ci` to
@@ -140,8 +139,7 @@ export type ListOpenPullsResult = {
 
 /**
  * List open, same-repo PRs via `gh pr list`. Fork PRs are out of scope
- * (SPEC §4 "Taking over someone else's PR" covers why they're a harder,
- * deliberately deferred case) — `gh pr list` run inside the registered
+ * (a harder, deliberately deferred case) — `gh pr list` run inside the registered
  * clone already only returns PRs against *this* repo, so no extra filtering
  * is needed here to exclude forks from other repos entirely; a fork PR
  * that targets this repo would still appear, and is handled the same as
@@ -217,7 +215,7 @@ export type ResolvedPr = {
  * Resolve a single PR number to its `(headRefName, baseRefName)` — the pair
  * that lets `POST /api/reviews` create/find the review at `(repo,
  * headRefName)` with `baseRef` set to the PR's *real* base, not the repo
- * default (stacked PRs diff against their actual base, SPEC §4). Returns
+ * default (stacked PRs diff against their actual base). Returns
  * `null` on any failure (missing/unauthed `gh`, unknown PR number, or a
  * malformed response) — the route turns that into a `badRequest`, since
  * unlike the "detectors" use above, the caller explicitly asked for this

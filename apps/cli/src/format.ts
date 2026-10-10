@@ -1,6 +1,6 @@
 /**
  * Compact human-readable output helpers. No colour codes when stdout is not
- * a TTY (SPEC §10). `--json` mode never calls into this module — it prints
+ * a TTY. `--json` mode never calls into this module — it prints
  * the parsed API response verbatim.
  */
 

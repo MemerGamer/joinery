@@ -1,5 +1,5 @@
 /**
- * `review` — one row per `(repo, branch)` (§4). A detached review starts as
+ * `review` — one row per `(repo, branch)`. A detached review starts as
  * `(repo, pinned_sha)` with a null branch and adopts one later, in place.
  */
 import { review } from '@review/core/db';
@@ -29,7 +29,7 @@ function toReview(row: typeof review.$inferSelect): Review {
 
 export type CreateReviewInput = {
   readonly repoId: string;
-  /** Exactly one of `branch` / `pinnedSha` identifies a fresh review (§4). */
+  /** Exactly one of `branch` / `pinnedSha` identifies a fresh review. */
   readonly branch: string | null;
   readonly pinnedSha: string | null;
   readonly baseRef: string;
@@ -127,7 +127,7 @@ export async function setStatus(db: Db, id: string, status: ReviewStatus): Promi
 }
 
 /**
- * Mark `id` as opened now (§1): `GET /api/reviews/:id` calls this after
+ * Mark `id` as opened now: `GET /api/reviews/:id` calls this after
  * building its response, so "unread agent replies" is measured against the
  * *previous* open, not the one currently in flight. Bypasses the `update()`
  * helper above since `lastOpenedAt` is set to a raw `unixepoch()` SQL
@@ -145,7 +145,7 @@ export async function touchOpened(db: Db, id: string): Promise<Review> {
 }
 
 /**
- * Adopt a branch on a `(repo, sha)` review (§4): the review upgrades in
+ * Adopt a branch on a `(repo, sha)` review: the review upgrades in
  * place, keeping every thread and viewed check. `branch` fills in,
  * `pinned_sha` clears.
  */

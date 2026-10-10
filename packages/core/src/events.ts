@@ -1,5 +1,5 @@
 /**
- * The WS contract (§5, *Transport*).
+ * The WS contract (Transport).
  *
  * The server sends the *current* file list; the client set-diffs it against the
  * one it holds. There is no delta protocol, no snapshot handshake, and no
@@ -51,7 +51,7 @@ export const serverEventSchema = z.discriminatedUnion('type', [
     reviewId: z.string(),
     run: agentRunSchema,
   }),
-  /** Token-level streaming from `includePartialMessages` (§9). */
+  /** Token-level streaming from `includePartialMessages`. */
   z.object({
     type: z.literal('run.delta'),
     reviewId: z.string(),
@@ -96,7 +96,7 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
    */
   z.object({ type: z.literal('subscribe'), reviewId: z.string(), revision: revisionSchema.optional() }),
   z.object({ type: z.literal('unsubscribe'), reviewId: z.string() }),
-  /** Window focus: the engine ticks and refetches the remote (§5). */
+  /** Window focus: the engine ticks and refetches the remote. */
   z.object({ type: z.literal('focus'), reviewId: z.string() }),
   z.object({ type: z.literal('blur'), reviewId: z.string() }),
   z.object({ type: z.literal('ping') }),

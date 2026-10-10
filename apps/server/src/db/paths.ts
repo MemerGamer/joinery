@@ -1,5 +1,5 @@
 /**
- * Resolves the on-disk layout of the `data/` directory (SPEC §3).
+ * Resolves the on-disk layout of the `data/` directory.
  *
  * Everything lives under `data/` **inside the app**, never in a user
  * dot-folder, overridable with `REVIEW_DATA_DIR`:

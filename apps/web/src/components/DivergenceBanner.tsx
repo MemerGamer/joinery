@@ -1,5 +1,5 @@
 /**
- * The §4 divergence treatment. `0 N` (remote ahead) is the worst failure mode
+ * The divergence treatment. `0 N` (remote ahead) is the worst failure mode
  * of a local-first reviewer — commenting on code that's already been
  * rewritten — so it is a loud banner, never a subtle indicator.
  *

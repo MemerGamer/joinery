@@ -6,7 +6,7 @@ import { getLatestReadingOrder, writeReadingOrderPlan } from '../../src/db/readi
 import { readingOrder } from '@review/core/db';
 import { eq } from 'drizzle-orm';
 
-describe('reading order versioning (§7, §13.3)', () => {
+describe('reading order versioning', () => {
   test('regenerating writes a new version, retains the old one, and returns the newest', async () => {
     const { db, close } = await setupTestDb();
     try {

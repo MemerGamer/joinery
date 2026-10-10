@@ -17,7 +17,7 @@ function file(overrides: Partial<FileEntry>): FileEntry {
   };
 }
 
-describe('buildReadingOrderPrompt (SPEC §9 reading_order run)', () => {
+describe('buildReadingOrderPrompt (reading_order run)', () => {
   test('lists every changed file by exact path', () => {
     const files = [file({ path: 'apps/server/src/agent/runs.ts' }), file({ path: 'SPEC.md', status: 'added', oldPath: null })];
     const prompt = buildReadingOrderPrompt(files);

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { apiFetch, setupHttp } from './helpers.ts';
 
-describe('auth (SPEC §10): bearer token on /api/*', () => {
+describe('auth: bearer token on /api/*', () => {
   test('rejects a missing token with 401', async () => {
     const fixture = await setupHttp();
     try {

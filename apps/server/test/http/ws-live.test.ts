@@ -1,5 +1,5 @@
 /**
- * Real `WS /api/events` dispatch coverage (SPEC §9). Unlike the rest of the
+ * Real `WS /api/events` dispatch coverage. Unlike the rest of the
  * http suite, these tests drive an actual `Bun.serve` on an ephemeral port
  * (`port: 0`, read back off the server — see `startLiveServer` in
  * `helpers.ts`) with a real `WebSocket` client, because hono's Bun adapter
@@ -160,7 +160,7 @@ function expectEventType<T extends ServerEvent['type']>(evt: ServerEvent, type: 
  * fixture, so `head` off an unattached branch ref is what keeps the two
  * reviews from fighting over the filesystem. A *pinned-sha* review was
  * tried first, but its every commit is reachable from `feature` (already
- * `fixture.review`'s branch), so SPEC §4 auto-adoption (`#maybeAdoptBranch`)
+ * `fixture.review`'s branch), so auto-adoption (`#maybeAdoptBranch`)
  * raced to claim the same `(repo, branch)` row and hit the unique index.
  */
 async function createSecondReview(fixture: HttpFixture & { repo: { id: string } }) {

@@ -1,7 +1,7 @@
 @import 'tailwindcss';
 
 /*
- * SPEC §3: Linear's feel comes from the token set — tight spacing scale,
+ * Linear's feel comes from the token set — tight spacing scale,
  * low-contrast chrome, one accent, fast short transitions — not a component
  * library. Light/dark app chrome are separate CSS-variable sets.
  */
@@ -42,7 +42,7 @@
   --chrome-radius-md: 6px;
   --chrome-radius-lg: 10px;
   /*
-   * Spacing scale (SPEC §6 density pass). Every chrome component should
+   * Spacing scale. Every chrome component should
    * round to one of these five steps rather than picking ad-hoc values:
    *   1 = 4px  — icon-to-glyph, tightest pairing
    *   2 = 8px  — gaps inside a control, list-item internal gaps
@@ -61,7 +61,7 @@
   --chrome-space-4: 16px;
   --chrome-space-5: 24px;
   /*
-   * Type scale (SPEC §6 density pass). Four roles, nothing else — no
+   * Type scale. Four roles, nothing else — no
    * `text-sm`, no `text-[15px]`, no `text-[12px]` (use `text-xs`):
    *   body      = 13px — default UI text, file names, step titles
    *   secondary = 12px (`text-xs`) — row metadata, explanations
@@ -322,7 +322,7 @@ body {
 /**
  * A left-to-right sweep over a control's own background, marking "this is
  * the selection you just made and its content is still loading" — used by
- * the revision picker (SPEC §4), where the click and the painted diff are
+ * the revision picker, where the click and the painted diff are
  * separated by a round trip.
  *
  * The sweep rides in an ::after overlay rather than animating the element's

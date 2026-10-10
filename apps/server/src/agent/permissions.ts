@@ -1,7 +1,6 @@
 /**
- * Read-only, path-fenced enforcement for embedded agent runs (SPEC §9,
- * PLAN.md "agent reply mechanism", design decision 1 — non-negotiable, since
- * these agents run against the user's real repo).
+ * Read-only, path-fenced enforcement for embedded agent runs. This is
+ * non-negotiable, since these agents run against the user's real repo.
  *
  * The embedded agent (reading order, thread reply) gets **no shell at all**:
  *  - `disallowedTools` (set by each run's caller) includes `'Bash'` alongside
@@ -83,6 +82,6 @@ export function makeAgentCanUseTool(options: MakeAgentCanUseToolOptions): CanUse
         ? ALLOW(input)
         : DENY(`"${candidate}" is outside this run's directory (${options.cwd})`);
     }
-    return DENY(`tool "${toolName}" is not permitted for this agent run (no shell — PLAN.md "agent reply mechanism")`);
+    return DENY(`tool "${toolName}" is not permitted for this agent run (no shell)`);
   };
 }

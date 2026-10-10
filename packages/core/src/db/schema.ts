@@ -27,9 +27,9 @@ export const repo = sqliteTable(
 
 /**
  * A review is `(repo, branch)`. A detached review starts as `(repo, pinned_sha)`
- * with a null branch and adopts one later, in place (§4).
+ * with a null branch and adopts one later, in place.
  *
- * Root attachment is resolved from git on every tick (§4) and is not stored
+ * Root attachment is resolved from git on every tick and is not stored
  * here — `ReviewState.root.attachedPath` is the live value.
  */
 export const review = sqliteTable(
@@ -45,13 +45,13 @@ export const review = sqliteTable(
     prNumber: integer('pr_number'),
     /**
      * 'working' | 'head' | 'pr' — validated by `revisionSchema` at the
-     * boundary. NULL means the user has never chosen: the §13.2 default
-     * applies instead of a stored value.
+     * boundary. NULL means the user has never chosen: the default applies
+     * (working when attached, else head) instead of a stored value.
      */
     currentRevision: text('current_revision'),
-    /** PR head SHA last rendered, for the "changes since you last looked" view (§4). */
+    /** PR head SHA last rendered, for the "changes since you last looked" view. */
     lastSeenPrSha: text('last_seen_pr_sha'),
-    /** Unix seconds the review was last opened via `GET /api/reviews/:id`; null means never (§1, "unread agent replies"). */
+    /** Unix seconds the review was last opened via `GET /api/reviews/:id`; null means never ("unread agent replies"). */
     lastOpenedAt: integer('last_opened_at'),
     status: text('status').notNull().default('open'),
     createdAt: integer('created_at').notNull().default(now),
@@ -80,7 +80,7 @@ export const agentWorktree = sqliteTable(
   (t) => [primaryKey({ columns: [t.repoId, t.sha] })],
 );
 
-/** Regenerating supersedes rather than replaces: old versions are retained (§13.3). */
+/** Regenerating supersedes rather than replaces: old versions are retained. */
 export const readingOrder = sqliteTable(
   'reading_order',
   {
@@ -124,7 +124,7 @@ export const stepFile = sqliteTable(
 
 /**
  * Keyed by blob SHA, so a changed blob simply fails to match and the check
- * clears itself. There is no invalidation code (§5).
+ * clears itself. There is no invalidation code.
  */
 export const fileViewed = sqliteTable(
   'file_viewed',
@@ -159,7 +159,7 @@ export const thread = sqliteTable(
     /** 'open' | 'resolved' */
     status: text('status').notNull().default('open'),
     outdated: integer('outdated', { mode: 'boolean' }).notNull().default(false),
-    /** Set when the anchored lines changed after the thread was written (§5). */
+    /** Set when the anchored lines changed after the thread was written. */
     changedSinceComment: integer('changed_since_comment', { mode: 'boolean' })
       .notNull()
       .default(false),
@@ -219,7 +219,7 @@ export const agentRun = sqliteTable(
     /** 'pending' | 'running' | 'done' | 'error' | 'cancelled' */
     status: text('status').notNull().default('pending'),
     sessionId: text('session_id'),
-    /** JSON `{resume, resumeSessionAt, turnCount}` so runs survive a restart (§9). */
+    /** JSON `{resume, resumeSessionAt, turnCount}` so runs survive a restart. */
     resumeCursor: text('resume_cursor'),
     startedAt: integer('started_at').notNull().default(now),
     endedAt: integer('ended_at'),

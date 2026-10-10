@@ -1,6 +1,6 @@
 /**
- * A short-lived, per-repo cache in front of `listOpenPulls` (SPEC §1
- * Homebase, §4 PR discovery): `gh pr list` is a network round trip, and
+ * A short-lived, per-repo cache in front of `listOpenPulls`: `gh pr list`
+ * is a network round trip, and
  * Homebase/Explore both want it warm without hammering `gh` on every
  * keystroke or focus refetch.
  *

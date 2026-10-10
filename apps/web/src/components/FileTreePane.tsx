@@ -1,5 +1,5 @@
 /**
- * Left pane: the changed-files tree (SPEC §6). Static — never reordered by
+ * Left pane: the changed-files tree. Static — never reordered by
  * the reading order — with git-status decorations and per-file "viewed"
  * checks in the row.
  *

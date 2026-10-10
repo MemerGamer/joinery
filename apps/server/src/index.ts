@@ -1,5 +1,5 @@
 /**
- * Server entrypoint (SPEC §3, §10): run migrations, ensure the data dir and
+ * Server entrypoint: run migrations, ensure the data dir and
  * bearer token, start the HTTP + WS server bound to `127.0.0.1` only, log
  * the URL, and dispose engines/cat-file processes cleanly on shutdown. Also
  * fails agent runs orphaned by the previous process and keeps the agent

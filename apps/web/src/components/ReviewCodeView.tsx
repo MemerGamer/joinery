@@ -1,5 +1,5 @@
 /**
- * The centre pane: one `CodeView` for the whole review (SPEC §6) — never one
+ * The centre pane: one `CodeView` for the whole review — never one
  * `FileDiff` per file. Items are the file list, in reading-order-adjacent
  * sequence. The current step's title + explanation live in the reading-order
  * pane instead of a header here (see ReadingOrderPane.tsx); `lineAnnotations`
@@ -250,7 +250,7 @@ export function ReviewCodeView(): React.JSX.Element {
         } as React.CSSProperties
       }
       // The right-hand side of each file's title bar: the GitHub-style
-      // "viewed" check (SPEC §6). Kept to a single compact row so it stays
+      // "viewed" check. Kept to a single compact row so it stays
       // inside the header's `1lh + gap * 3` min-height — a taller control
       // here would silently invalidate DIFF_HEADER_HEIGHT above.
       renderHeaderMetadata={(item: CodeViewItem<ThreadAnnotationMeta>) => {

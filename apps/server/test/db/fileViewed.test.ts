@@ -4,7 +4,7 @@ import { upsertRepo } from '../../src/db/repos.ts';
 import { createReview } from '../../src/db/reviews.ts';
 import { isViewed, listViewed, markViewed } from '../../src/db/fileViewed.ts';
 
-describe('file_viewed (§5, §7): keyed by blob SHA, no invalidation code', () => {
+describe('file_viewed: keyed by blob SHA, no invalidation code', () => {
   test('a changed blob simply fails to match and the check clears itself', async () => {
     const { db, close } = await setupTestDb();
     try {

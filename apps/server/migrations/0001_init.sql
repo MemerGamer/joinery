@@ -69,7 +69,7 @@ CREATE TABLE step_file (
 );
 
 -- Keyed by blob SHA, so a changed blob simply fails to match and the check
--- clears itself. There is no invalidation code (SPEC §5).
+-- clears itself. There is no invalidation code.
 CREATE TABLE file_viewed (
   review_id  text NOT NULL REFERENCES review (id) ON DELETE CASCADE,
   path       text NOT NULL,

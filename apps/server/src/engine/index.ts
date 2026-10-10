@@ -1,4 +1,4 @@
-/** Public surface of the branch state engine (SPEC §5). */
+/** Public surface of the branch state engine. */
 export { ReviewEngine, type ReviewEngineParams } from './reviewEngine.ts';
 export { EngineRegistry, type EventListener } from './registry.ts';
 export { resolveRoot, type RootResolution } from './root.ts';

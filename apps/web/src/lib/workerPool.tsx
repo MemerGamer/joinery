@@ -1,5 +1,5 @@
 /**
- * The Pierre worker pool (SPEC §6, performance checklist items 2 and 3).
+ * The Pierre worker pool.
  *
  * Theme is pool-owned once a pool exists: `theme`, `lineDiffType`, and
  * `tokenizeMaxLineLength` all come from here, and per-`CodeView` options are
@@ -18,7 +18,7 @@ const workerFactory = (): Worker =>
 
 const poolSize = Math.max(1, (navigator.hardwareConcurrency || 4) - 1);
 
-// Module-scope so identity never changes across renders (perf checklist #4).
+// Module-scope so identity never changes across renders.
 const poolOptions = {
   workerFactory,
   poolSize,
@@ -49,7 +49,7 @@ export interface CoordinatedThemeChange {
 
 /**
  * One coordinated, debounced action across the app chrome and the diff
- * theme (SPEC §6). Callers pass the new diff-theme value; this hook returns a
+ * theme. Callers pass the new diff-theme value; this hook returns a
  * setter that debounces the `setRenderOptions()` call (which clears the
  * render cache and re-renders everything) so rapid picker clicks collapse
  * into a single re-render.

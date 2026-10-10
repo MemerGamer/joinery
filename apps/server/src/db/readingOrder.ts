@@ -1,7 +1,7 @@
 /**
- * `reading_order` + `step` + `step_file` (§7). Regenerating writes a **new
+ * `reading_order` + `step` + `step_file`. Regenerating writes a **new
  * version** rather than replacing: old versions are retained, so progress and
- * threads survive a regenerate (§13.3).
+ * threads survive a regenerate.
  */
 import { readingOrder, step, stepFile } from '@review/core/db';
 import type { ReadingOrder, ReadingOrderPlan, Step } from '@review/core';

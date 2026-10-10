@@ -1,6 +1,6 @@
 /**
- * `errorResponseSchema` (`code`, `message`, optional actionable `hint`, SPEC
- * §10) as a throwable, plus the Hono error handler that renders it.
+ * `errorResponseSchema` (`code`, `message`, optional actionable `hint`) as a
+ * throwable, plus the Hono error handler that renders it.
  */
 import type { Context } from 'hono';
 import type { ErrorResponse } from '@review/core';

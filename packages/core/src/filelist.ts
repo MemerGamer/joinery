@@ -1,5 +1,5 @@
 /**
- * The set-diff (§5, *The delta*).
+ * The set-diff (the delta).
  *
  * The list *is* the state: to detect change you compare the new list against
  * the old one, and the set difference is the delta. There is no digest, no
@@ -15,7 +15,7 @@ export type FileListDelta = {
   removed: FileEntry[];
   /** `mutate the item's fileDiff in place and bump item.version` on the client. */
   changed: { before: FileEntry; after: FileEntry }[];
-  /** Rename entries, so `thread.path` and `file_viewed.path` are rewritten (§6). */
+  /** Rename entries, so `thread.path` and `file_viewed.path` are rewritten. */
   renamed: { from: string; to: string }[];
 };
 
@@ -70,7 +70,7 @@ export function diffFileLists(before: readonly FileEntry[], after: readonly File
 
 /**
  * Apply a delta to a sorted list without re-sorting it: an added file is
- * spliced in at its sorted position so nothing else shifts (§5).
+ * spliced in at its sorted position so nothing else shifts.
  */
 export function applyDelta(current: readonly FileEntry[], delta: FileListDelta): FileEntry[] {
   const removed = new Set(delta.removed.map((f) => f.path));
@@ -92,7 +92,7 @@ export function applyDelta(current: readonly FileEntry[], delta: FileListDelta):
 /**
  * The canonical order, used both to sort a fresh list and to place an added
  * file into an existing one — they must agree or an insert lands in the wrong
- * spot. Generated files sort to the bottom, mirroring GitHub (§6).
+ * spot. Generated files sort to the bottom, mirroring GitHub.
  */
 export function compareFileEntries(a: FileEntry, b: FileEntry): number {
   if (a.generated !== b.generated) return a.generated ? 1 : -1;

@@ -1,6 +1,6 @@
 /**
- * Every path comparison in the engine goes through this one function (SPEC
- * §4 "Reported paths are realpaths", §14). Git resolves symlinks and reports
+ * Every path comparison in the engine goes through this one function. Git
+ * resolves symlinks and reports
  * canonical paths — on macOS a worktree at `/tmp/x` lists as `/private/tmp/x`
  * — so attach lookup, dedupe, refcounting, and "is this the root I'm
  * watching" all normalize through realpath first, or they silently fail to

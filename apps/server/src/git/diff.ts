@@ -1,5 +1,5 @@
 /**
- * Per-file patch and both-sides file contents (SPEC §6): the `FilePatch` and
+ * Per-file patch and both-sides file contents: the `FilePatch` and
  * `FileContents` types from `@review/core`. Patches are fetched per file on
  * demand, never shipped whole ("Never ship the whole patch" — a full 200-file
  * patch is 2.5 MB, the file list is a few KB). Context is trimmed by scoping
@@ -87,7 +87,7 @@ export type GetFileContentsParams = {
   path: string;
   oldBlob: string;
   newBlob: string;
-  /** The repo's long-lived `cat-file --batch` handle (SPEC §6). */
+  /** The repo's long-lived `cat-file --batch` handle. */
   catFile: CatFile;
 };
 

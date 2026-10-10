@@ -1,5 +1,5 @@
 /**
- * `repo` — a registered local clone, keyed by its canonical root path (§3, §4).
+ * `repo` — a registered local clone, keyed by its canonical root path.
  */
 import { repo } from '@review/core/db';
 import type { Repo } from '@review/core';

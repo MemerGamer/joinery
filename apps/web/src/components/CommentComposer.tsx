@@ -1,6 +1,6 @@
 /**
  * The comment composer, used both for a new draft thread (opened via the
- * gutter `+` utility, SPEC §6) and for replies within an existing thread.
+ * gutter `+` utility) and for replies within an existing thread.
  * `Enter` inserts a newline; `Cmd+Enter` submits. "Ask" has no shortcut.
  *
  * "Ask ▾ Model" (`AskButton`) submits and asks the picked model to reply;

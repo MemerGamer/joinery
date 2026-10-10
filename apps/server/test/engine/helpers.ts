@@ -120,7 +120,7 @@ export async function setupRepo(branch = 'feature'): Promise<TestFixture> {
   };
 }
 
-/** `setupRepo` plus a review attached to `branch`, defaulted to `working` since it's attached (SPEC §13.2). */
+/** `setupRepo` plus a review attached to `branch`, defaulted to `working` since it's attached. */
 export async function setupRepoAndReview(branch = 'feature'): Promise<TestFixture & { review: Review }> {
   const ctx = await setupRepo(branch);
   const review = await createReview(ctx.db, {

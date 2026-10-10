@@ -1,5 +1,5 @@
 /**
- * `Cmd+K` command palette (SPEC §11): a Linear-style, mode-scoped launcher.
+ * `Cmd+K` command palette: a Linear-style, mode-scoped launcher.
  *
  * The default (root) mode ranks a small, bounded set of jump targets — files,
  * reading-order steps, open threads — rather than dumping every file, every
@@ -9,7 +9,7 @@
  *
  *   `>`  commands   — actions: generate reading order, switch revision,
  *                     toggle panels, diff style, expand/collapse all
- *   `#`  themes     — all 75 diff themes (SPEC §6, *ship all 75*), never a
+ *   `#`  themes     — all 75 diff themes, never a
  *                     truncated slice
  *   `@`  reviews    — switch to another open review
  *
@@ -160,7 +160,7 @@ export function CommandPalette({
   }, [open, initialMode]);
 
   // listThemeOptions() was being called on every render — memoize it, and
-  // never slice it: all 75 themes stay reachable (SPEC §6).
+  // never slice it: all 75 themes stay reachable.
   const themeOptions = useMemo(() => listThemeOptions(), []);
   const colorblindThemes = useMemo(() => themeOptions.filter((o) => o.colorblindSafe), [themeOptions]);
   const otherThemes = useMemo(() => themeOptions.filter((o) => !o.colorblindSafe), [themeOptions]);
@@ -178,7 +178,7 @@ export function CommandPalette({
     return defaultFilter(value, q);
   }, []);
 
-  // Live theme preview (SPEC-adjacent polish): moving the highlighted row in
+  // Live theme preview: moving the highlighted row in
   // theme mode applies that theme immediately, so scrolling through with the
   // arrow keys previews each one as you go. `previewRef` remembers the theme
   // that was active *before* the user entered theme mode, and whether they

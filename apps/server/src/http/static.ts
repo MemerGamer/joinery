@@ -1,5 +1,5 @@
 /**
- * Serves the built web app from `apps/web/dist` when it exists (SPEC §10),
+ * Serves the built web app from `apps/web/dist` when it exists,
  * falling back to a clear message when it doesn't — the web app is being
  * built concurrently by another agent, so this module must not assume its
  * files exist.
@@ -28,7 +28,7 @@ export function mountStatic(app: Hono, webDistDir: string, token: string): void 
 
   if (hasWebDist) {
     // Assets are served as-is, but index.html gets the current bearer token
-    // substituted on every request (SPEC §3). Reading it per request rather
+    // substituted on every request. Reading it per request rather
     // than caching keeps a rotated token working without a restart.
     app.get('/', (c) => c.html(readFileSync(indexPath, 'utf8').replaceAll(TOKEN_PLACEHOLDER, token)));
     app.use('/*', serveStatic({ root: webDistDir }));

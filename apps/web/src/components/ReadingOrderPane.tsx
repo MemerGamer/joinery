@@ -1,5 +1,5 @@
 /**
- * Right pane: the reading order (SPEC §1, §7). Agent-generated, read-only,
+ * Right pane: the reading order. Agent-generated, read-only,
  * regenerable — regenerating supersedes rather than replaces. The threads
  * panel slides over this pane rather than replacing it. Each step's title +
  * explanation render here (not in the code view's header, see

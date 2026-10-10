@@ -1,7 +1,6 @@
 /**
- * `git worktree list --porcelain` parsing and the worktree registry rules
- * from SPEC §4 ("Worktrees in arbitrary locations" and "Agent worktrees are
- * a cache, not state").
+ * `git worktree list --porcelain` parsing and the worktree registry rules.
+ * Agent worktrees are a cache, not state.
  *
  * **The engine never prunes, moves, repairs, or removes a worktree it did
  * not create.** `git worktree prune` is global — there is no
@@ -105,7 +104,7 @@ export function parseWorktreeListPorcelain(text: string): WorktreeEntry[] {
 
 /**
  * `git worktree list --porcelain`, run from any worktree of the repo —
- * location never matters, the registry is central (SPEC §4).
+ * location never matters, the registry is central.
  */
 export async function listWorktrees(options: GitCallOptions): Promise<WorktreeEntry[]> {
   const result = await gitOrThrow(['worktree', 'list', '--porcelain'], options);
@@ -116,8 +115,8 @@ export async function listWorktrees(options: GitCallOptions): Promise<WorktreeEn
 /**
  * Find which worktree, if any, currently holds `branch` (a short name like
  * `feat/x`, matched against the `refs/heads/<branch>` ref reported by
- * `worktree list`). Paths are canonicalized before comparison and return, per
- * SPEC §4 "Reported paths are realpaths".
+ * `worktree list`). Paths are canonicalized before comparison and returned as
+ * realpaths.
  */
 export async function findWorktreeForBranch(
   branch: string,
@@ -141,14 +140,14 @@ export type CreateDetachedWorktreeParams = {
   sha: string;
   /** Absolute path to create the worktree at; must resolve under `dataDir`. */
   path: string;
-  /** The data directory writes are scoped under (SPEC §5, write allowlist). */
+  /** The data directory that writes are scoped under. */
   dataDir: string;
 };
 
 /**
  * Create a detached worktree at `sha` under the data directory. Always
  * `--detach`, so it never holds a branch and can never collide with a
- * checkout elsewhere (SPEC §4 "Invariant: a review never holds a branch").
+ * checkout elsewhere.
  */
 export async function createDetachedWorktree(params: CreateDetachedWorktreeParams): Promise<WorktreeEntry> {
   await gitOrThrow(['worktree', 'add', '--detach', params.path, params.sha], {
@@ -181,7 +180,7 @@ export type ScopedRemoveParams = {
 
 /**
  * Remove a worktree *we created*. This is deliberately not `git worktree
- * remove` or `git worktree prune` — SPEC §4 prescribes exactly this recipe
+ * remove` or `git worktree prune`. The recipe is
  * (`rm -rf` the directory, then delete exactly the one registry entry)
  * because it must work even when the directory is already gone, and because
  * `prune` is global and could destroy a co-resident worktree we don't own.
@@ -207,7 +206,7 @@ export async function scopedRemoveWorktree(params: ScopedRemoveParams): Promise<
   });
 }
 
-/** Identity of an agent-run worktree: `(repo, sha)`, deduped by us (SPEC §4). */
+/** Identity of an agent-run worktree: `(repo, sha)`, deduped by us. */
 export function worktreeDirName(shaShort: string, branchSlug: string | null): string {
   return branchSlug === null || branchSlug === '' ? shaShort : `${shaShort}-${branchSlug}`;
 }

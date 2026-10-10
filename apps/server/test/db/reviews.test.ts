@@ -5,7 +5,7 @@ import { adoptBranch, createReview, findReviewByBranch, getReview } from '../../
 import { createThread, listThreadsByReview } from '../../src/db/threads.ts';
 import { listViewed, markViewed } from '../../src/db/fileViewed.ts';
 
-describe('branch adoption (§4)', () => {
+describe('branch adoption', () => {
   test('a (repo, sha) review adopts a branch in place, keeping threads and viewed checks', async () => {
     const { db, close } = await setupTestDb();
     try {

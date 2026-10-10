@@ -1,5 +1,5 @@
 /**
- * Thread anchoring and re-anchoring (SPEC §8, §5 "Threads across snapshots").
+ * Thread anchoring and re-anchoring.
  *
  * An anchor is `(path, side, line range, blob SHA, hash of +-3 context
  * lines)`. `anchorContext` is the literal captured text; `anchorContextHash`
@@ -8,7 +8,7 @@
  * original capture stays valid across every future relocation. Only
  * `startLine`/`endLine`/`anchorBlobSha` change when a relocation succeeds.
  *
- * Known limitation (documented in IMPROVEMENTS.md): the number of "before"
+ * Known limitation: the number of "before"
  * context lines captured is re-derived from the thread's *current* stored
  * `startLine` each time, rather than persisted from the original capture.
  * This is exact except when a thread was created within `CONTEXT_RADIUS`
@@ -16,8 +16,7 @@
  * boundary clipping would have differed — a rare edge the schema has no
  * column to store precisely (no `before_count` field).
  *
- * Whitespace/line-ending normalization (2026-09-11, IMPROVEMENTS.md
- * "anchoring"): traced the read path feeding `captureContext`/`relocate`
+ * Whitespace/line-ending normalization (2026-09-11): traced the read path feeding `captureContext`/`relocate`
  * back through `reviewEngine.ts#reanchorThreads` and `routes.ts`'s
  * thread-creation handler into `git/diff.ts#getFileContents`. Committed
  * sides come back verbatim from `cat-file --batch` — whatever bytes git
@@ -135,7 +134,7 @@ export type RelocateResult = {
  * Search `newLines` for the thread's captured context. Returns the new line
  * range on a hit, or null on a miss (caller marks the thread `outdated`).
  *
- * Ambiguity policy (Issue 1, 2026-09-11, see IMPROVEMENTS.md "anchoring"):
+ * Ambiguity policy:
  * duplicated context is realistic (boilerplate, repeated test cases,
  * `} catch (e) {`, copy-pasted functions), and the old behaviour — silently
  * take the earliest match — was a coin flip dressed up as certainty: a

@@ -1,4 +1,4 @@
-/** Small helpers to validate a route's query/body against its `api` schema (SPEC §10). */
+/** Small helpers to validate a route's query/body against its `api` schema. */
 import type { Context } from 'hono';
 import type { z } from 'zod';
 import { badRequest } from './errors.ts';

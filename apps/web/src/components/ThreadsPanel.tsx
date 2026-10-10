@@ -1,5 +1,5 @@
 /**
- * The threads panel (SPEC §1): slides over the reading-order pane. It is an
+ * The threads panel: slides over the reading-order pane. It is an
  * index and jump-to surface only — threads themselves render inline in the
  * diff via `ThreadArticle`.
  */

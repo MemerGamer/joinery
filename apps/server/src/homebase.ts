@@ -1,5 +1,5 @@
 /**
- * Composes `ReviewSummary` for `GET /api/reviews` (§1): the DB aggregate
+ * Composes `ReviewSummary` for `GET /api/reviews`: the DB aggregate
  * (`summarizeReviews`) plus per-review git stats plus the matching PR from
  * the `gh` cache. Lives at the top level (not `db/` or `git/`) because it
  * depends on both and belongs to neither.
@@ -39,7 +39,7 @@ async function mapLimit<T, R>(
   return results;
 }
 
-/** The PR matching `review`, by `prNumber` first, else `headRefName === review.branch` (§1). */
+/** The PR matching `review`, by `prNumber` first, else `headRefName === review.branch`. */
 function findMatchingPull(review: Review, pulls: readonly PullSummary[]): PullSummary | null {
   if (review.prNumber !== null) {
     const byNumber = pulls.find((p) => p.number === review.prNumber);
@@ -53,7 +53,7 @@ function findMatchingPull(review: Review, pulls: readonly PullSummary[]): PullSu
 }
 
 /**
- * Build the full `ReviewSummary[]` for `reviews` (§1): one `summarizeReviews`
+ * Build the full `ReviewSummary[]` for `reviews`: one `summarizeReviews`
  * call for every id, repos loaded once, then per review (bounded concurrency)
  * git stats + the matching PR. `options.refresh` bypasses the `gh` cache.
  */

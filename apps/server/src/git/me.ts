@@ -1,6 +1,6 @@
 /**
- * "Who am I" for the web UI's greeting and for `reviewRequested` (SPEC §4,
- * §1 Homebase greeting): the local git identity plus the `gh` login, each
+ * "Who am I" for the web UI's greeting and for `reviewRequested`: the local
+ * git identity plus the `gh` login, each
  * resolved once and cached for the process lifetime. A failed resolution is
  * NOT cached — the next call tries again — but a successful one is, so a
  * `gh` hiccup on startup doesn't wedge the login in `null` forever while

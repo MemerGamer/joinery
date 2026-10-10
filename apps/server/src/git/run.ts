@@ -1,6 +1,5 @@
 /**
- * The single `git()` runner every invocation in this package goes through
- * (SPEC §5 "Concurrency and safety").
+ * The single `git()` runner every invocation in this package goes through.
  *
  * Two rules, both non-negotiable:
  *
@@ -16,11 +15,11 @@
  *      ref required to start with `refs/review/`.
  *    Anything else throws before a process is ever spawned.
  *
- * Scoped worktree *registry-entry* deletion (SPEC §4 "Worktrees in arbitrary
- * locations": `rm -rf` the directory under `data/worktrees`, then delete
- * exactly `$GIT_COMMON_DIR/worktrees/<our-name>`) is a filesystem operation,
+ * Scoped worktree *registry-entry* deletion (`rm -rf` the directory under
+ * `data/worktrees`, then delete exactly `$GIT_COMMON_DIR/worktrees/<our-name>`)
+ * is a filesystem operation,
  * not a git subcommand — there is no `git worktree prune <path>`, and
- * manual `rm -rf` is what SPEC prescribes precisely because it must work
+ * manual `rm -rf` is the prescribed approach precisely because it must work
  * even when the directory is already gone or `git worktree remove` would
  * refuse. That cleanup therefore lives in `worktree.ts` using `node:fs`
  * directly, not through this allowlist.
@@ -73,11 +72,11 @@ const READ_ONLY_SUBCOMMANDS = new Set([
   'remote',
   'show',
   'grep',
-  // Added for the engine's remote poll (SPEC §5, "Detectors"): always called
+  // Added for the engine's remote poll: always called
   // with `--no-write-fetch-head` and never writes the working tree, index,
   // or any ref outside `refs/remotes/*` / the explicit refspec given.
   'fetch',
-  // Added for branch discovery (SPEC §4, "open any branch"): reads refs and
+  // Added for branch discovery: reads refs and
   // their metadata, writes nothing — strictly read-only, like `branch`
   // above, just with a machine-readable format and no ref-listing limits.
   'for-each-ref',

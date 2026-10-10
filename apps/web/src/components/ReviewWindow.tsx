@@ -1,5 +1,5 @@
 /**
- * The review window (SPEC §1): three panes — file tree, `CodeView`, reading
+ * The review window: three panes — file tree, `CodeView`, reading
  * order — plus the header, divergence banner, staged-refresh pill, and the
  * global keymap + command palette.
  */
@@ -102,7 +102,7 @@ function ReviewWindowInner(): React.JSX.Element {
   return (
     <div className="flex h-full flex-col gap-2 bg-chrome-bg-sunken p-2">
       {/*
-       * Islands layout (SPEC): every region — header, divergence banner, file
+       * Islands layout: every region — header, divergence banner, file
        * tree, diff pane, reading order — is its own rounded, bordered box
        * floating on the sunken shell background, with a gap (rather than a
        * shared 1px border) marking the seam.

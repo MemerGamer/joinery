@@ -1,5 +1,5 @@
 /**
- * "N files updated · Refresh" (SPEC §5). Refresh is staged, never automatic
+ * "N files updated · Refresh". Refresh is staged, never automatic
  * in place — applying is a click, never something that happens under the
  * cursor.
  */

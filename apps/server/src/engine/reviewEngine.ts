@@ -1,7 +1,7 @@
 /**
- * One engine actor per review (SPEC §5).
+ * One engine actor per review.
  *
- * Owns the two mutable layers: root binding (§4) and the file list (§5). Runs
+ * Owns the two mutable layers: root binding and the file list. Runs
  * a serialized, debounced tick on any filesystem/git signal, ignoring event
  * payloads entirely — every signal means exactly one thing: run a tick.
  */
@@ -69,7 +69,7 @@ export type ReviewEngineParams = {
 
 /**
  * True when an `fs.watch` filename names one of *our own* bookkeeping refs
- * under `refs/review/` — the head pin and the fetched PR ref (SPEC §4).
+ * under `refs/review/` — the head pin and the fetched PR ref.
  *
  * One `update-ref` produces several distinct paths, and the path is relative
  * to whichever directory fired, so matching a fixed prefix is not enough:
@@ -108,10 +108,10 @@ export class ReviewEngine {
   #attachedPath: string | null = null;
   #detachedReason: RootBinding['detachedReason'] = 'not-checked-out';
   #operationInProgress: GitOperation | null = null;
-  /** Which rung of the §4 fallback ladder last resolved `head`; null until the first tick resolves it. */
+  /** Which rung of the fallback ladder last resolved `head`; null until the first tick resolves it. */
   #headSource: HeadSource | null = null;
   /**
-   * The sha last written to `refs/review/<id>` (SPEC §4's pin), so the tick
+   * The sha last written to `refs/review/<id>` (the head pin), so the tick
    * can skip `update-ref` when `head` didn't move rather than writing it
    * every tick.
    */
@@ -212,9 +212,8 @@ export class ReviewEngine {
 
   /**
    * The cwd/blobs backing the *current* snapshot, for per-file patch/content
-   * fetches (SPEC §6). Scoped to the review's current revision — fetching a
-   * different revision's patch for one file is a documented gap (see
-   * IMPROVEMENTS.md).
+   * fetches. Scoped to the review's current revision — fetching a
+   * different revision's patch for one file is a known gap.
    */
   getRenderContext(): { cwd: string; revision: Revision; baseSha: string; headSha: string } {
     const snapshot = this.#snapshots[this.#resolveEffectiveRevision()];
@@ -295,7 +294,7 @@ export class ReviewEngine {
 
   // Filtered for the same reason as `#onGitSignal` below: when the attached
   // root *is* the main clone, `#syncGitWatcher` collapses the git watch into
-  // this one (SPEC §5), so our own ref writes surface here as
+  // this one, so our own ref writes surface here as
   // `.git/refs/review/...` instead.
   #onRootSignal = (_event: string, filename: string | Buffer | null): void => {
     if (isOwnRefWrite(filename)) return;
@@ -306,7 +305,7 @@ export class ReviewEngine {
   /**
    * Our own bookkeeping refs live under `refs/review/` inside
    * `$GIT_COMMON_DIR` — the `refs/review/<id>` head pin this engine writes
-   * during a tick (SPEC §4) and the `refs/review/pr/<id>` ref the remote
+   * during a tick and the `refs/review/pr/<id>` ref the remote
    * poll fetches into. Both are *our* writes, so treating them as "git
    * changed" makes the engine wake itself: tick -> pin -> watcher fires ->
    * tick -> `#emitState`, broadcasting a spurious `root.rebound` for a
@@ -379,7 +378,7 @@ export class ReviewEngine {
     this.#syncGitWatcher();
   }
 
-  /** Collapses into the root watch when the attached root is the main clone (SPEC §5). */
+  /** Collapses into the root watch when the attached root is the main clone. */
   #syncGitWatcher(): void {
     const gitDir = this.#gitCommonDir;
     const collapsed = gitDir !== null && this.#watchedRoot !== null && isUnderOrEqual(gitDir, this.#watchedRoot);
@@ -410,9 +409,9 @@ export class ReviewEngine {
 
   /**
    * `git fetch --no-write-fetch-head` for the PR ref,
-   * `refs/remotes/origin/<default>` — the second is not optional (SPEC §5):
+   * `refs/remotes/origin/<default>` — the second is not optional:
    * without it the base never advances and the diff silently drifts — and,
-   * when the review's branch has no local ref (rung b of the §4 `head`
+   * when the review's branch has no local ref (rung b of the `head`
    * ladder is dead), `refs/remotes/origin/<branch>` too, so rung c has
    * something fresh to resolve against instead of whatever was fetched once
    * and never touched again.
@@ -477,7 +476,7 @@ export class ReviewEngine {
   }
 
   /**
-   * Discover a PR for `branch` via `gh` (SPEC §5, "Detectors") — checked at
+   * Discover a PR for `branch` via `gh` — checked at
    * most once per `PR_DETECT_POLL_MS`, and never again once found, since
    * `#remotePoll` only calls this while `review.prNumber` is still null.
    */
@@ -493,14 +492,14 @@ export class ReviewEngine {
   }
 
   /**
-   * SPEC §4 `head` fallback ladder: try each rung in priority order and stop
+   * The `head` fallback ladder: try each rung in priority order and stop
    * at the first that resolves, rather than the old single `refs/heads/
    * <branch>` lookup that went dark for a branch that only ever existed on
    * the remote (or that has since been deleted locally). Which rung answered
    * is returned alongside the sha — never just the sha — because collapsing
    * "resolved via the remote-tracking ref" and "resolved via the local
    * branch" into one anonymous `head` is exactly the silent revision-meaning
-   * flip §4 forbids.
+   * flip that must never happen.
    *
    *   a. attached worktree      -> HEAD
    *   b. local branch tip       -> refs/heads/<branch>
@@ -525,7 +524,7 @@ export class ReviewEngine {
     return null;
   }
 
-  // --- the tick (SPEC §5, "The tick") ---
+  // --- the tick ---
 
   async #tickOnce(): Promise<void> {
     const previousPrNumber = this.#review.prNumber;
@@ -551,7 +550,7 @@ export class ReviewEngine {
     this.#operationInProgress = operation;
 
     if (operation !== null) {
-      // Mid-operation states (SPEC §5): hold the last good snapshot. The
+      // Mid-operation states: hold the last good snapshot. The
       // cached `divergence`/`basesMismatched` can still be stale though — a
       // commit or remote move that landed mid-operation still moved them —
       // so the same signal check as below applies here too, against the
@@ -601,7 +600,7 @@ export class ReviewEngine {
       // equal to itself, so storing one silently disables that check.
       let headSha: string | null;
       if (rev === 'head') {
-        // SPEC §4 fallback ladder: only give up on `head` (and `continue`,
+        // The fallback ladder: only give up on `head` (and `continue`,
         // holding the last snapshot) once every rung below has come back
         // empty.
         const resolved = await this.#resolveHeadTarget(cwd);
@@ -609,7 +608,7 @@ export class ReviewEngine {
         headSha = resolved.sha;
         this.#headSource = resolved.source;
         // Keep `refs/review/<id>` pinned to the resolved commit so it
-        // survives the local branch being deleted later (SPEC §4). Cheap:
+        // survives the local branch being deleted later. Cheap:
         // `update-ref` only runs when the sha actually moved, not every tick.
         if (headSha !== this.#lastPinnedHeadSha) {
           try {
@@ -659,7 +658,7 @@ export class ReviewEngine {
       // against `baseSha`), not from `delta.renamed` — a file that was
       // unmodified relative to base was never in the previous snapshot at all,
       // so the client-facing delta has nothing to call a "rename" for it, but
-      // a thread anchored to its old path still needs to follow (SPEC §6).
+      // a thread anchored to its old path still needs to follow.
       const renames: Rename[] = [];
       for (const f of newFiles) {
         if (f.oldPath !== null) renames.push({ from: f.oldPath, to: f.path });
@@ -704,7 +703,7 @@ export class ReviewEngine {
     return sources.has('git') || sources.has('remote-pr') || sources.has('remote-default');
   }
 
-  /** Revisions that actually exist right now (SPEC §4's picker). */
+  /** Revisions that actually exist right now (the picker). */
   availableRevisions(): Revision[] {
     const available: Revision[] = [];
     if (this.#attachedPath !== null) available.push('working');
@@ -714,7 +713,7 @@ export class ReviewEngine {
   }
 
   /**
-   * SPEC §4: the first time a named branch's history contains a `(repo, sha)`
+   * The first time a named branch's history contains a `(repo, sha)`
    * review's pinned commit, adopt it. `git branch --contains` can return
    * several candidates; walk them in git's order and adopt the first one not
    * already owned by another review in this repo (the `(repo_id, branch)`
@@ -750,7 +749,7 @@ export class ReviewEngine {
   }
 
   /**
-   * SPEC §13.2 / §4 / §9: the stored choice always wins when present; falling
+   * The stored choice always wins when present; falling
    * back for unavailability must never overwrite it, so a branch that goes
    * away and comes back restores the prior choice rather than adopting
    * whatever the fallback picked in the meantime.
@@ -776,7 +775,7 @@ export class ReviewEngine {
   }
 
   /**
-   * Threads across snapshots (SPEC §5, §8). Exact match on `anchor_blob_sha`
+   * Threads across snapshots. Exact match on `anchor_blob_sha`
    * is free and never reaches this function (nothing in `delta` mentions an
    * unchanged file). Otherwise search the new blob for the captured context:
    * hit updates line numbers, miss sets `outdated` and keeps the thread.
@@ -887,7 +886,7 @@ export class ReviewEngine {
       const cwd = this.#attachedPath ?? this.#repo.rootPath;
       const prRef = `refs/review/pr/${review.id}`;
       // Reuse the `head` snapshot's already-resolved sha rather than
-      // re-deriving a ref here: it went through the full §4 fallback ladder
+      // re-deriving a ref here: it went through the full fallback ladder
       // (`#resolveHeadTarget`), and duplicating a subset of that ladder here
       // would silently under-resolve for a branch that only exists on the
       // remote — exactly the bug this change fixes elsewhere. Empty only

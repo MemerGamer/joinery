@@ -22,12 +22,12 @@ export type ReviewStatus = z.infer<typeof reviewStatusSchema>;
 export const reviewSchema = z.object({
   id: z.string(),
   repoId: z.string(),
-  /** Null until a detached `(repo, sha)` review adopts a branch (§4). */
+  /** Null until a detached `(repo, sha)` review adopts a branch. */
   branch: z.string().nullable(),
   pinnedSha: z.string().nullable(),
   baseRef: z.string(),
   prNumber: z.number().int().positive().nullable(),
-  /** Null means no explicit choice yet, so the §13.2 default applies. */
+  /** Null means no explicit choice yet, so the default applies (working when attached, else head). */
   currentRevision: revisionSchema.nullable(),
   lastSeenPrSha: z.string().nullable(),
   status: reviewStatusSchema,
@@ -40,7 +40,7 @@ export const ciStatusSchema = z.enum(['passing', 'failing', 'pending']);
 export type CiStatus = z.infer<typeof ciStatusSchema>;
 
 /**
- * Homebase row roll-up (§1): what a dashboard shows for a hundred reviews
+ * Homebase row roll-up: what a dashboard shows for a hundred reviews
  * without waking a hundred engines. DB aggregates plus one cached
  * `git diff base...head` per review and the PR row from the `gh` cache.
  * Ships alongside `Review` in `GET /api/reviews` rather than inside it,
@@ -87,7 +87,7 @@ export const meSchema = z.object({
 });
 export type Me = z.infer<typeof meSchema>;
 
-// --- branch and PR discovery (§4, "open any branch or PR") ---
+// --- branch and PR discovery ("open any branch or PR") ---
 
 export const branchSchema = z.object({
   /** Short name, e.g. "feat/x" — no `refs/heads/` or `origin/` prefix. */
@@ -135,7 +135,7 @@ export const pullSchema = z.object({
 });
 export type Pull = z.infer<typeof pullSchema>;
 
-// --- reading order (§7) ---
+// --- reading order ---
 
 export const stepFileSchema = z.object({
   path: z.string(),
@@ -162,7 +162,7 @@ export const readingOrderSchema = z.object({
   /**
    * Files present in the review but belonging to no step — they appeared after
    * the order was generated. Surfaced as a bucket with an offer to regenerate,
-   * never silently folded in (§5).
+   * never silently folded in.
    */
   unassignedPaths: z.array(z.string()),
 });
@@ -189,7 +189,7 @@ export const readingOrderPlanSchema = z.object({
 });
 export type ReadingOrderPlan = z.infer<typeof readingOrderPlanSchema>;
 
-// --- threads (§8) ---
+// --- threads ---
 
 export const threadSideSchema = z.enum(['old', 'new']);
 export type ThreadSide = z.infer<typeof threadSideSchema>;
@@ -246,7 +246,7 @@ export const threadSchema = z.object({
 });
 export type Thread = z.infer<typeof threadSchema>;
 
-// --- agent runs (§9) ---
+// --- agent runs ---
 
 export const runKindSchema = z.enum(['reading_order', 'thread_reply']);
 export type RunKind = z.infer<typeof runKindSchema>;

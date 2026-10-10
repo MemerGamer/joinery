@@ -147,7 +147,7 @@ describe('merge-base 3-dot behaviour', () => {
     // against the same shared base shows only their file, not the PR's —
     // each revision is always diffed against a common ancestor rather than
     // against the other revision's tip, which is what makes 3-dot correct
-    // in the diverged case (SPEC §4).
+    // in the diverged case.
     const headMb = await mergeBase(base, localHeadSha, { cwd: dir });
     expect(headMb).toBe(base);
     const headFiles = await buildFileList({

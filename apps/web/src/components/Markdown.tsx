@@ -1,5 +1,5 @@
 /**
- * Comment markdown rendering (SPEC §8): `react-markdown` + `remark-gfm`, with
+ * Comment markdown rendering: `react-markdown` + `remark-gfm`, with
  * fenced code blocks highlighted through Pierre's shared Shiki highlighter
  * instance rather than pulling in a second highlighter.
  */

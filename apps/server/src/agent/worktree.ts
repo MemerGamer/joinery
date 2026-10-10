@@ -1,6 +1,5 @@
 /**
- * Resolves the directory an embedded agent run reads from (SPEC §4, §9;
- * PLAN.md "agent reply mechanism" design decision 6).
+ * Resolves the directory an embedded agent run reads from.
  *
  * When the review's branch is checked out on disk (`state.root.attachedPath`
  * set), that directory *is* the cwd — the agent sees exactly what the user
@@ -8,7 +7,7 @@
  * agent gets a detached worktree at the review's `head` sha, cached by
  * `(repoId, headSha)` in `agent_worktree` (`db/worktrees.ts`) and reused
  * across runs rather than re-cloned every time. This is a cache, not review
- * state (SPEC §4): it is never pruned by anything but a maintenance sweep,
+ * state: it is never pruned by anything but a maintenance sweep,
  * and losing it just costs one rebuild before the next run.
  */
 import { stat } from 'node:fs/promises';

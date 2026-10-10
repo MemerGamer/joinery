@@ -1,6 +1,6 @@
 /**
- * Assembles the Hono app: bearer-token auth on every `/api` route (SPEC
- * §10), the route table, `WS /api/events`, and the static web app fallback.
+ * Assembles the Hono app: bearer-token auth on every `/api` route, the route
+ * table, `WS /api/events`, and the static web app fallback.
  * Returns both the `Hono` app and the Bun `websocket` handler `Bun.serve`
  * needs alongside `fetch: app.fetch`.
  */
@@ -44,7 +44,7 @@ export function createApp(options: CreateAppOptions): CreatedApp {
   const app = new Hono();
   app.onError(renderError);
 
-  // Bearer token auth on every /api route (SPEC §10). Mounted before the
+  // Bearer token auth on every /api route. Mounted before the
   // routes and the WS upgrade both live under /api.
   app.use('/api/*', requireBearerToken(options.token));
 

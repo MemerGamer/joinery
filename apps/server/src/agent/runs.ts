@@ -1,14 +1,14 @@
 /**
- * Agent runs (SPEC §9). `generateReadingOrder` is the `reading_order` run
+ * Agent runs. `generateReadingOrder` is the `reading_order` run
  * kind: it drives `@anthropic-ai/claude-agent-sdk` end to end (prompt,
  * read-only tool gating, structured output, schema validation) and persists
  * the result through the same `writeReadingOrderPlan` code path the CLI's
- * `review reading-order set --file plan.json` uses — see
- * `agent/readingOrder.ts` for the agent side and IMPROVEMENTS.md for what
- * of §9's full session machinery this does not implement.
+ * `review reading-order set --file plan.json` uses.
+ * See `agent/readingOrder.ts` for the agent side; the full session machinery
+ * is deliberately not implemented there.
  *
- * `requestThreadReply` is the `thread_reply` run kind (PLAN.md "agent reply
- * mechanism" R3): create the run, put an `eyes` reaction (as the agent) on
+ * `requestThreadReply` is the `thread_reply` run kind: create the run, put an
+ * `eyes` reaction (as the agent) on
  * the thread's latest user comment as a working indicator, run the agent
  * (`threadReply.ts`) against the `review` MCP tools, then remove the `eyes`
  * reaction and close out the run — on success or on error either way, so a
@@ -39,14 +39,14 @@ export type RunsDeps = {
   readonly emit: (event: ServerEvent) => void;
 };
 
-/** What `generateReadingOrder` needs from the review's engine (SPEC §9: `cwd` = the review root). */
+/** What `generateReadingOrder` needs from the review's engine (`cwd` = the review root). */
 export type ReadingOrderContext = {
   readonly cwd: string;
   readonly files: readonly FileEntry[];
 };
 
 /**
- * `POST /api/reviews/:id/reading-order/generate` (§10). Creates a
+ * `POST /api/reviews/:id/reading-order/generate`. Creates a
  * `reading_order` run, marks it `running`, and returns it straight away;
  * the agent itself runs in the background (see `runInBackground`). It
  * explores `context.cwd` with `context.files` as the changed-file list, its
@@ -81,9 +81,9 @@ export async function generateReadingOrder(deps: RunsDeps, reviewId: string, con
 }
 
 /**
- * `POST /api/threads/:id/ask` (§10), and the same trigger `createThread`/
+ * `POST /api/threads/:id/ask`, and the same trigger `createThread`/
  * `reply` fire with `askAgent: true` — "the latest user message in this
- * thread, in the context of the thread and the review" (design decision 4).
+ * thread, in the context of the thread and the review".
  * Returns the `running` run straight away; the agent runs in the
  * background. `engine` is whichever engine the caller already resolved for
  * `review.id` (routes.ts holds one per request); `resolveRunCwd` (via

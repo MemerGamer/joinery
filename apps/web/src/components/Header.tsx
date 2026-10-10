@@ -18,7 +18,7 @@ import { RevisionPicker } from './RevisionPicker.tsx';
 
 /**
  * "Start review" / "Reopen review" — moves a `draft`/`archived` review to
- * `open` (SPEC: "Feature: drafts", D4). Hidden for `open`/`orphaned`. Its
+ * `open`. Hidden for `open`/`orphaned`. Its
  * in-flight and error state are local rather than in `ReviewContext`: a
  * failed status flip doesn't belong in `state.error` (that's "the review
  * failed to load"), and nothing else needs to know about it.

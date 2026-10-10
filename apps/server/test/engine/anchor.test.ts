@@ -1,8 +1,8 @@
 /**
- * Unit coverage for `apps/server/src/engine/anchor.ts` (SPEC §8): the pure
+ * Unit coverage for `apps/server/src/engine/anchor.ts`: the pure
  * functions that decide where a thread's anchor lands after the code under
  * it moves. `findSubsequence` and `relocate` are the load-bearing ones — a
- * bug here is silent data loss with a plausible face (SPEC §8: threads are
+ * bug here is silent data loss with a plausible face (threads are
  * never deleted, only relocated or marked `outdated`).
  */
 import { describe, expect, test } from 'bun:test';
@@ -215,7 +215,7 @@ describe('relocate', () => {
   });
 
   test('two equidistant identical copies of the context: genuinely ambiguous, goes outdated rather than guessing', () => {
-    // Issue 1 fix. Two copies of the single-line context "BLOCK", placed so
+    // Two copies of the single-line context "BLOCK", placed so
     // their resulting candidate lines are *exactly* equidistant (4 lines
     // either side) from the thread's last known line (10): neither is
     // closer than the other, so there is no basis to prefer one over the

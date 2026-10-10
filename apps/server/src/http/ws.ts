@@ -1,5 +1,5 @@
 /**
- * `WS /api/events` (SPEC §5 Transport, §10). Accepts the `clientMessage`
+ * `WS /api/events`. Accepts the `clientMessage`
  * union, pushes the `ServerEvent` union. The browser never polls: on
  * `subscribe` the server immediately sends the current file list, and
  * reconnecting is "send me the list" again — no handshake, no version
