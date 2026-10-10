@@ -37,7 +37,8 @@ const DERIVED_PROPS = [
   '--chrome-fg',
   '--chrome-fg-muted',
   '--chrome-fg-subtle',
-  '--chrome-island-highlight',
+  '--chrome-island-ring',
+  '--chrome-island-sheen',
   '--chrome-island-lift',
   '--chrome-island-shadow',
 ] as const;
@@ -46,8 +47,35 @@ function mix(a: string, b: string, pctOfB: number): string {
   return `color-mix(in oklab, ${a} ${100 - pctOfB}%, ${b} ${pctOfB}%)`;
 }
 
-function isHexColor(value: string | undefined): value is string {
-  return value !== undefined && /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(value);
+/** Linear display-p3 → linear sRGB (both share the sRGB transfer curve). */
+const P3_TO_SRGB = [
+  [1.2249401, -0.2249404, 0],
+  [-0.0420569, 1.0420571, 0],
+  [-0.0196376, -0.0786361, 1.0983735],
+] as const;
+
+/**
+ * The colour as opaque `#rrggbb`, or undefined if it can't be read. Most
+ * themes are hex already. Translucent hex is rejected: the Pierre "vibrant"
+ * themes load with `#00000002`/`#00000001` placeholders in `editor.*` and
+ * their real colours in `bg`/`fg` as `color(display-p3 r g b [/ a])`, which
+ * colorUtils can't parse — so those are converted (out-of-gamut channels
+ * clamped, alpha dropped).
+ */
+function toHexColor(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  if (/^#[0-9a-f]{6}(ff)?$/i.test(value)) return value.slice(0, 7);
+  const p3 = /^color\(display-p3\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*(?:\/\s*[\d.]+%?\s*)?\)$/i.exec(value.trim());
+  if (p3 === null) return undefined;
+  const toLinear = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const fromLinear = (c: number) => (c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055);
+  const [r, g, b] = [p3[1], p3[2], p3[3]].map((c) => toLinear(Number(c))) as [number, number, number];
+  return `#${P3_TO_SRGB.map((row) => {
+    const c = fromLinear(row[0] * r + row[1] * g + row[2] * b);
+    return Math.round(Math.min(1, Math.max(0, c)) * 255)
+      .toString(16)
+      .padStart(2, '0');
+  }).join('')}`;
 }
 
 export function clearDerivedChrome(): void {
@@ -68,16 +96,8 @@ export async function applyDerivedChrome(themeName: string, isStale: () => boole
   // Loaders may resolve to the theme itself or to an ES module wrapping it.
   const theme: ThemeLike = 'default' in loaded ? loaded.default : loaded;
   const colors = theme.colors ?? {};
-  const bg = isHexColor(colors['editor.background'])
-    ? colors['editor.background']
-    : isHexColor(theme.bg)
-      ? theme.bg
-      : undefined;
-  const fg = isHexColor(colors['editor.foreground'])
-    ? colors['editor.foreground']
-    : isHexColor(theme.fg)
-      ? theme.fg
-      : undefined;
+  const bg = toHexColor(colors['editor.background']) ?? toHexColor(theme.bg);
+  const fg = toHexColor(colors['editor.foreground']) ?? toHexColor(theme.fg);
   if (bg === undefined || fg === undefined) {
     clearDerivedChrome();
     return;
@@ -104,9 +124,11 @@ export async function applyDerivedChrome(themeName: string, isStale: () => boole
   set('--chrome-fg', fg);
   set('--chrome-fg-muted', muted);
   set('--chrome-fg-subtle', mix(muted, bg, 35));
-  // The island frame (chrome-island): a white top highlight and a lift read
-  // on dark surfaces only; light ones lean on the hairline and shadow.
-  set('--chrome-island-highlight', dark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(255, 255, 255, 0.7)');
-  set('--chrome-island-lift', dark ? '2%' : '0%');
-  set('--chrome-island-shadow', dark ? '0 1px 2px rgba(0, 0, 0, 0.25)' : '0 1px 2px rgba(20, 22, 30, 0.06), 0 2px 6px rgba(20, 22, 30, 0.03)');
+  // The island frame (chrome-island): fill does the separating. Light
+  // islands are bare white on the grey shell; dark ones get a lift, a
+  // hairline, a soft top sheen and a shadow.
+  set('--chrome-island-ring', dark ? 'var(--chrome-border)' : 'transparent');
+  set('--chrome-island-sheen', dark ? 'rgba(255, 255, 255, 0.06)' : 'transparent');
+  set('--chrome-island-lift', dark ? '3%' : '0%');
+  set('--chrome-island-shadow', dark ? '0 1px 2px rgba(0, 0, 0, 0.25)' : 'none');
 }
