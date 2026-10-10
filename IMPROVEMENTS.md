@@ -14,6 +14,8 @@ history behind them live in git (`git log -p -- IMPROVEMENTS.md`).
   Planned as a GitHub-style picker for a commit or range of commits, with
   "since you last looked" as one preset. `review.last_seen_pr_sha` exists
   but nothing writes or reads it.
+- **Per-review base ref override (SPEC §13.1).** `baseRef` is set once when
+  the review is created. There is no route or CLI command to change it.
 - **Accessibility pass (SPEC §12, P4.5).** No axe audit, keyboard-only
   run-through, or screen-reader walkthrough yet.
 - **Windows/Linux (P5) and code intelligence (P6).** Deferred in the spec.
