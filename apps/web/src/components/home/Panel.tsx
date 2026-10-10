@@ -1,7 +1,7 @@
 /**
  * Dashboard card for Homebase: a header (icon, title, count, actions) over a
- * body. The layered hairline and inner top highlight live in the "Homebase
- * panels" block of styles/index.css (`.home-panel`).
+ * body. Its frame (the island surface, ring and top sheen) lives in the
+ * "Homebase panels" block of styles/index.css (`.home-panel`).
  */
 import type { ReactNode } from 'react';
 

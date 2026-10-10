@@ -204,10 +204,17 @@ export function Homebase(): React.JSX.Element {
                   'linear-gradient(to bottom, transparent 0%, transparent 40%, color-mix(in srgb, var(--chrome-bg-sunken) 55%, transparent) 75%, var(--chrome-bg-sunken) 100%)',
               }}
             />
-            {/* Dither: a fine dot grid over the painting, for a pixel-art feel. */}
+            {/* Dither: a fine dot grid over the painting, for a pixel-art feel. Masked like the painting so it
+                dissolves with it — on light themes an unmasked grid greys the fade-out and ends in a hard edge —
+                and lighter there, where dark dots read as grime rather than texture. */}
             <div
               className="absolute inset-0 opacity-30 mix-blend-multiply"
-              style={{ backgroundImage: 'radial-gradient(rgba(0,0,0,0.55) 0.8px, transparent 1px)', backgroundSize: '4px 4px' }}
+              style={{
+                backgroundImage: 'radial-gradient(light-dark(rgba(0,0,0,0.3), rgba(0,0,0,0.55)) 0.8px, transparent 1px)',
+                backgroundSize: '4px 4px',
+                maskImage: HERO_MASK,
+                WebkitMaskImage: HERO_MASK,
+              }}
             />
             {/* Public domain, but still someone's work. */}
             {painting !== null && (

@@ -566,14 +566,14 @@ body {
 }
 
 /*
- * Same shell as `chrome-island`, with a slightly deeper shadow so it sits
- * on the lit background rather than floating over it.
+ * Same surface and ring as `chrome-island`, with a slightly deeper shadow so
+ * it sits on the lit background rather than floating over it.
  */
 @utility home-island {
   border-radius: var(--chrome-radius-lg);
-  background: var(--chrome-bg);
+  background: color-mix(in srgb, var(--chrome-bg), white var(--chrome-island-lift));
   box-shadow:
-    0 0 0 0.5px light-dark(rgba(20, 22, 30, 0.14), rgba(255, 255, 255, 0.08)),
+    0 0 0 1px var(--chrome-island-ring),
     0 1px 2px light-dark(rgba(20, 22, 30, 0.06), rgba(0, 0, 0, 0.3)),
     0 8px 24px light-dark(rgba(20, 22, 30, 0.08), rgba(0, 0, 0, 0.35));
   overflow: hidden;
@@ -582,26 +582,24 @@ body {
 /* Homebase panels */
 
 /*
- * Dashboard card (components/home/Panel.tsx). The border is a white hairline
- * at 6% alpha; the `::before` overlay draws a 1px inner top highlight just
- * inside it, and the background is the page colour nudged 2% toward white
- * with a faint top-to-bottom sheen. Plain selectors rather than `@utility`:
- * the unlayered `* { border-color }` rule above would otherwise beat a
- * layered border-colour utility.
+ * Dashboard card (components/home/Panel.tsx): the `chrome-island` frame —
+ * the lifted surface, the ring as a real border, the island shadow, and the
+ * soft top sheen as a `::before` overlay — so on light themes it is bare
+ * white on the grey shell, on dark a lit surface. Plain selectors rather
+ * than `@utility`: the unlayered `* { border-color }` rule above would
+ * otherwise beat a layered border-colour utility.
  */
 .home-panel {
-  border-color: rgb(255 255 255 / 0.06);
-  background:
-    linear-gradient(to bottom, rgb(255 255 255 / 0.02), transparent),
-    color-mix(in srgb, var(--chrome-bg) 98%, white);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  border-color: var(--chrome-island-ring);
+  background: color-mix(in srgb, var(--chrome-bg), white var(--chrome-island-lift));
+  box-shadow: var(--chrome-island-shadow);
 }
 .home-panel::before {
   content: '';
   position: absolute;
   inset: 0;
   border-radius: calc(var(--radius-lg) - 1px);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+  box-shadow: inset 0 40px 40px -40px var(--chrome-island-sheen);
   pointer-events: none;
 }
 
