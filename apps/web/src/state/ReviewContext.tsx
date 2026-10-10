@@ -1066,12 +1066,23 @@ export function ReviewProvider({
     [reviewId, reloadThreads],
   );
 
+  // Files follow the reading order when there is one: step by step, each
+  // step's files in its own sequence. Files no step mentions (unassigned, or
+  // added since generation) keep their diff order after the last step.
   const items = useMemo(() => {
-    return orderRef.current
+    const rank = new Map<string, number>();
+    for (const step of state.readingOrder?.steps ?? []) {
+      for (const f of step.files) if (!rank.has(f.path)) rank.set(f.path, rank.size);
+    }
+    const ordered =
+      rank.size === 0
+        ? orderRef.current
+        : [...orderRef.current].sort((a, b) => (rank.get(a) ?? rank.size) - (rank.get(b) ?? rank.size));
+    return ordered
       .map((id) => itemsRef.current.get(id)?.item)
       .filter((x): x is CodeViewDiffItem<ThreadAnnotationMeta> => x !== undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itemsVersion, state.fileList]);
+  }, [itemsVersion, state.fileList, state.readingOrder]);
 
   const value: ReviewEngine = {
     ...state,
