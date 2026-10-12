@@ -624,13 +624,13 @@ export function CommandPalette({
  * A group heading, styled on the heading node itself rather than via
  * `className` on `Command.Group` — that prop styles the whole group
  * subtree (cmdk renders it on the group's outer wrapper), which is what let
- * the tiny/uppercase/subtle heading styles bleed onto every item beneath it.
+ * the small/subtle heading styles bleed onto every item beneath it.
  */
 function Group({ heading, children }: { heading: string; children: React.ReactNode }): React.JSX.Element {
   return (
     <Command.Group
       heading={
-        <span className="block px-2.5 pb-1 pt-2.5 text-micro font-medium uppercase tracking-wider text-chrome-fg-subtle">
+        <span className="block px-2.5 pb-1 pt-2.5 text-xs font-medium text-chrome-fg-subtle">
           {heading}
         </span>
       }
