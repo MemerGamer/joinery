@@ -27,7 +27,7 @@ import {
   RefreshCw,
   Waypoints,
 } from 'lucide-react';
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { effortOf } from '../lib/effort.ts';
 import { useGlobalKeymap } from '../lib/keymap.ts';
 import { backdropProps, coverGlow, coverPainting, paintingUrl, useBackdrop } from '../lib/covers.ts';
@@ -58,6 +58,13 @@ const EXPLORE_GAP_MAX = 72;
 const EXPLORE_GAP_MIN = 24;
 /** How much of Explore must show at the fold to read as "more below": its header and a sliver of body. */
 const EXPLORE_PEEK = 48;
+/**
+ * How long the first load gets before a skeleton shows. A warm server
+ * answers well inside it, and then the page appears once, fully laid out,
+ * instead of flashing a skeleton, a nameless greeting, and the real thing
+ * in quick succession.
+ */
+const SKELETON_DELAY_MS = 300;
 const HERO_MASK = 'linear-gradient(to bottom, black 0%, black 55%, transparent 100%)';
 /** Glows the text in the page colour so it reads over the painting. */
 const GLOW_BG = '0 0 18px var(--chrome-bg-sunken), 0 0 6px var(--chrome-bg-sunken)';
@@ -80,8 +87,29 @@ function reviewLastActivityAt(hr: HomeReview): number {
 }
 
 export function Homebase(): React.JSX.Element {
-  const { repos, reviews, pullsByRepo, pullsAvailable, me, loading, refreshing, error, refresh, openPull, archiveReview, generateReadingOrder } =
-    useHomeData();
+  const {
+    repos,
+    reviews,
+    pullsByRepo,
+    pullsAvailable,
+    me,
+    loading,
+    refreshing,
+    error,
+    lastLoadedAt,
+    refresh,
+    openPull,
+    archiveReview,
+    generateReadingOrder,
+  } = useHomeData();
+  // First load done (or failed): the page can show for real.
+  const ready = lastLoadedAt !== null || error !== null;
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (ready) return;
+    const timer = setTimeout(() => setSlow(true), SKELETON_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [ready]);
   const [order, setOrder] = useState<Order>('effort');
   const [openingKeys, setOpeningKeys] = useState<ReadonlySet<string>>(new Set());
   const [backdrop, setBackdrop] = useBackdrop();
@@ -178,7 +206,11 @@ export function Homebase(): React.JSX.Element {
     })();
   };
 
-  const showSkeleton = loading && reviews.length === 0;
+  const showSkeleton = !ready || (loading && reviews.length === 0);
+  // Until the first load lands or runs long, everything below the hero is
+  // laid out (so the Explore gap is measured) but transparent; then it all
+  // fades in at once.
+  const hidden = !ready && !slow;
   const showNoRepos = !showSkeleton && repos.length === 0;
   const topPad = hasHero ? `calc(${HERO_HEIGHT} - 84px)` : '2.5rem';
   const noPullsAvailable = repos.length > 0 && repos.every((r) => pullsAvailable.get(r.id) === false);
@@ -242,8 +274,9 @@ export function Homebase(): React.JSX.Element {
         )}
 
         <div
-          className="relative mx-auto flex max-w-6xl flex-col gap-6 px-2 pb-10"
+          className={`relative mx-auto flex max-w-6xl flex-col gap-6 px-2 pb-10 transition-opacity duration-150 ${hidden ? 'opacity-0' : 'opacity-100'}`}
           style={{ paddingTop: topPad }}
+          aria-busy={!ready}
         >
           <div ref={topRef} className="flex flex-col gap-6">
             {/* mb-6 on top of the gap lets the panels start just past the hero's edge, not on it. */}
@@ -251,7 +284,11 @@ export function Homebase(): React.JSX.Element {
               <p className="text-xs text-chrome-fg-muted" style={{ textShadow: GLOW_BG }}>
                 {DATE.format(new Date())}
               </p>
-              <h1 className="text-center text-2xl font-semibold tracking-tight text-chrome-fg" style={{ textShadow: GLOW_BG }}>
+              {/* Held invisible (keeping its line) while the skeleton shows, so it doesn't appear, then grow a name. */}
+              <h1
+                className={`text-center text-2xl font-semibold tracking-tight text-chrome-fg transition-opacity duration-150 ${ready ? '' : 'invisible opacity-0'}`}
+                style={{ textShadow: GLOW_BG }}
+              >
                 {greeting()}
                 {youName !== null ? `, ${youName}` : ''}
               </h1>
@@ -271,9 +308,12 @@ export function Homebase(): React.JSX.Element {
             <div className={`flex min-h-72 w-full items-stretch gap-3 ${showQueue ? '' : 'mx-auto max-w-4xl'}`}>
               <main className="flex min-w-0 flex-1 flex-col gap-3">
                 {showSkeleton ? (
-                  <div className="flex flex-col gap-2">
-                    <SkeletonBlocks />
-                  </div>
+                  // The real panel, so the swap to cards only changes what's inside it.
+                  <Panel icon={<GitPullRequest aria-hidden />} title="Currently reviewing" className="flex-1" bodyClassName="px-2 pb-2">
+                    <div className="flex flex-col gap-2">
+                      <SkeletonBlocks />
+                    </div>
+                  </Panel>
                 ) : showNoRepos ? (
                   <Panel title="Currently reviewing" className="flex-1">
                     <div className="flex flex-col items-center gap-3 py-16 text-center">
