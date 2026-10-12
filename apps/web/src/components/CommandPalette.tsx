@@ -188,8 +188,22 @@ export function CommandPalette({
   // that was active *before* the user entered theme mode, and whether they
   // actually committed one (Enter/click) — if they back out (Escape,
   // switching to another mode, or closing the palette) without committing,
-  // it's restored.
-  const previewRef = useRef<{ entryName: string; committed: boolean } | null>(null);
+  // it's restored — the chrome mode too, since a preview can flip it (see
+  // `applyTheme`).
+  const previewRef = useRef<{
+    entry: { chromeMode: typeof chromeMode; diffTheme: typeof diffTheme };
+    committed: boolean;
+  } | null>(null);
+
+  // A theme goes in the slot for its own color scheme and switches the
+  // chrome to match. Writing it into the *current* mode's slot instead would
+  // make e.g. GitHub Light the dark theme, painting light-on-light token
+  // colors over the dark chrome.
+  const applyTheme = (opt: ThemeOption) => {
+    const mode = opt.colorScheme ?? chromeMode;
+    setDiffTheme({ ...diffTheme, [mode]: opt.name });
+    if (mode !== chromeMode) setChromeMode(mode);
+  };
 
   // Tracks entering/leaving theme mode. Deliberately keyed on `mode` alone —
   // not on `diffTheme`/`chromeMode`/`activeThemeName`, which this effect also
@@ -200,11 +214,13 @@ export function CommandPalette({
   useEffect(() => {
     if (mode === 'theme') {
       if (previewRef.current === null) {
-        previewRef.current = { entryName: activeThemeName, committed: false };
+        previewRef.current = { entry: { chromeMode, diffTheme }, committed: false };
       }
     } else if (previewRef.current !== null) {
       if (!previewRef.current.committed) {
-        setDiffTheme({ ...diffTheme, [chromeMode]: previewRef.current.entryName });
+        const { entry } = previewRef.current;
+        setDiffTheme(entry.diffTheme);
+        if (entry.chromeMode !== chromeMode) setChromeMode(entry.chromeMode);
       }
       previewRef.current = null;
     }
@@ -219,7 +235,7 @@ export function CommandPalette({
     if (mode !== 'theme') return;
     const opt = themeValueMap.get(highlightedValue);
     if (opt === undefined) return;
-    setDiffTheme({ ...diffTheme, [chromeMode]: opt.name });
+    applyTheme(opt);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highlightedValue, mode, themeValueMap]);
 
@@ -549,41 +565,27 @@ export function CommandPalette({
             </Group>
           )}
 
+          {/* No section headings in theme mode: colorblind-safe themes still
+              lead the list, but as one run. It stays a `Command.Group` (just
+              without a heading): cmdk re-sorts items by moving them within
+              their group or the list, and throws on any other wrapper. */}
           {mode === 'theme' && (
-            <>
-              {colorblindThemes.length > 0 && (
-                <Group heading="Colorblind-safe">
-                  {colorblindThemes.map((opt) => (
-                    <ThemeItem
-                      key={opt.name}
-                      opt={opt}
-                      active={opt.name === activeThemeName}
-                      onSelect={() => {
-                        if (previewRef.current !== null) previewRef.current.committed = true;
-                        setDiffTheme({ ...diffTheme, [chromeMode]: opt.name });
-                        close();
-                      }}
-                    />
-                  ))}
-                </Group>
-              )}
-              {otherThemes.length > 0 && (
-                <Group heading="All themes">
-                  {otherThemes.map((opt) => (
-                    <ThemeItem
-                      key={opt.name}
-                      opt={opt}
-                      active={opt.name === activeThemeName}
-                      onSelect={() => {
-                        if (previewRef.current !== null) previewRef.current.committed = true;
-                        setDiffTheme({ ...diffTheme, [chromeMode]: opt.name });
-                        close();
-                      }}
-                    />
-                  ))}
-                </Group>
-              )}
-            </>
+            <Command.Group>
+              <div className="flex flex-col">
+                {[...colorblindThemes, ...otherThemes].map((opt) => (
+                  <ThemeItem
+                    key={opt.name}
+                    opt={opt}
+                    active={opt.name === activeThemeName}
+                    onSelect={() => {
+                      if (previewRef.current !== null) previewRef.current.committed = true;
+                      applyTheme(opt);
+                      close();
+                    }}
+                  />
+                ))}
+              </div>
+            </Command.Group>
           )}
 
           {mode === 'review' && reviewList.length > 0 && <Group heading="Reviews">{reviewItems}</Group>}

@@ -9,6 +9,7 @@
  * lists the options for the pickers.
  */
 import { pierreThemes, shikiThemes, themes as allThemes } from '@pierre/theming/themes';
+import { bundledThemesInfo } from 'shiki/themes';
 
 export interface ThemeOption {
   name: string;
@@ -22,11 +23,16 @@ export interface ThemeOption {
 
 const COLORBLIND_RE = /protanopia-deuteranopia|tritanopia/;
 
+// `@pierre/theming` only carries display names for its own Pierre themes;
+// the Shiki ones would otherwise show their slug ("catppuccin-latte"), so
+// take their names from Shiki's own registry ("Catppuccin Latte").
+const SHIKI_DISPLAY_NAMES = new Map(bundledThemesInfo.map((t) => [t.id, t.displayName]));
+
 function toOption(name: string, collection: 'pierre' | 'shiki'): ThemeOption {
   const descriptor = allThemes.getTheme(name);
   return {
     name,
-    displayName: descriptor?.displayName ?? name,
+    displayName: descriptor?.displayName ?? SHIKI_DISPLAY_NAMES.get(name) ?? name,
     colorScheme: descriptor?.colorScheme,
     collection,
     colorblindSafe: collection === 'pierre' && COLORBLIND_RE.test(name),
@@ -40,3 +46,19 @@ export function listThemeOptions(): ThemeOption[] {
 }
 
 export const DEFAULT_DIFF_THEME = { dark: 'pierre-dark', light: 'pierre-light' } as const;
+
+/**
+ * The pair with any slot holding a theme of the other color scheme reset to
+ * its default — e.g. a light theme saved as the dark one, back when the
+ * picker wrote into the current mode's slot whatever the theme's own scheme.
+ */
+export function repairDiffThemePair(pair: { dark: string; light: string }): { dark: string; light: string } {
+  const fits = (name: string, scheme: 'light' | 'dark') => {
+    const own = allThemes.getTheme(name)?.colorScheme;
+    return own === undefined || own === scheme;
+  };
+  return {
+    dark: fits(pair.dark, 'dark') ? pair.dark : DEFAULT_DIFF_THEME.dark,
+    light: fits(pair.light, 'light') ? pair.light : DEFAULT_DIFF_THEME.light,
+  };
+}

@@ -19,7 +19,7 @@
  * *active* chrome mode, not the raw pair.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { DEFAULT_DIFF_THEME } from '../lib/themes.ts';
+import { DEFAULT_DIFF_THEME, repairDiffThemePair } from '../lib/themes.ts';
 import { DERIVE_CHROME_FROM_THEME, applyDerivedChrome, clearDerivedChrome } from '../lib/deriveChrome.ts';
 import { useCoordinatedThemeChange } from '../lib/workerPool.tsx';
 
@@ -80,7 +80,9 @@ function persistThemeState(state: ThemeState): void {
 }
 
 function getInitialThemeState(): ThemeState {
-  return readStoredThemeState() ?? { chromeMode: readSystemChromeMode(), diffTheme: DEFAULT_DIFF_THEME };
+  const stored = readStoredThemeState();
+  if (stored === null) return { chromeMode: readSystemChromeMode(), diffTheme: DEFAULT_DIFF_THEME };
+  return { ...stored, diffTheme: repairDiffThemePair(stored.diffTheme) };
 }
 
 // Computed once at module evaluation, which happens synchronously while
