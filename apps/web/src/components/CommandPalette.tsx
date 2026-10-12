@@ -46,14 +46,12 @@ import {
   GitBranch,
   GitCommitHorizontal,
   MessageSquare,
-  Palette,
   PanelLeft,
   PanelRight,
   Rows2,
   Search,
   Sun,
   Moon,
-  Terminal,
   Waypoints,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -75,6 +73,13 @@ function parseSearch(raw: string): { mode: Mode; query: string } {
   if (raw.startsWith('@')) return { mode: 'review', query: raw.slice(1).trimStart() };
   return { mode: 'root', query: raw };
 }
+
+/** Mode prefixes, shown as clickable hints under the root-mode search box. */
+const MODE_HINTS: [string, string][] = [
+  ['>', 'Commands'],
+  ['#', 'Themes'],
+  ['@', 'Reviews'],
+];
 
 const MODE_PLACEHOLDER: Record<Mode, string> = {
   root: 'Search files, steps, and threads…',
@@ -345,6 +350,23 @@ export function CommandPalette({
             className="w-full bg-transparent text-[14px] text-chrome-fg outline-hidden! placeholder:text-chrome-fg-subtle"
           />
         </div>
+        {mode === 'root' && (
+          <div className="flex items-center gap-3 px-3.5 pb-2 text-xs text-chrome-fg-subtle">
+            {MODE_HINTS.map(([prefix, label]) => (
+              <button
+                key={prefix}
+                type="button"
+                // Keep focus in the input so typing carries on in the new mode.
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setSearch(prefix)}
+                className="flex items-center gap-1.5 hover:text-chrome-fg"
+              >
+                <Key>{prefix}</Key>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         <Command.List className={`overflow-y-auto border-t border-chrome-border px-1.5 pb-1.5 pt-1 ${mode === 'theme' ? 'max-h-[50vh]' : 'max-h-[420px]'}`}>
           <Command.Empty className="px-3 py-8 text-center text-xs text-chrome-fg-muted">No results.</Command.Empty>
 
@@ -407,24 +429,6 @@ export function CommandPalette({
                   ))}
                 </Group>
               )}
-
-              <Group heading="More">
-                <Command.Item value="commands all actions run" onSelect={() => setSearch('>')} className={ITEM_CLASS}>
-                  <Terminal size={14} strokeWidth={1.5} aria-hidden />
-                  All commands…
-                  <Hint>&gt;</Hint>
-                </Command.Item>
-                <Command.Item value="theme switch appearance colors" onSelect={() => setSearch('#')} className={ITEM_CLASS}>
-                  <Palette size={14} strokeWidth={1.5} aria-hidden />
-                  Switch theme…
-                  <Hint>#</Hint>
-                </Command.Item>
-                <Command.Item value="review switch open another" onSelect={() => setSearch('@')} className={ITEM_CLASS}>
-                  <GitBranch size={14} strokeWidth={1.5} aria-hidden />
-                  Switch review…
-                  <Hint>@</Hint>
-                </Command.Item>
-              </Group>
             </>
           )}
 
@@ -604,16 +608,6 @@ export function CommandPalette({
             <Key>esc</Key>
             {mode === 'root' ? 'close' : 'back'}
           </span>
-          {mode === 'root' && (
-            <span className="ml-auto flex items-center gap-1">
-              <Key>&gt;</Key>
-              commands
-              <Key>#</Key>
-              themes
-              <Key>@</Key>
-              reviews
-            </span>
-          )}
         </div>
       </div>
     </Command.Dialog>
@@ -645,14 +639,6 @@ function Key({ children }: { children: React.ReactNode }): React.JSX.Element {
     <kbd className="flex h-4 min-w-4 items-center justify-center rounded-[3px] bg-chrome-bg-hover px-1 font-sans text-micro text-chrome-fg-muted">
       {children}
     </kbd>
-  );
-}
-
-function Hint({ children }: { children: React.ReactNode }): React.JSX.Element {
-  return (
-    <span className="ml-auto">
-      <Key>{children}</Key>
-    </span>
   );
 }
 
