@@ -34,9 +34,13 @@ export function ReadingOrderPane(): React.JSX.Element {
     scrolledPath,
   } = useReview();
   const openThreads = threads.filter((t) => t.status === 'open').length;
-  // Steps start folded; the reader unfolds them by hand, or by getting to
-  // them — see below.
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // A step's title and files always show; only its explanation folds. The
+  // step you are at unfolds on its own (see below); a step folded or
+  // unfolded by hand keeps that until you toggle it again, whatever the
+  // reader moves on to.
+  const [arrivedStepId, setArrivedStepId] = useState<string | null>(null);
+  const [handToggled, setHandToggled] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const isExpanded = (stepId: string) => handToggled.get(stepId) ?? stepId === arrivedStepId;
   const stepRefs = useRef(new Map<string, HTMLLIElement>());
   // The step to bring into view once its unfold transition ends — scrolling
   // any earlier would measure it mid-animation, while the step it replaces
@@ -45,15 +49,23 @@ export function ReadingOrderPane(): React.JSX.Element {
   const reveal = (stepId: string) =>
     stepRefs.current.get(stepId)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 
-  // Arriving at a step unfolds it and folds the ones before it, so the pane
-  // shows where you are rather than everywhere you've been, then scrolls the
-  // pane so the step is on screen — the list can run long too. Hand-opened
-  // steps stay open until the next arrival.
+  // Arriving at a step unfolds its explanation and folds the one auto-opened
+  // before it, so the pane shows where you are rather than everywhere you've
+  // been, then scrolls the pane so the step is on screen — the list can run
+  // long too. Arriving also undoes a hand-fold of that step.
   const arrive = (stepId: string | null) => {
     if (stepId === null) return;
-    if (expanded.has(stepId)) reveal(stepId);
+    const hasExplanation = readingOrder?.steps.some((s) => s.id === stepId && s.explanationMd.length > 0) === true;
+    if (isExpanded(stepId) || !hasExplanation) reveal(stepId);
     else pendingRevealRef.current = stepId;
-    setExpanded(new Set([stepId]));
+    setArrivedStepId(stepId);
+    if (handToggled.get(stepId) === false) {
+      setHandToggled((prev) => {
+        const next = new Map(prev);
+        next.delete(stepId);
+        return next;
+      });
+    }
   };
 
   // You arrive at a step by `n`/`p`, a click, or scrolling the code view into
@@ -155,7 +167,8 @@ export function ReadingOrderPane(): React.JSX.Element {
                 the same job redundantly. */}
             <ol className="flex flex-col gap-1">
               {readingOrder.steps.map((step, idx) => {
-                const isCollapsed = !expanded.has(step.id);
+                const isCollapsed = !isExpanded(step.id);
+                const hasExplanation = step.explanationMd.length > 0;
                 const isCurrent = idx === currentStepIndex;
                 return (
                   <li
@@ -168,16 +181,11 @@ export function ReadingOrderPane(): React.JSX.Element {
                   >
                     <button
                       type="button"
-                      onClick={() =>
-                        setExpanded((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(step.id)) next.delete(step.id);
-                          else next.add(step.id);
-                          return next;
-                        })
-                      }
-                      aria-expanded={!isCollapsed}
-                      className="group flex w-full items-center gap-2 rounded-md py-1.5 pl-1.5 pr-2 text-left text-body text-chrome-fg transition-colors hover:bg-chrome-bg-hover"
+                      onClick={() => {
+                        if (hasExplanation) setHandToggled((prev) => new Map(prev).set(step.id, isCollapsed));
+                      }}
+                      aria-expanded={hasExplanation ? !isCollapsed : undefined}
+                      className="group flex w-full items-baseline gap-2 rounded-md py-1.5 pl-1.5 pr-2 text-left text-body text-chrome-fg transition-colors hover:bg-chrome-bg-hover"
                     >
                       <span
                         className={`w-5 shrink-0 text-right font-mono text-micro tabular-nums ${
@@ -187,58 +195,64 @@ export function ReadingOrderPane(): React.JSX.Element {
                       >
                         {String(idx + 1).padStart(2, '0')}
                       </span>
-                      <span className="min-w-0 flex-1 truncate font-medium">{step.title}</span>
-                      <ChevronRight
-                        size={13}
-                        strokeWidth={1.75}
-                        className={`shrink-0 text-chrome-fg-subtle transition-transform duration-200 ease-out ${
-                          isCollapsed ? '' : 'rotate-90'
-                        }`}
-                        aria-hidden
-                      />
+                      {/* Titles wrap rather than truncate; the number sits on the first
+                          line's baseline and the chevron centres on that line. */}
+                      <span className="min-w-0 flex-1 break-words font-medium">{step.title}</span>
+                      {hasExplanation && (
+                        <span className="flex h-[1lh] shrink-0 items-center self-start" aria-hidden>
+                          <ChevronRight
+                            size={13}
+                            strokeWidth={1.75}
+                            className={`text-chrome-fg-subtle transition-transform duration-200 ease-out ${
+                              isCollapsed ? '' : 'rotate-90'
+                            }`}
+                          />
+                        </span>
+                      )}
                     </button>
-                    {/* Folding animates `grid-template-rows` between 0fr and
-                        1fr: it tweens to the content's natural height without
-                        measuring it. The body stays mounted while folded, so
-                        `inert` keeps its file buttons out of the tab order. */}
-                    <div
-                      inert={isCollapsed}
-                      onTransitionEnd={(e) => {
-                        if (e.target !== e.currentTarget || pendingRevealRef.current !== step.id) return;
-                        pendingRevealRef.current = null;
-                        reveal(step.id);
-                      }}
-                      className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
-                        isCollapsed ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'
-                      }`}
-                    >
-                      <div className="min-h-0 overflow-hidden">
-                        <div className="mb-2 ml-[2.125rem]">
-                          {/* The step's explanation used to render as a header card
-                              above the diff (see ReviewCodeView.tsx); it lives here
-                              now, right next to the step's own files. `prose-sm` in
-                              `Markdown` is unconstrained, so cap it to this narrow
-                              column explicitly rather than letting e.g. a wide code
-                              block or table blow out the panel; the trailing right
-                              padding keeps its measure off the panel's edge. */}
-                          {step.explanationMd.length > 0 && (
+                    <div className="mb-2 ml-[2.125rem]">
+                      {/* Folding animates `grid-template-rows` between 0fr and
+                          1fr: it tweens to the content's natural height without
+                          measuring it. The explanation stays mounted while
+                          folded, so `inert` keeps its links out of the tab
+                          order. The file list below never folds. */}
+                      {hasExplanation && (
+                        <div
+                          inert={isCollapsed}
+                          onTransitionEnd={(e) => {
+                            if (e.target !== e.currentTarget || pendingRevealRef.current !== step.id) return;
+                            pendingRevealRef.current = null;
+                            reveal(step.id);
+                          }}
+                          className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
+                            isCollapsed ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'
+                          }`}
+                        >
+                          <div className="min-h-0 overflow-hidden">
+                            {/* The step's explanation used to render as a header card
+                                above the diff (see ReviewCodeView.tsx); it lives here
+                                now, right next to the step's own files. `prose-sm` in
+                                `Markdown` is unconstrained, so cap it to this narrow
+                                column explicitly rather than letting e.g. a wide code
+                                block or table blow out the panel; the trailing right
+                                padding keeps its measure off the panel's edge. */}
                             <div className="min-w-0 overflow-hidden pb-2 pr-2 pt-0.5 text-xs leading-relaxed text-chrome-fg-muted [&_.prose-sm]:text-xs [&_.prose-sm]:leading-relaxed [&_code]:break-words [&_pre]:overflow-x-auto">
                               <Markdown>{step.explanationMd}</Markdown>
                             </div>
-                          )}
-                          <ul className="flex flex-col gap-0.5">
-                            {step.files.map((f) => (
-                              <FileRow
-                                key={f.path}
-                                path={f.path}
-                                title={f.noteMd ?? undefined}
-                                selected={selectedPath === f.path}
-                                onClick={() => jumpTo(f.path, step.id)}
-                              />
-                            ))}
-                          </ul>
+                          </div>
                         </div>
-                      </div>
+                      )}
+                      <ul className="flex flex-col gap-0.5">
+                        {step.files.map((f) => (
+                          <FileRow
+                            key={f.path}
+                            path={f.path}
+                            title={f.noteMd ?? undefined}
+                            selected={selectedPath === f.path}
+                            onClick={() => jumpTo(f.path, step.id)}
+                          />
+                        ))}
+                      </ul>
                     </div>
                   </li>
                 );
