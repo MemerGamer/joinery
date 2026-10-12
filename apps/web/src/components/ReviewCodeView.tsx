@@ -66,16 +66,15 @@ const DIFF_HEADER_HEIGHT = DIFF_LINE_HEIGHT + DIFF_GAP_BLOCK * 3;
  * clip-path would cut off an outer ring or shadow, so the hairline is an
  * outline drawn 1px *inside* the edge (outlines paint over the content and
  * follow the radius), and the soft top sheen is an inset shadow on the
- * header. The card's surface takes the islands' lift too: `--diffs-bg` (which the library sets
- * straight to the theme's background) is replaced by `--chrome-bg` — the
- * same editor background, copied there by lib/deriveChrome.ts — mixed
- * toward white by `--chrome-island-lift`. It can't build on the library's
- * own value (a custom property can't reference itself). Every derived diff
+ * header. The card's surface is the islands' own: `--diffs-bg` (which the
+ * library sets straight to the theme's background) is replaced by
+ * `--chrome-bg` — the same editor background, copied there by
+ * lib/deriveChrome.ts — so the two can't drift apart. Every derived diff
  * colour (context, separators, additions, deletions) follows from it.
  */
 const FILE_CARD_CSS = `
 :host {
-  --diffs-bg: color-mix(in srgb, var(--chrome-bg), white var(--chrome-island-lift, 0%));
+  --diffs-bg: var(--chrome-bg);
   border-radius: 10px;
   clip-path: inset(0 round 10px);
   outline: 1px solid var(--chrome-island-ring, var(--chrome-border));

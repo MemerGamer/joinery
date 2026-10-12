@@ -37,7 +37,6 @@
   /* Island frame (chrome-island); lib/deriveChrome.ts re-sets these per theme. */
   --chrome-island-ring: transparent;
   --chrome-island-sheen: transparent;
-  --chrome-island-lift: 0%;
   --chrome-island-shadow: none;
   --chrome-radius-sm: 4px;
   --chrome-radius-md: 6px;
@@ -109,7 +108,6 @@
     --chrome-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 16px rgba(0, 0, 0, 0.35);
     --chrome-island-ring: var(--chrome-border);
     --chrome-island-sheen: rgba(255, 255, 255, 0.06);
-    --chrome-island-lift: 3%;
     --chrome-island-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
     color-scheme: dark;
   }
@@ -139,7 +137,6 @@
   --chrome-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 16px rgba(0, 0, 0, 0.35);
   --chrome-island-ring: var(--chrome-border);
   --chrome-island-sheen: rgba(255, 255, 255, 0.06);
-  --chrome-island-lift: 3%;
   --chrome-island-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
   color-scheme: dark;
 }
@@ -449,9 +446,9 @@ body {
 /*
  * Islands are set apart from the shell mostly by fill, not by drawn edges.
  * On light themes that is all there is: a white surface on the grey shell,
- * no hairline, no shadow. On dark ones the surface is lifted a touch toward
- * white (flat, so the file tree's opaque background can match it exactly),
- * with a hairline ring (no layout), a soft blurred top sheen — a hard 1px
+ * no hairline, no shadow. On dark ones the surface is the theme's own
+ * editor background — the same as the code view, so comments keep the
+ * contrast the theme designed for — with a hairline ring (no layout), a soft blurred top sheen — a hard 1px
  * highlight there reads as a drawn bevel rather than light — and a shadow.
  * Every value is a `--chrome-island-*` token that lib/deriveChrome.ts sets
  * from whether the theme is dark — never `light-dark()`, which follows
@@ -462,7 +459,7 @@ body {
 @utility chrome-island {
   position: relative;
   border-radius: var(--chrome-radius-lg);
-  background: color-mix(in srgb, var(--chrome-bg), white var(--chrome-island-lift));
+  background: var(--chrome-bg);
   box-shadow:
     0 0 0 1px var(--chrome-island-ring),
     var(--chrome-island-shadow);
@@ -479,14 +476,14 @@ body {
 
 /*
  * For an opaque surface laid over a whole island (the threads panel over
- * the reading-order pane): the island's lifted surface and top sheen again, which
+ * the reading-order pane): the island's surface and top sheen again, which
  * it would otherwise cover. An inset shadow is enough here — the overlay's
  * own children have no backgrounds at that edge.
  */
 @utility chrome-island-fill {
   /* The island's radius, so the sheen curves down at the corners exactly as the island's own does. */
   border-radius: var(--chrome-radius-lg);
-  background: color-mix(in srgb, var(--chrome-bg), white var(--chrome-island-lift));
+  background: var(--chrome-bg);
   box-shadow: inset 0 40px 40px -40px var(--chrome-island-sheen);
 }
 
@@ -571,7 +568,7 @@ body {
  */
 @utility home-island {
   border-radius: var(--chrome-radius-lg);
-  background: color-mix(in srgb, var(--chrome-bg), white var(--chrome-island-lift));
+  background: var(--chrome-bg);
   box-shadow:
     0 0 0 1px var(--chrome-island-ring),
     0 1px 2px light-dark(rgba(20, 22, 30, 0.06), rgba(0, 0, 0, 0.3)),
@@ -583,7 +580,7 @@ body {
 
 /*
  * Dashboard card (components/home/Panel.tsx): the `chrome-island` frame —
- * the lifted surface, the ring as a real border, the island shadow, and the
+ * the surface, the ring as a real border, the island shadow, and the
  * soft top sheen as a `::before` overlay — so on light themes it is bare
  * white on the grey shell, on dark a lit surface. Plain selectors rather
  * than `@utility`: the unlayered `* { border-color }` rule above would
@@ -591,7 +588,7 @@ body {
  */
 .home-panel {
   border-color: var(--chrome-island-ring);
-  background: color-mix(in srgb, var(--chrome-bg), white var(--chrome-island-lift));
+  background: var(--chrome-bg);
   box-shadow: var(--chrome-island-shadow);
 }
 .home-panel::before {
