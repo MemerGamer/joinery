@@ -16,7 +16,7 @@
  * git subcommand that could touch a worktree we did not create.
  */
 import { rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { canonicalizePath } from './paths.ts';
 import { git, gitOrThrow, type GitCallOptions } from './run.ts';
 
@@ -147,10 +147,13 @@ export type CreateDetachedWorktreeParams = {
 /**
  * Create a detached worktree at `sha` under the data directory. Always
  * `--detach`, so it never holds a branch and can never collide with a
- * checkout elsewhere.
+ * checkout elsewhere. `--force` because a directory of ours that was deleted
+ * by hand leaves its registry entry behind, and git otherwise refuses the
+ * path forever ("missing but already registered worktree"); it still
+ * refuses a path that exists on disk.
  */
 export async function createDetachedWorktree(params: CreateDetachedWorktreeParams): Promise<WorktreeEntry> {
-  await gitOrThrow(['worktree', 'add', '--detach', params.path, params.sha], {
+  await gitOrThrow(['worktree', 'add', '--detach', '--force', params.path, params.sha], {
     cwd: params.repoCwd,
     dataDir: params.dataDir,
   });
@@ -189,10 +192,8 @@ export type ScopedRemoveParams = {
  * function itself cannot be used to remove anything but our own cache.
  */
 export async function scopedRemoveWorktree(params: ScopedRemoveParams): Promise<void> {
-  const normalizedDataDir = params.dataDir.endsWith('/') ? params.dataDir : `${params.dataDir}/`;
-  const normalizedWorktreePath = params.worktreePath.endsWith('/')
-    ? params.worktreePath
-    : `${params.worktreePath}/`;
+  const normalizedDataDir = `${resolve(params.dataDir)}/`;
+  const normalizedWorktreePath = `${resolve(params.worktreePath)}/`;
   if (!normalizedWorktreePath.startsWith(normalizedDataDir)) {
     throw new Error(
       `refusing to remove worktree outside data dir: ${params.worktreePath} (data dir: ${params.dataDir})`,

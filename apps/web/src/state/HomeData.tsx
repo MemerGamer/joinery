@@ -137,22 +137,27 @@ async function doLoad(force: boolean): Promise<void> {
 
   try {
     const refreshQuery = force ? ({ refresh: 'true' } as const) : {};
-    const [reposRes, meRes] = await Promise.all([callApi('listRepos'), callApi('me')]);
-    const repos = reposRes.repos;
-
-    const [reviewsRes, pullsResults] = await Promise.all([
-      callApi('listReviews', { query: refreshQuery }),
+    // Only the pulls wait on the repo list; everything else goes out at once.
+    const reposPromise = callApi('listRepos');
+    const pullsPromise = reposPromise.then((res) =>
       Promise.all(
-        repos.map(async (repo) => {
+        res.repos.map(async (repo) => {
           try {
-            const res = await callApi('listPulls', { params: [repo.id], query: refreshQuery });
-            return { repoId: repo.id, available: res.available, pulls: res.pulls };
+            const pulls = await callApi('listPulls', { params: [repo.id], query: refreshQuery });
+            return { repoId: repo.id, available: pulls.available, pulls: pulls.pulls };
           } catch {
             return { repoId: repo.id, available: false, pulls: [] as Pull[] };
           }
         }),
       ),
+    );
+    const [reposRes, meRes, reviewsRes, pullsResults] = await Promise.all([
+      reposPromise,
+      callApi('me'),
+      callApi('listReviews', { query: refreshQuery }),
+      pullsPromise,
     ]);
+    const repos = reposRes.repos;
 
     const repoById = new Map(repos.map((r) => [r.id, r] as const));
     const summaryByReviewId = new Map(reviewsRes.summaries.map((s) => [s.reviewId, s] as const));
@@ -192,12 +197,30 @@ async function doLoad(force: boolean): Promise<void> {
   }
 }
 
+/**
+ * A refresh asked for while a load is in flight runs once more after it
+ * (forced if any asker forced), rather than joining it: the in-flight load
+ * may have read the server before the change that prompted the ask — e.g. a
+ * `reviews.changed` from a background git/`gh` refresh landing while a slow
+ * `listPulls` is still pending — and that change would otherwise be lost.
+ */
+let rerun: { force: boolean } | null = null;
+
 async function refresh(options?: { force?: boolean }): Promise<void> {
+  const force = options?.force ?? false;
   if (inFlight !== null) {
+    rerun = { force: force || (rerun?.force ?? false) };
     await inFlight;
     return;
   }
-  const promise = doLoad(options?.force ?? false);
+  const promise = (async () => {
+    let next: { force: boolean } | null = { force };
+    while (next !== null) {
+      rerun = null;
+      await doLoad(next.force);
+      next = rerun;
+    }
+  })();
   inFlight = promise;
   try {
     await promise;

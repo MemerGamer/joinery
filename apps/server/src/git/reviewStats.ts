@@ -13,9 +13,9 @@
  *   c. the review's pinned sha
  *   d. the review's own pin -> refs/review/<id>
  *
- * Base is `merge-base(baseRef, head)`, falling back to
- * `refs/remotes/origin/<baseRef>` when the merge-base can't be found (a
- * `baseRef` this repo never fetched); null when neither resolves.
+ * Base is `baseMergeBase(baseRef, head)` (origin's copy of the base first),
+ * falling back to `refs/remotes/origin/<baseRef>` itself when no merge-base
+ * can be found; null when neither resolves.
  *
  * Never throws: any git failure anywhere in here returns `null`, so one
  * review's broken worktree/missing ref never fails the whole Homebase list
@@ -23,7 +23,7 @@
  */
 import type { FileEntry, Repo, Review } from '@review/core';
 import { buildFileList } from './filelist.ts';
-import { mergeBase, revParse } from './repo.ts';
+import { baseMergeBase, revParse } from './repo.ts';
 import { bytesToText, gitOrThrow } from './run.ts';
 
 export type ReviewGitStats = {
@@ -70,7 +70,7 @@ async function resolveHeadSha(repo: Repo, review: Review): Promise<string | null
 
 async function resolveBaseSha(repo: Repo, review: Review, headSha: string): Promise<string | null> {
   const cwd = repo.rootPath;
-  const viaMergeBase = await mergeBase(review.baseRef, headSha, { cwd });
+  const viaMergeBase = await baseMergeBase(review.baseRef, headSha, { cwd });
   if (viaMergeBase !== null) return viaMergeBase;
   return await revParse(`refs/remotes/origin/${review.baseRef}`, { cwd });
 }

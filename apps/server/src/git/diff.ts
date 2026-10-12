@@ -45,7 +45,18 @@ export async function getFilePatch(params: GetFilePatchParams): Promise<FilePatc
     throw new Error(`getFilePatch: revision "${params.revision}" requires targetSha`);
   }
 
-  const args = ['diff', '-M', `-U${String(params.contextLines ?? 3)}`, params.baseSha];
+  // Pinned against user config that would change the text we parse/ship:
+  // `diff.external`, `color.diff=always`, `diff.noprefix`/`mnemonicPrefix`.
+  const args = [
+    'diff',
+    '--no-ext-diff',
+    '--no-color',
+    '--src-prefix=a/',
+    '--dst-prefix=b/',
+    '-M',
+    `-U${String(params.contextLines ?? 3)}`,
+    params.baseSha,
+  ];
   if (target !== undefined) args.push(target);
   args.push('--');
   if (entry.oldPath !== null && entry.oldPath !== entry.path) args.push(entry.oldPath);

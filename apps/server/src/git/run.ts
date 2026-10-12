@@ -25,6 +25,8 @@
  * directly, not through this allowlist.
  */
 
+import { resolve } from 'node:path';
+
 export type GitResult = {
   stdout: Uint8Array;
   stderr: string;
@@ -93,6 +95,8 @@ export type GitCallOptions = {
   env?: Record<string, string>;
   /** Data written to the process's stdin, e.g. for `hash-object --stdin-paths`. */
   stdin?: string;
+  /** Kill the process after this long (it then reports a non-zero exit). For network calls (`fetch`). */
+  timeoutMs?: number;
 };
 
 /**
@@ -138,15 +142,18 @@ function validateWorktreeAdd(args: readonly string[], dataDir: string | undefine
   if (!args.includes('--detach')) {
     throw new GitNotAllowedError(args, 'worktree add must be --detach (a review never holds a branch)');
   }
-  // Expected shape: worktree add --detach <path> <sha>  (git accepts either
-  // order for the trailing operands, but we always call it as path then sha).
-  const rest = args.slice(2).filter((a) => a !== '--detach');
+  // Expected shape: worktree add --detach [--force] <path> <sha>  (git
+  // accepts either order for the trailing operands, but we always call it as
+  // path then sha). `--force` only re-adds a path of ours whose directory was
+  // deleted while git's registry entry stayed behind.
+  const rest = args.slice(2).filter((a) => a !== '--detach' && a !== '--force');
   const path = rest[0];
-  if (path === undefined) {
+  if (path === undefined || path.startsWith('-')) {
     throw new GitNotAllowedError(args, 'worktree add missing target path');
   }
-  const resolvedDataDir = dataDir.endsWith('/') ? dataDir : `${dataDir}/`;
-  const resolvedPath = path.endsWith('/') ? path : `${path}/`;
+  // Resolved, so `<dataDir>/../elsewhere` can't pass the prefix check.
+  const resolvedDataDir = `${resolve(dataDir)}/`;
+  const resolvedPath = `${resolve(path)}/`;
   if (!resolvedPath.startsWith(resolvedDataDir)) {
     throw new GitNotAllowedError(args, `worktree add target must be under data dir ${dataDir}`);
   }
@@ -166,21 +173,33 @@ function validateUpdateRef(args: readonly string[]): void {
  * Run git, returning the result regardless of exit code. Callers that treat
  * a non-zero exit as expected (e.g. `merge-base` finding nothing) should use
  * this; everyone else should use `gitOrThrow`.
+ *
+ * A spawn failure (most often: `cwd` no longer exists because the repo or
+ * worktree was deleted) is reported as exit code -1 rather than thrown, so
+ * it degrades exactly like any other failed git call.
  */
 export async function git(args: readonly string[], options: GitCallOptions): Promise<GitResult> {
   assertAllowed(args, options.dataDir);
 
-  const proc = Bun.spawn(['git', ...args], {
-    cwd: options.cwd,
-    env: {
-      ...process.env,
-      ...options.env,
-      GIT_OPTIONAL_LOCKS: '0',
-    },
-    stdin: 'pipe',
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
+  let proc;
+  try {
+    proc = Bun.spawn(['git', ...args], {
+      cwd: options.cwd,
+      env: {
+        ...process.env,
+        ...options.env,
+        GIT_OPTIONAL_LOCKS: '0',
+        // Nobody can answer a credential prompt; fail instead of waiting.
+        GIT_TERMINAL_PROMPT: '0',
+      },
+      stdin: 'pipe',
+      stdout: 'pipe',
+      stderr: 'pipe',
+      ...(options.timeoutMs === undefined ? {} : { timeout: options.timeoutMs }),
+    });
+  } catch (err) {
+    return { stdout: new Uint8Array(0), stderr: err instanceof Error ? err.message : String(err), exitCode: -1 };
+  }
 
   // Always close stdin, even when there's nothing to write: any subcommand
   // that unexpectedly tries to read from it gets EOF immediately rather than

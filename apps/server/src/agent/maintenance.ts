@@ -13,7 +13,7 @@
  *   `agent_worktree`; the next run that needs it just rebuilds it.
  */
 import { readFile } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import {
   clearAgentReactions,
   deleteWorktree,
@@ -69,8 +69,12 @@ export function startWorktreeSweep(db: Db, options: WorktreeSweepOptions = {}): 
     }
   };
 
-  void sweep();
-  const timer = setInterval(() => void sweep(), options.intervalMs ?? 60 * 60 * 1000);
+  // An escaped rejection (e.g. the stale-worktree query failing) would take the server down.
+  const run = (): void => {
+    sweep().catch((err: unknown) => log(`sweep failed: ${err instanceof Error ? err.message : String(err)}`));
+  };
+  run();
+  const timer = setInterval(run, options.intervalMs ?? 60 * 60 * 1000);
   return () => clearInterval(timer);
 }
 
@@ -97,7 +101,9 @@ async function removeAgentWorktree(db: Db, worktree: AgentWorktree): Promise<voi
 async function registryEntry(db: Db, worktree: AgentWorktree): Promise<{ gitCommonDir: string; name: string } | null> {
   try {
     const text = await readFile(join(worktree.path, '.git'), 'utf8');
-    const gitDir = /^gitdir:\s*(.+)$/m.exec(text)?.[1]?.trim();
+    const raw = /^gitdir:\s*(.+)$/m.exec(text)?.[1]?.trim();
+    // Relative under `worktree.useRelativePaths`; it is relative to the worktree, not our cwd.
+    const gitDir = raw === undefined ? undefined : resolve(worktree.path, raw);
     if (gitDir !== undefined) return { gitCommonDir: dirname(dirname(gitDir)), name: basename(gitDir) };
   } catch {
     // Directory already gone — fall through.

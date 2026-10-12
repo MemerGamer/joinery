@@ -46,12 +46,21 @@ export type ErrorResponse = z.infer<typeof errorResponseSchema>;
 // --- request bodies ---
 
 export const addRepoBodySchema = z.object({ path: z.string().min(1) });
+/**
+ * A branch, base, or sha handed to git/`gh` as a bare argument. Git refnames
+ * can't start with `-`, so one that does is only ever an option smuggled in
+ * (e.g. a "branch" of `--output=...`).
+ */
+const gitRevSchema = z
+  .string()
+  .min(1)
+  .refine((s) => !s.startsWith('-'), { message: 'must not start with "-"' });
 export const createReviewBodySchema = z.object({
   repoId: z.string().optional(),
   repoPath: z.string().optional(),
-  branch: z.string().optional(),
-  sha: z.string().optional(),
-  base: z.string().optional(),
+  branch: gitRevSchema.optional(),
+  sha: gitRevSchema.optional(),
+  base: gitRevSchema.optional(),
   prNumber: z.number().int().positive().optional(),
   /**
    * Status for a review this call creates. An existing review at the same

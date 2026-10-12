@@ -32,7 +32,7 @@ import {
   git,
   gitCommonDir,
   gitOrThrow,
-  mergeBase,
+  baseMergeBase,
   pinReviewRef,
   revParse,
 } from '../git/index.ts';
@@ -59,6 +59,9 @@ const DEBOUNCE_CEILING_MS = 1_000;
 // PR discovery hits the GitHub API (via `gh`), not a local ref — polled far
 // less often than the local remote-tracking fetch.
 const PR_DETECT_POLL_MS = 300_000;
+// A fetch that hangs (dead network, an SSH host prompt nobody can answer)
+// is killed rather than left holding the poll.
+const FETCH_TIMEOUT_MS = 60_000;
 
 export type ReviewEngineParams = {
   readonly db: Db;
@@ -153,6 +156,8 @@ export class ReviewEngine {
   #firstSignalAt: number | null = null;
 
   #pollTimer: ReturnType<typeof setInterval> | null = null;
+  /** A poll still fetching when the next interval fires is skipped, not stacked. */
+  #polling = false;
   #lastPrCheckAt: number | null = null;
   #focused = false;
   #disposed = false;
@@ -333,7 +338,11 @@ export class ReviewEngine {
     this.#debounceTimer = setTimeout(() => {
       this.#firstSignalAt = null;
       this.#debounceTimer = null;
-      void this.tick();
+      // Nothing awaits a timer-driven tick, and an escaped rejection would
+      // take the whole server down; the next signal simply ticks again.
+      this.tick().catch((err: unknown) => {
+        console.error(`[engine ${this.#review.id}] tick failed:`, err);
+      });
     }, wait);
   }
 
@@ -403,7 +412,15 @@ export class ReviewEngine {
     if (this.#disposed) return;
     const interval = this.#focused ? FOCUSED_POLL_MS : BLURRED_POLL_MS;
     this.#pollTimer = setInterval(() => {
-      void this.#remotePoll();
+      if (this.#polling) return;
+      this.#polling = true;
+      this.#remotePoll()
+        .catch((err: unknown) => {
+          console.error(`[engine ${this.#review.id}] remote poll failed:`, err);
+        })
+        .finally(() => {
+          this.#polling = false;
+        });
     }, interval);
   }
 
@@ -415,6 +432,10 @@ export class ReviewEngine {
    * ladder is dead), `refs/remotes/origin/<branch>` too, so rung c has
    * something fresh to resolve against instead of whatever was fetched once
    * and never touched again.
+   *
+   * Every refspec is forced (`+`), like git's own default refspec: without
+   * it a force-push (a rebased PR, above all) is rejected as non-fast-forward
+   * and the ref stays at the old commit for good.
    */
   async #remotePoll(): Promise<void> {
     if (this.#disposed) return;
@@ -431,9 +452,9 @@ export class ReviewEngine {
           'fetch',
           '--no-write-fetch-head',
           'origin',
-          `refs/heads/${defaultBranchName}:refs/remotes/origin/${defaultBranchName}`,
+          `+refs/heads/${defaultBranchName}:refs/remotes/origin/${defaultBranchName}`,
         ],
-        { cwd },
+        { cwd, timeoutMs: FETCH_TIMEOUT_MS },
       );
       const afterDefault = await revParse(`refs/remotes/origin/${defaultBranchName}`, { cwd });
       if (beforeDefault !== afterDefault) defaultMoved = true;
@@ -442,8 +463,8 @@ export class ReviewEngine {
         const prRef = `refs/review/pr/${review.id}`;
         const beforePr = await revParse(prRef, { cwd });
         await git(
-          ['fetch', '--no-write-fetch-head', 'origin', `refs/pull/${String(review.prNumber)}/head:${prRef}`],
-          { cwd },
+          ['fetch', '--no-write-fetch-head', 'origin', `+refs/pull/${String(review.prNumber)}/head:${prRef}`],
+          { cwd, timeoutMs: FETCH_TIMEOUT_MS },
         );
         const afterPr = await revParse(prRef, { cwd });
         if (beforePr !== afterPr) prMoved = true;
@@ -453,8 +474,8 @@ export class ReviewEngine {
         const remoteBranchRef = `refs/remotes/origin/${review.branch}`;
         const beforeBranch = await revParse(remoteBranchRef, { cwd });
         await git(
-          ['fetch', '--no-write-fetch-head', 'origin', `refs/heads/${review.branch}:${remoteBranchRef}`],
-          { cwd },
+          ['fetch', '--no-write-fetch-head', 'origin', `+refs/heads/${review.branch}:${remoteBranchRef}`],
+          { cwd, timeoutMs: FETCH_TIMEOUT_MS },
         );
         const afterBranch = await revParse(remoteBranchRef, { cwd });
         if (beforeBranch !== afterBranch) branchMoved = true;
@@ -627,7 +648,7 @@ export class ReviewEngine {
       // No merge base means `baseRef` is unknown to this repo (a deleted or
       // never-fetched branch): fall back to head, i.e. an empty diff, rather
       // than showing the whole history as changed.
-      const baseSha = (await mergeBase(review.baseRef, headSha, { cwd })) ?? headSha;
+      const baseSha = (await baseMergeBase(review.baseRef, headSha, { cwd })) ?? headSha;
 
       // Build the file list (includes the one `hash-object` spawn for working).
       let newFiles;
@@ -896,8 +917,8 @@ export class ReviewEngine {
         // Independent git calls — run them concurrently rather than serially.
         const [d, baseHead, basePr] = await Promise.all([
           divergence(headRef, prRef, { cwd }),
-          mergeBase(review.baseRef, headRef, { cwd }),
-          mergeBase(review.baseRef, prRef, { cwd }),
+          baseMergeBase(review.baseRef, headRef, { cwd }),
+          baseMergeBase(review.baseRef, prRef, { cwd }),
         ]);
         divergenceValue = d;
         basesMismatched = baseHead !== null && basePr !== null && baseHead !== basePr;

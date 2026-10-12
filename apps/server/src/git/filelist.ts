@@ -42,6 +42,7 @@ function splitNulRecords(bytes: Uint8Array): string[] {
 
 type RawDiffEntry = {
   statusChar: string;
+  newMode: string;
   oldBlob: string;
   newBlob: string;
   path: string;
@@ -65,6 +66,7 @@ function parseRawDiffZ(bytes: Uint8Array): RawDiffEntry[] {
     }
     const meta = rec.slice(1);
     const parts = meta.split(' ');
+    const newMode = parts[1] ?? '';
     const oldBlob = parts[2] ?? '';
     const newBlob = parts[3] ?? '';
     const statusField = parts[4] ?? '';
@@ -75,12 +77,12 @@ function parseRawDiffZ(bytes: Uint8Array): RawDiffEntry[] {
       const path = records[i + 2];
       i += 3;
       if (oldPath === undefined || path === undefined) continue;
-      entries.push({ statusChar, oldBlob, newBlob, path, oldPath });
+      entries.push({ statusChar, newMode, oldBlob, newBlob, path, oldPath });
     } else {
       const path = records[i + 1];
       i += 2;
       if (path === undefined) continue;
-      entries.push({ statusChar, oldBlob, newBlob, path, oldPath: null });
+      entries.push({ statusChar, newMode, oldBlob, newBlob, path, oldPath: null });
     }
   }
   return entries;
@@ -176,7 +178,9 @@ async function findGeneratedOrVendored(
   options: GitCallOptions,
 ): Promise<Set<string>> {
   if (paths.length === 0) return new Set();
-  const stdin = paths.map((p) => `${p}\n`).join('');
+  // With `-z`, `--stdin` input is NUL-separated too: newline-separated input
+  // reads as one long path and nothing is ever flagged.
+  const stdin = paths.map((p) => `${p}\0`).join('');
   const result = await gitOrThrow(
     ['check-attr', 'linguist-generated', 'linguist-vendored', '-z', '--stdin'],
     { ...options, stdin },
@@ -267,7 +271,9 @@ export async function buildFileList(params: BuildFileListParams): Promise<FileEn
   let untrackedPaths: string[] = [];
   if (isWorking) {
     const lsResult = await gitOrThrow(['ls-files', '--others', '--exclude-standard', '-z'], options);
-    untrackedPaths = splitNulRecords(lsResult.stdout).filter((p) => p !== '');
+    // A trailing `/` is an untracked nested repository, listed as one
+    // directory entry — not a file, and fatal to `hash-object`.
+    untrackedPaths = splitNulRecords(lsResult.stdout).filter((p) => p !== '' && !p.endsWith('/'));
   }
 
   const entries: FileEntry[] = [];
@@ -288,7 +294,10 @@ export async function buildFileList(params: BuildFileListParams): Promise<FileEn
       deletions: numstat?.deletions ?? null,
     };
     entries.push(entry);
-    if (isWorking && status !== 'deleted' && raw.newBlob === NULL_BLOB) {
+    // A submodule (gitlink, mode 160000) that moved or is dirty also reports
+    // a null new id, but it is a directory: `hash-object` would fail the
+    // whole list, so it keeps NULL_BLOB.
+    if (isWorking && status !== 'deleted' && raw.newBlob === NULL_BLOB && raw.newMode !== '160000') {
       pathsNeedingHash.push(raw.path);
     }
   }

@@ -53,7 +53,6 @@ export {
   type ResolvedPr,
 } from './github.ts';
 
-export { getPullsCached, clearPullsCache } from './pullsCache.ts';
 
 export { getMe, getCachedLogin, type Me } from './me.ts';
 
@@ -73,6 +72,7 @@ export {
   defaultBranch,
   parseRemoteIdentity,
   remoteIdentity,
+  baseMergeBase,
   mergeBase,
   revParse,
   divergence,

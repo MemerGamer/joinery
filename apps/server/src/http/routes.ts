@@ -56,14 +56,14 @@ import {
   writeReadingOrderPlan,
   type Db,
 } from '../db/index.ts';
-import { buildReviewSummaries } from '../homebase.ts';
+import { buildReviewSummaries, getMeCached } from '../homebase.ts';
+import { getPullsCached } from '../pullsCache.ts';
+import type { StoredCacheDeps } from '../storedCache.ts';
 import {
   canonicalizePath,
   defaultBranch as gitDefaultBranch,
   getFileContents,
   getFilePatch,
-  getMe,
-  getPullsCached,
   listBranches,
   remoteIdentity,
   resolvePr,
@@ -118,6 +118,8 @@ async function requireThread(deps: RoutesDeps, threadId: string): Promise<Thread
 export function buildRoutes(deps: RoutesDeps): Hono {
   const app = new Hono();
   const dispatch = (reviewId: string, event: ServerEvent): void => deps.registry.dispatch(reviewId, event);
+  // A background git/`gh` refresh that changed what Homebase shows tells it to refetch.
+  const homeDeps: StoredCacheDeps = { db: deps.db, onUpdated: () => deps.registry.notifyHome(null) };
 
   // --- repos ---
 
@@ -164,9 +166,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
   });
 
   app.get('/api/me', async (c) => {
-    const repos = await listRepos(deps.db);
-    const me = await getMe(repos[0]?.rootPath ?? null);
-    return c.json(me);
+    return c.json(await getMeCached(homeDeps));
   });
 
   // --- discovery: branches and PRs for a registered repo, so the web UI can
@@ -197,10 +197,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     const repo = await getRepoById(deps.db, id);
     if (repo === null) throw notFound(`repo ${id} not found`);
     const query = parseQuery(listPullsQuerySchema, c);
-    // Warm the cached `gh` login before the first list so `reviewRequested`
-    // reflects who's asking, not just "someone was requested" (github.ts).
-    await getMe(repo.rootPath);
-    const result = await getPullsCached(repo, { refresh: query.refresh === 'true' });
+    const result = await getPullsCached(homeDeps, repo, { refresh: query.refresh === 'true' });
     const pulls = await Promise.all(
       result.pulls.map(async (pull) => {
         const existing = await findReviewByBranch(deps.db, repo.id, pull.headRefName);
@@ -215,7 +212,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
   app.get('/api/reviews', async (c) => {
     const query = parseQuery(listReviewsQuerySchema, c);
     const reviews = await listReviews(deps.db, query.status === undefined ? undefined : { status: query.status });
-    const summaries = await buildReviewSummaries({ db: deps.db }, reviews, { refresh: query.refresh === 'true' });
+    const summaries = await buildReviewSummaries(homeDeps, reviews, { refresh: query.refresh === 'true' });
     return c.json({ reviews, summaries });
   });
 

@@ -10,30 +10,61 @@ import { getCachedLogin } from './me.ts';
 
 export type FindOpenPrOptions = { cwd: string };
 
+/** A `gh` call is a network round trip; one that hangs must not hold its caller (or its cache key) forever. */
+const GH_TIMEOUT_MS = 30_000;
+
+/**
+ * Run `gh`, returning stdout on exit 0 and `null` on anything else — not
+ * installed, unauthenticated, a non-GitHub remote, rate limited, or killed
+ * after `GH_TIMEOUT_MS`. stderr is drained so a chatty failure can't fill
+ * its pipe and stall the process.
+ */
+export async function runGh(args: readonly string[], cwd: string): Promise<string | null> {
+  let proc;
+  try {
+    proc = Bun.spawn(['gh', ...args], {
+      cwd,
+      env: { ...process.env, GH_PROMPT_DISABLED: '1' },
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: GH_TIMEOUT_MS,
+    });
+  } catch {
+    return null;
+  }
+  const [stdout, , exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  return exitCode === 0 ? stdout : null;
+}
+
+const prForBranchSchema = z.object({ number: z.number().int().positive(), state: z.string() });
+
 /**
  * Resolve the open PR number for `branch`, or `null` if there isn't one (or
  * `gh` isn't installed/authenticated). Never throws: a missing/unauthed
  * `gh` is equivalent to "no PR known yet", not an engine error.
+ *
+ * `gh pr view <branch>` falls back to the branch's most recent merged or
+ * closed PR when none is open, so the state is checked here — otherwise a
+ * reused branch name would bind to an old, unrelated PR. The `--` keeps a
+ * branch name from being read as a flag.
  */
 export async function findOpenPrNumberForBranch(
   branch: string,
   options: FindOpenPrOptions,
 ): Promise<number | null> {
-  let proc;
+  const stdout = await runGh(['pr', 'view', '--json', 'number,state', '--', branch], options.cwd);
+  if (stdout === null) return null;
   try {
-    proc = Bun.spawn(['gh', 'pr', 'view', branch, '--json', 'number', '--jq', '.number'], {
-      cwd: options.cwd,
-      stdin: 'ignore',
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
+    const parsed = prForBranchSchema.safeParse(JSON.parse(stdout));
+    return parsed.success && parsed.data.state === 'OPEN' ? parsed.data.number : null;
   } catch {
     return null;
   }
-  const [stdout, exitCode] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
-  if (exitCode !== 0) return null;
-  const n = Number(stdout.trim());
-  return Number.isInteger(n) && n > 0 ? n : null;
 }
 
 // `statusCheckRollup` items come in two incompatible shapes depending on
@@ -123,6 +154,8 @@ const pullListItemSchema = z.object({
   reviewRequests: reviewRequestsSchema.optional().default([]),
 });
 
+const OPEN_PULLS_LIMIT = 200;
+
 /** Matches `Pull` from `@review/core` exactly; `reviewId` is always `null` here — the route fills it from the DB. */
 export type PullSummary = Pull;
 
@@ -148,25 +181,22 @@ export type ListOpenPullsResult = {
  * resolve.
  */
 export async function listOpenPulls(options: FindOpenPrOptions): Promise<ListOpenPullsResult> {
-  let proc;
-  try {
-    proc = Bun.spawn(
-      [
-        'gh',
-        'pr',
-        'list',
-        '--state',
-        'open',
-        '--json',
-        'number,title,headRefName,baseRefName,author,updatedAt,isDraft,additions,deletions,changedFiles,statusCheckRollup,reviewRequests',
-      ],
-      { cwd: options.cwd, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
-    );
-  } catch {
-    return { available: false, pulls: [] };
-  }
-  const [stdout, exitCode] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
-  if (exitCode !== 0) return { available: false, pulls: [] };
+  const stdout = await runGh(
+    [
+      'pr',
+      'list',
+      '--state',
+      'open',
+      // `gh` defaults to 30, which silently drops older PRs (and with them
+      // the CI/title of any review matched to one).
+      '--limit',
+      String(OPEN_PULLS_LIMIT),
+      '--json',
+      'number,title,headRefName,baseRefName,author,updatedAt,isDraft,additions,deletions,changedFiles,statusCheckRollup,reviewRequests',
+    ],
+    options.cwd,
+  );
+  if (stdout === null) return { available: false, pulls: [] };
 
   let raw: unknown;
   try {
@@ -223,19 +253,8 @@ export type ResolvedPr = {
  * folded into "no PR yet".
  */
 export async function resolvePr(prNumber: number, options: FindOpenPrOptions): Promise<ResolvedPr | null> {
-  let proc;
-  try {
-    proc = Bun.spawn(['gh', 'pr', 'view', String(prNumber), '--json', 'headRefName,baseRefName'], {
-      cwd: options.cwd,
-      stdin: 'ignore',
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-  } catch {
-    return null;
-  }
-  const [stdout, exitCode] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
-  if (exitCode !== 0) return null;
+  const stdout = await runGh(['pr', 'view', String(prNumber), '--json', 'headRefName,baseRefName'], options.cwd);
+  if (stdout === null) return null;
   try {
     const parsed = pullRefsSchema.safeParse(JSON.parse(stdout));
     return parsed.success ? parsed.data : null;

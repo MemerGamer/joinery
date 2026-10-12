@@ -206,6 +206,18 @@ export const reaction = sqliteTable(
   ],
 );
 
+/**
+ * Last known answers for things computed from git or `gh`, keyed by a
+ * namespaced string — a cache, not state (see `apps/server/src/storedCache.ts`).
+ * `fetched_at` is epoch milliseconds.
+ */
+export const cacheEntry = sqliteTable('cache_entry', {
+  key: text('key').primaryKey(),
+  /** JSON. */
+  value: text('value').notNull(),
+  fetchedAt: integer('fetched_at').notNull(),
+});
+
 export const agentRun = sqliteTable(
   'agent_run',
   {
@@ -257,6 +269,7 @@ export const schema = {
   reaction,
   agentRun,
   agentEvent,
+  cacheEntry,
 };
 
 export type RepoRow = typeof repo.$inferSelect;
@@ -271,3 +284,4 @@ export type CommentRow = typeof comment.$inferSelect;
 export type ReactionRow = typeof reaction.$inferSelect;
 export type AgentRunRow = typeof agentRun.$inferSelect;
 export type AgentEventRow = typeof agentEvent.$inferSelect;
+export type CacheEntryRow = typeof cacheEntry.$inferSelect;

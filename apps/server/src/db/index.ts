@@ -13,3 +13,4 @@ export * from './runs.ts';
 export * from './summaries.ts';
 export * from './worktrees.ts';
 export * from './renames.ts';
+export * from './cacheEntries.ts';

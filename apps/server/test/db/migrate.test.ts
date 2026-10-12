@@ -17,6 +17,7 @@ describe('runMigrations', () => {
         '0002_revision_choice.sql',
         '0003_last_opened.sql',
         '0004_reactions.sql',
+        '0005_cache_entry.sql',
       ]);
 
       const tables = sqlite
@@ -43,6 +44,7 @@ describe('runMigrations', () => {
         '0002_revision_choice.sql',
         '0003_last_opened.sql',
         '0004_reactions.sql',
+        '0005_cache_entry.sql',
       ]);
 
       sqlite.close();

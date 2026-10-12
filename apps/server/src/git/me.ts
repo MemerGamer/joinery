@@ -7,6 +7,7 @@
  * still keeping the common case (both resolve fine, immediately) free after
  * the first call.
  */
+import { runGh } from './github.ts';
 import { git, bytesToText } from './run.ts';
 
 let cachedName: string | null = null;
@@ -22,20 +23,8 @@ async function resolveName(cwd: string): Promise<string | null> {
 }
 
 async function resolveLogin(cwd: string): Promise<string | null> {
-  let proc;
-  try {
-    proc = Bun.spawn(['gh', 'api', 'user', '--jq', '.login'], {
-      cwd,
-      stdin: 'ignore',
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-  } catch {
-    return null;
-  }
-  const [stdout, exitCode] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
-  if (exitCode !== 0) return null;
-  const login = stdout.trim();
+  const stdout = await runGh(['api', 'user', '--jq', '.login'], cwd);
+  const login = stdout?.trim() ?? '';
   return login === '' ? null : login;
 }
 

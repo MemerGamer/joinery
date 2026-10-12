@@ -80,6 +80,17 @@ export async function mergeBase(a: string, b: string, options: GitCallOptions): 
   return sha === '' ? null : sha;
 }
 
+/**
+ * A review's base commit: `merge-base` against `origin/<baseRef>` first, so
+ * a stale local `main` doesn't pull already-merged upstream commits into the
+ * diff (the remote poll keeps `origin/<baseRef>` current; the local branch
+ * nobody fetches into). Falls back to `baseRef` as given — a local-only
+ * branch, a tag, a sha — when there's no remote-tracking ref.
+ */
+export async function baseMergeBase(baseRef: string, head: string, options: GitCallOptions): Promise<string | null> {
+  return (await mergeBase(`refs/remotes/origin/${baseRef}`, head, options)) ?? (await mergeBase(baseRef, head, options));
+}
+
 /** `git rev-parse <rev>`, resolved to a full SHA. Null if it doesn't resolve. */
 export async function revParse(rev: string, options: GitCallOptions): Promise<string | null> {
   const result = await git(['rev-parse', '--verify', rev], options);
