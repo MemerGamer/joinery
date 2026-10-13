@@ -102,5 +102,7 @@ export const reviewStateSchema = z.object({
   prNumber: z.number().int().positive().nullable(),
   /** Null only before the first tick has resolved `head` at all. */
   headSource: headSourceSchema.nullable(),
+  /** The branch is gone and its tip is already in `baseRef`; `head` then diffs from the last pinned base. */
+  merged: z.boolean(),
 });
 export type ReviewState = z.infer<typeof reviewStateSchema>;

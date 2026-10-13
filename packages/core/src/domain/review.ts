@@ -168,25 +168,44 @@ export const readingOrderSchema = z.object({
 });
 export type ReadingOrder = z.infer<typeof readingOrderSchema>;
 
-/** The shape an agent writes via `joinery reading-order set --file plan.json`. */
+/**
+ * The shape an agent writes via `joinery reading-order set --file plan.json`.
+ * The `.describe()` texts are the writing rules. They reach the embedded
+ * agent through the JSON schema it answers in, so they live here, once.
+ */
 export const readingOrderPlanSchema = z.object({
   steps: z
     .array(
       z.object({
-        title: z.string().min(1),
-        explanation_md: z.string().default(''),
+        title: z
+          .string()
+          .min(1)
+          .describe('What this step changes, in sentence case and under 60 characters ("Add a route that lists folders").'),
+        explanation_md: z
+          .string()
+          .default('')
+          .describe(
+            "Markdown, 2 to 4 short sentences. Start with what the step changes or makes possible, then say how the code does it. The step's position already shows the order, so every sentence is about the code.",
+          ),
         files: z
           .array(
             z.object({
-              path: z.string().min(1),
-              note_md: z.string().nullable().default(null),
+              path: z.string().min(1).describe('Exactly as given in the changed-file list.'),
+              note_md: z
+                .string()
+                .nullable()
+                .default(null)
+                .describe('What to look at in this file, in one markdown sentence. Null when the explanation already covers it.'),
             }),
           )
           .min(1),
       }),
     )
-    .min(1),
-});
+    .min(1)
+    .describe('Ordered so each step comes after the steps it builds on.'),
+}).describe(
+  "A walkthrough of the change for a teammate who is about to review it. Write it the way you would explain it at their desk. Use plain words and short, whole sentences, one idea each. Make the code the actor (\"`listDirs` returns the folders\"). Name the concrete function, field, route, or number. Punctuate with periods and commas only.",
+);
 export type ReadingOrderPlan = z.infer<typeof readingOrderPlanSchema>;
 
 // --- threads ---

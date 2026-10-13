@@ -147,6 +147,8 @@ export const reviewDetailSchema = z.object({
   review: reviewSchema,
   repo: repoSchema,
   state: reviewStateSchema,
+  /** A reading-order run still in progress, so a reload keeps showing it. */
+  readingOrderRun: agentRunSchema.nullable(),
 });
 export type ReviewDetail = z.infer<typeof reviewDetailSchema>;
 

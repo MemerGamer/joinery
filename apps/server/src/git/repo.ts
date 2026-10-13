@@ -162,6 +162,15 @@ export async function pinReviewRef(reviewId: string, sha: string, options: GitCa
   await gitOrThrow(['update-ref', `refs/review/${reviewId}`, sha], options);
 }
 
+/**
+ * Pin the last non-empty diff base under `refs/review/base/<id>`. Once the
+ * branch is merged, merge-base(baseRef, head) collapses to head itself; this
+ * is what still says where the reviewed changes started.
+ */
+export async function pinReviewBaseRef(reviewId: string, sha: string, options: GitCallOptions): Promise<void> {
+  await gitOrThrow(['update-ref', `refs/review/base/${reviewId}`, sha], options);
+}
+
 /** Delete a review's ref pin, e.g. on review archive. */
 export async function unpinReviewRef(reviewId: string, options: GitCallOptions): Promise<void> {
   await gitOrThrow(['update-ref', '-d', `refs/review/${reviewId}`], options);

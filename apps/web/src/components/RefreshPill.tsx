@@ -14,7 +14,7 @@ export function RefreshPill(): React.JSX.Element | null {
     <button
       type="button"
       onClick={applyPendingRefresh}
-      className="fixed bottom-5 left-1/2 z-30 flex h-8 -translate-x-1/2 items-center gap-2 rounded-full bg-chrome-bg-raised ring-1 ring-chrome-fg/10 pl-3 pr-3.5 text-xs font-medium text-chrome-fg shadow-chrome transition-colors hover:bg-chrome-bg-hover"
+      className="fixed bottom-5 left-1/2 z-30 flex h-8 -translate-x-1/2 items-center gap-2 rounded-full bg-chrome-bg-raised ring-1 ring-chrome-fg/10 pl-3 pr-3.5 text-xs font-medium text-chrome-fg shadow-chrome transition-colors hover:bg-[linear-gradient(var(--chrome-bg-hover),var(--chrome-bg-hover))]"
     >
       <RefreshCw size={13} strokeWidth={1.75} aria-hidden />
       <span className="text-chrome-fg-muted">

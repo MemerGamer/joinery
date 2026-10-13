@@ -53,6 +53,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react';
 import { getAgentModel } from '../lib/agentModel.ts';
 import { ApiError, callApi } from '../lib/apiClient.ts';
@@ -189,9 +190,12 @@ export interface ReviewEngine extends ReviewEngineState {
   /**
    * The file at the top of the code view as the reader scrolls (see
    * `pathAtScrollTop`). Updated by scrolling only — clicks and `n`/`p` go
-   * through `selectedPath` — so the reading order can follow along.
+   * through `selectedPath` — so the reading order can follow along. It
+   * changes on every file boundary while scrolling, so it lives in its own
+   * store rather than in this context: read it with `useScrolledPath()`,
+   * which re-renders only its caller, not every `useReview()` consumer.
    */
-  scrolledPath: string | null;
+  scrolledPathStore: ValueStore<string | null>;
   setScrolledPath: (path: string | null) => void;
   /**
    * The "current thread" for `r` (resolve) and the start point for `]`/`[`:
@@ -279,6 +283,36 @@ export function useOptionalReview(): ReviewEngine | null {
   return useContext(ReviewCtx);
 }
 
+/** The file at the top of the code view (see `ReviewEngine.scrolledPathStore`). */
+export function useScrolledPath(): string | null {
+  const { scrolledPathStore } = useReview();
+  return useSyncExternalStore(scrolledPathStore.subscribe, scrolledPathStore.get);
+}
+
+export type ValueStore<T> = {
+  get: () => T;
+  set: (value: T) => void;
+  subscribe: (onChange: () => void) => () => void;
+};
+
+/** A value outside React state; `set` notifies subscribers only when it actually changes. */
+function createValueStore<T>(initial: T): ValueStore<T> {
+  let value = initial;
+  const listeners = new Set<() => void>();
+  return {
+    get: () => value,
+    set: (next) => {
+      if (Object.is(next, value)) return;
+      value = next;
+      for (const listener of listeners) listener();
+    },
+    subscribe: (onChange) => {
+      listeners.add(onChange);
+      return () => listeners.delete(onChange);
+    },
+  };
+}
+
 interface ItemRecord {
   entry: FileEntry;
   item: CodeViewDiffItem<ThreadAnnotationMeta>;
@@ -313,7 +347,7 @@ export function ReviewProvider({
   const [threadsPanelOpen, setThreadsPanelOpen] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [currentStepId, setCurrentStepId] = useState<string | null>(null);
-  const [scrolledPath, setScrolledPath] = useState<string | null>(null);
+  const [scrolledPathStore] = useState(() => createValueStore<string | null>(null));
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [draftThread, setDraftThread] = useState<DraftThread | null>(null);
   const codeViewRef = useRef<CodeViewHandle<ThreadAnnotationMeta, undefined> | null>(null);
@@ -502,7 +536,7 @@ export function ReviewProvider({
         readingOrder: readingOrderRes.readingOrder,
         pendingDelta: null,
         pendingRevision: null,
-        readingOrderRun: null,
+        readingOrderRun: detail.readingOrderRun,
         threadRuns: new Map(),
       });
       rebuildOrder(filesRes.list.files, threadsRes.threads);
@@ -1117,8 +1151,8 @@ export function ReviewProvider({
     setSelectedPath,
     currentStepId,
     setCurrentStepId,
-    scrolledPath,
-    setScrolledPath,
+    scrolledPathStore,
+    setScrolledPath: scrolledPathStore.set,
     activeThreadId,
     setActiveThreadId,
     setRevision,

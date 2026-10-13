@@ -33,6 +33,7 @@ import {
   createThread,
   findReviewByBranch,
   findReviewByPinnedSha,
+  getActiveRun,
   getCommentThreadId,
   getLatestReadingOrder,
   getRepoById,
@@ -289,11 +290,12 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     if (repo === null) throw notFound(`repo ${review.repoId} not found`);
     const engine = await requireEngine(deps, id);
     const state = await engine.getState();
+    const readingOrderRun = await getActiveRun(deps.db, id, 'reading_order');
     // Opening the review marks its unread-agent-replies window read:
     // must happen after the response is built, so this open is measured
     // against the *previous* `last_opened_at`, not the one it just set.
     await touchOpened(deps.db, id);
-    return c.json({ review, repo, state });
+    return c.json({ review, repo, state, readingOrderRun });
   });
 
   app.get('/api/reviews/:id/files', async (c) => {
@@ -379,6 +381,10 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     const id = c.req.param('id');
     const review = await requireReview(deps, id);
     await parseBody(generateReadingOrderBodySchema, c);
+    // One run at a time: a second request (palette, CLI, double click) gets
+    // the run already in progress instead of starting a competing one.
+    const active = await getActiveRun(deps.db, id, 'reading_order');
+    if (active !== null) return c.json({ run: active }, 202);
     const engine = await requireEngine(deps, id);
     const files = engine.getFileList().files;
     const cwd = await resolveRunCwd({ db: deps.db }, review, engine);

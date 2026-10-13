@@ -78,6 +78,7 @@ export {
   divergence,
   detectInProgressOperation,
   pinReviewRef,
+  pinReviewBaseRef,
   unpinReviewRef,
   type RemoteIdentity,
   type Divergence,

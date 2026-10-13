@@ -15,7 +15,7 @@ import type {
   CodeViewItem,
 } from '@pierre/diffs';
 import { Check, ChevronDown, ChevronRight } from 'lucide-react';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { makeLoadDiffFiles } from '../lib/diffLoader.ts';
 import {
   DRAFT_THREAD_ID,
@@ -151,6 +151,20 @@ export function ReviewCodeView(): React.JSX.Element {
     return () => cancelAnimationFrame(frame);
   }, [items, codeViewRef, setScrolledPath]);
 
+  // `pathAtScrollTop` reads layout, so the scroll handler runs it at most once
+  // a frame rather than on every wheel event. A `null` reading (the edge sits
+  // in the gap between two cards) keeps the last path instead of clearing it.
+  const scrollFrameRef = useRef(0);
+  useEffect(() => () => cancelAnimationFrame(scrollFrameRef.current), []);
+  const onScroll = () => {
+    if (scrollFrameRef.current !== 0) return;
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      scrollFrameRef.current = 0;
+      const path = pathAtScrollTop(codeViewRef.current?.getInstance());
+      if (path !== null) setScrolledPath(path);
+    });
+  };
+
   const loadDiffFiles = useMemo(
     () => makeLoadDiffFiles(review?.id ?? '', reviewState?.currentRevision),
     [review?.id, reviewState?.currentRevision],
@@ -216,7 +230,9 @@ export function ReviewCodeView(): React.JSX.Element {
   if (items.length === 0) {
     return (
       <div className="flex h-full items-center justify-center text-body text-chrome-fg-muted">
-        No changed files in this revision.
+        {reviewState?.merged === true
+          ? `Merged into ${review.baseRef}, and there's no earlier base left to diff against.`
+          : 'No changed files in this revision.'}
       </div>
     );
   }
@@ -229,7 +245,7 @@ export function ReviewCodeView(): React.JSX.Element {
       // Lets the reading order follow along (it unfolds the step holding
       // the file being read). React bails out when the path is unchanged,
       // so this only re-renders as a new file reaches the top.
-      onScroll={(_scrollTop, viewer) => setScrolledPath(pathAtScrollTop(viewer))}
+      onScroll={onScroll}
       // `--diffs-gap-block`/`--diffs-line-height` are `@pierre/diffs`' own
       // density knobs (see `dist/style.js`: `padding-block: var(--diffs-gap-block,
       // var(--diffs-gap-fallback))` at 8px, `line-height: var(--diffs-line-height, 20px)`)

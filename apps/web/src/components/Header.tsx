@@ -3,6 +3,7 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   Columns2,
+  GitMerge,
   Loader2,
   MessageSquare,
   MessageSquareOff,
@@ -14,6 +15,7 @@ import { useState } from 'react';
 import { ApiError } from '../lib/apiClient.ts';
 import { goHomebase } from '../lib/router.ts';
 import { useReview } from '../state/ReviewContext.tsx';
+import { Chip } from './home/primitives.tsx';
 import { RevisionPicker } from './RevisionPicker.tsx';
 
 /**
@@ -97,6 +99,7 @@ function PanelToggleIcon({
 export function Header({ onOpenPalette }: { onOpenPalette: () => void }): React.JSX.Element {
   const {
     review,
+    reviewState,
     repo,
     leftPanelOpen,
     rightPanelOpen,
@@ -132,9 +135,19 @@ export function Header({ onOpenPalette }: { onOpenPalette: () => void }): React.
         <span className="truncate font-medium text-chrome-fg">
           {review?.branch ?? review?.pinnedSha?.slice(0, 10) ?? '…'}
         </span>
+        {reviewState?.merged === true && review !== null && (
+          <Chip
+            tone="accent"
+            icon={<GitMerge size={11} strokeWidth={2} aria-hidden />}
+            title={`The branch is gone and its commits are in ${review.baseRef}`}
+          >
+            Merged into {review.baseRef}
+          </Chip>
+        )}
       </div>
 
-      {(review?.status === 'draft' || review?.status === 'archived') && (
+      {/* Nothing left to start on once the branch has landed. */}
+      {(review?.status === 'draft' || review?.status === 'archived') && reviewState?.merged !== true && (
         <StartReviewButton status={review.status} />
       )}
 

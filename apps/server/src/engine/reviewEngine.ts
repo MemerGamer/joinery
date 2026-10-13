@@ -33,6 +33,7 @@ import {
   gitCommonDir,
   gitOrThrow,
   baseMergeBase,
+  pinReviewBaseRef,
   pinReviewRef,
   revParse,
 } from '../git/index.ts';
@@ -119,6 +120,10 @@ export class ReviewEngine {
    * every tick.
    */
   #lastPinnedHeadSha: string | null = null;
+  /** Same for `refs/review/base/<id>` (the last non-empty diff base). */
+  #lastPinnedBaseSha: string | null = null;
+  /** The review's branch is gone and its tip is already in `baseRef` (see the `head` build in the tick). */
+  #merged = false;
   /** One cached snapshot per revision — kept warm proactively so a revision switch is a cache read, not a recompute. */
   #snapshots: Record<Revision, FileList>;
   #built = new Set<Revision>();
@@ -648,7 +653,27 @@ export class ReviewEngine {
       // No merge base means `baseRef` is unknown to this repo (a deleted or
       // never-fetched branch): fall back to head, i.e. an empty diff, rather
       // than showing the whole history as changed.
-      const baseSha = (await baseMergeBase(review.baseRef, headSha, { cwd })) ?? headSha;
+      const mergeBaseSha = await baseMergeBase(review.baseRef, headSha, { cwd });
+      let baseSha = mergeBaseSha ?? headSha;
+
+      if (rev === 'head') {
+        // Merged: the branch no longer resolves and its tip is already in
+        // `baseRef`, so the merge-base is head itself and the diff would be
+        // empty. Fall back to the base pinned while the branch still had
+        // changes, so what got merged stays reviewable.
+        const branchGone = review.branch !== null && (this.#headSource === 'pinned-sha' || this.#headSource === 'pin');
+        this.#merged = branchGone && mergeBaseSha === headSha;
+        if (this.#merged) {
+          baseSha = (await revParse(`refs/review/base/${review.id}`, { cwd })) ?? baseSha;
+        } else if (mergeBaseSha !== null && mergeBaseSha !== headSha && mergeBaseSha !== this.#lastPinnedBaseSha) {
+          try {
+            await pinReviewBaseRef(review.id, mergeBaseSha, { cwd: this.#repo.rootPath });
+            this.#lastPinnedBaseSha = mergeBaseSha;
+          } catch {
+            // Best-effort, like the head pin above.
+          }
+        }
+      }
 
       // Build the file list (includes the one `hash-object` spawn for working).
       let newFiles;
@@ -945,6 +970,7 @@ export class ReviewEngine {
       operationInProgress: this.#operationInProgress,
       prNumber: review.prNumber,
       headSource: this.#headSource,
+      merged: this.#merged,
     };
   }
 

@@ -6,7 +6,7 @@
 import { agentEvent, agentRun } from '@joinery/core/db';
 import type { AgentRun, RunKind, RunStatus } from '@joinery/core';
 import { runId as newRunId, runKindSchema, runStatusSchema } from '@joinery/core';
-import { asc, eq, inArray, max } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, max } from 'drizzle-orm';
 import type { Db } from './client.ts';
 import { narrowUnion } from './narrow.ts';
 
@@ -51,6 +51,20 @@ export async function createRun(db: Db, input: CreateRunInput): Promise<AgentRun
 export async function listUnfinishedRuns(db: Db): Promise<AgentRun[]> {
   const rows = await db.select().from(agentRun).where(inArray(agentRun.status, ['pending', 'running']));
   return rows.map(toAgentRun);
+}
+
+/** The newest `pending`/`running` run of `kind` for a review, or null. */
+export async function getActiveRun(db: Db, reviewId: string, kind: RunKind): Promise<AgentRun | null> {
+  const rows = await db
+    .select()
+    .from(agentRun)
+    .where(
+      and(eq(agentRun.reviewId, reviewId), eq(agentRun.kind, kind), inArray(agentRun.status, ['pending', 'running'])),
+    )
+    .orderBy(desc(agentRun.startedAt))
+    .limit(1);
+  const row = rows[0];
+  return row === undefined ? null : toAgentRun(row);
 }
 
 export async function getRun(db: Db, id: string): Promise<AgentRun | null> {

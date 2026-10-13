@@ -9,11 +9,11 @@
  * the initial empty state below. The title row doubles as the home for the
  * Threads entry point, since the threads panel slides over this pane.
  */
-import { AlertTriangle, ChevronRight, MessageSquare, Waypoints } from 'lucide-react';
+import { AlertTriangle, ChevronRight, Loader2, MessageSquare, Waypoints } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { resolveCurrentStepIndex } from '../lib/reviewNav.ts';
 import { runUiState } from '../lib/runState.ts';
-import { useReview } from '../state/ReviewContext.tsx';
+import { useReview, useScrolledPath } from '../state/ReviewContext.tsx';
 import { Markdown } from './Markdown.tsx';
 import { ThreadsPanel } from './ThreadsPanel.tsx';
 
@@ -31,8 +31,8 @@ export function ReadingOrderPane(): React.JSX.Element {
     threads,
     currentStepId,
     setCurrentStepId,
-    scrolledPath,
   } = useReview();
+  const scrolledPath = useScrolledPath();
   const openThreads = threads.filter((t) => t.status === 'open').length;
   // A step's title and files always show; only its explanation folds. The
   // step you are at unfolds on its own (see below); a step folded or
@@ -104,6 +104,13 @@ export function ReadingOrderPane(): React.JSX.Element {
     <div className="relative flex h-full w-full flex-col overflow-hidden">
       <div className="flex h-10 shrink-0 items-center gap-2 pl-4 pr-2">
         <h2 className="text-body font-medium text-chrome-fg">Reading order</h2>
+        {/* The empty state's button shows its own progress; this covers a rerun over an existing order. */}
+        {generating && !noReadingOrder && (
+          <span className="flex items-center gap-1 text-xs text-chrome-fg-subtle">
+            <Loader2 size={12} strokeWidth={1.75} className="animate-spin" aria-hidden />
+            Regenerating…
+          </span>
+        )}
         <div className="flex-1" />
         <button
           type="button"
@@ -182,7 +189,8 @@ export function ReadingOrderPane(): React.JSX.Element {
                     <button
                       type="button"
                       onClick={() => {
-                        if (hasExplanation) setHandToggled((prev) => new Map(prev).set(step.id, isCollapsed));
+                        if (!hasExplanation) return;
+                        setHandToggled((prev) => new Map(prev).set(step.id, isCollapsed));
                       }}
                       aria-expanded={hasExplanation ? !isCollapsed : undefined}
                       className="group flex w-full items-baseline gap-2 rounded-md py-1.5 pl-1.5 pr-2 text-left text-body text-chrome-fg transition-colors hover:bg-chrome-bg-hover"
@@ -259,24 +267,32 @@ export function ReadingOrderPane(): React.JSX.Element {
               })}
             </ol>
             {readingOrder.unassignedPaths.length > 0 && (
-              // A peer of the numbered steps, not a subsection of the last one —
-              // separated by margin rhythm alone (no border-t + border-l stack)
-              // so it reads as "the next thing" rather than a fenced-off block.
-              <div className="mt-5">
-                <h3 className="px-2 pb-1 text-micro font-medium uppercase tracking-wide text-chrome-fg-subtle">
+              // Laid out like one more step (same title row and indent), with
+              // a dot in the number column: these files arrived after the
+              // order was generated, so they have no place in its sequence.
+              <section className="mt-1">
+                <h3 className="flex items-baseline gap-2 py-1.5 pl-1.5 pr-2 text-body font-medium text-chrome-fg">
+                  <span className="w-5 shrink-0 text-right font-mono text-micro text-chrome-fg-subtle" aria-hidden>
+                    ·
+                  </span>
                   Also changed
                 </h3>
-                <ul className="flex flex-col gap-0.5">
-                  {readingOrder.unassignedPaths.map((path) => (
-                    <FileRow
-                      key={path}
-                      path={path}
-                      selected={selectedPath === path}
-                      onClick={() => jumpTo(path)}
-                    />
-                  ))}
-                </ul>
-              </div>
+                <div className="mb-2 ml-[2.125rem]">
+                  <p className="pb-2 pr-2 pt-0.5 text-xs leading-relaxed text-chrome-fg-muted">
+                    Changed after this reading order was generated.
+                  </p>
+                  <ul className="flex flex-col gap-0.5">
+                    {readingOrder.unassignedPaths.map((path) => (
+                      <FileRow
+                        key={path}
+                        path={path}
+                        selected={selectedPath === path}
+                        onClick={() => jumpTo(path)}
+                      />
+                    ))}
+                  </ul>
+                </div>
+              </section>
             )}
           </>
         )}

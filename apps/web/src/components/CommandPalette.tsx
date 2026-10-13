@@ -39,6 +39,7 @@
 import { Command, defaultFilter } from 'cmdk';
 import {
   Check,
+  Loader2,
   ChevronsDownUp,
   ChevronsUpDown,
   Columns2,
@@ -57,6 +58,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { callApi } from '../lib/apiClient.ts';
 import { goReview } from '../lib/router.ts';
+import { runUiState } from '../lib/runState.ts';
 import { listThemeOptions, type ThemeOption } from '../lib/themes.ts';
 import { threadSummary } from '../lib/threadSummary.ts';
 import { useOptionalReview } from '../state/ReviewContext.tsx';
@@ -276,6 +278,31 @@ export function CommandPalette({
     </Command.Item>
   ));
 
+  // Also offered in root mode once you type, so "generate" or "regenerate"
+  // finds it without the `>` prefix.
+  // While a run is going, the item stays listed but disabled, so it says why
+  // nothing new starts.
+  const generating = review !== null && runUiState(review.readingOrderRun).phase === 'pending';
+  const generateVerb = review?.readingOrder != null && review.readingOrder.steps.length > 0 ? 'Regenerate' : 'Generate';
+  const generateItem = review !== null && currentReview !== null && (
+    <Command.Item
+      value="generate regenerate reading order"
+      disabled={generating}
+      onSelect={() => {
+        void review.generateReadingOrder();
+        close();
+      }}
+      className={`${ITEM_CLASS} data-[disabled=true]:text-chrome-fg-muted`}
+    >
+      {generating ? (
+        <Loader2 size={14} strokeWidth={1.5} className="animate-spin" aria-hidden />
+      ) : (
+        <Waypoints size={14} strokeWidth={1.5} aria-hidden />
+      )}
+      {generating ? `${generateVerb.replace(/e$/, '')}ing reading order…` : `${generateVerb} reading order`}
+    </Command.Item>
+  );
+
   const fileItems = files.map((f) => (
     <Command.Item key={f.path} value={`file ${f.path}`} onSelect={() => goToFile(f.path)} className={ITEM_CLASS}>
       <FileText size={14} strokeWidth={1.5} aria-hidden />
@@ -379,6 +406,8 @@ export function CommandPalette({
 
               {files.length > 0 && <Group heading="Files">{fileItems}</Group>}
 
+              {query !== '' && generateItem !== false && <Group heading="Commands">{generateItem}</Group>}
+
               {steps.length > 0 && (
                 <Group heading="Steps">
                   {steps.map((step) => (
@@ -436,19 +465,7 @@ export function CommandPalette({
 
           {mode === 'command' && (
             <Group heading="Commands">
-              {review !== null && currentReview !== null && (
-                <Command.Item
-                  value="generate reading order"
-                  onSelect={() => {
-                    void review.generateReadingOrder();
-                    close();
-                  }}
-                  className={ITEM_CLASS}
-                >
-                  <Waypoints size={14} strokeWidth={1.5} aria-hidden />
-                  Generate reading order
-                </Command.Item>
-              )}
+              {generateItem}
               {/* Only revisions that exist for this review right now (e.g. no
                 * `working` for a review that isn't checked out, no `pr`
                 * without a PR) — the server's `availableRevisions`. */}

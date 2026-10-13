@@ -41,23 +41,22 @@ function describeFile(f: FileEntry): string {
 export function buildReadingOrderPrompt(files: readonly FileEntry[]): string {
   const fileLines = files.map(describeFile).join('\n');
   return [
-    'A code reviewer needs a reading order for this review — a sequence of',
-    'steps that groups the changed files below into a sensible order to read',
-    'them in, each with a short prose explanation of what that step covers.',
+    'Turn this code review into a walkthrough: a short series of steps a',
+    'teammate reads in order, each covering one concern of the change.',
     '',
     'Changed files:',
     fileLines,
     '',
-    'Explore the review root with your read-only tools (Read, Grep, Glob — you',
-    'have no shell) to understand what changed and why, then propose a',
-    'reading order. Every changed file listed above',
-    'must appear in exactly one step, under its exact path. Group files that',
-    'belong to the same concern into one step rather than one step per file',
-    'when that makes for a clearer story. Order steps so foundational or',
-    'central changes come first and dependent/peripheral changes (tests,',
-    'generated files, minor call-site updates) come later.',
+    '1. Read each changed file in the review root (Read, Grep, Glob). Done when',
+    '   you can say in one sentence what every file adds or changes.',
+    '2. Group the files by concern. Done when every changed file sits in',
+    '   exactly one step, under its exact path.',
+    '3. Order the steps by dependency: definitions and contracts before the code',
+    '   that uses them, call sites and tests last. Done when each step comes after',
+    '   the steps it builds on.',
+    '4. Write each step following the descriptions in the output schema.',
     '',
-    'Respond only with the structured output — no other explanation.',
+    'Respond only with the structured output.',
   ].join('\n');
 }
 
@@ -99,8 +98,8 @@ export async function generateReadingOrderPlan(options: GenerateReadingOrderPlan
         type: 'preset',
         preset: 'claude_code',
         append:
-          'You are generating a reading order for a code review (read-only). ' +
-          'Do not attempt to modify any files or run any command outside your allowlisted, read-only tools.',
+          'You are writing a walkthrough of a code review for a teammate. ' +
+          'Your tools are read-only: Read, Grep, Glob.',
       },
       maxTurns: 30,
     },
