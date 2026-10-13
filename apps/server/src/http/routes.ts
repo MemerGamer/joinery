@@ -11,6 +11,7 @@ import {
   createReviewBodySchema,
   createThreadBodySchema,
   generateReadingOrderBodySchema,
+  listDirsQuerySchema,
   listBranchesQuerySchema,
   listPullsQuerySchema,
   listReviewsQuerySchema,
@@ -56,6 +57,7 @@ import {
   writeReadingOrderPlan,
   type Db,
 } from '../db/index.ts';
+import { listDirs } from '../fs/dirs.ts';
 import { buildReviewSummaries, getMeCached } from '../homebase.ts';
 import { getPullsCached } from '../pullsCache.ts';
 import type { StoredCacheDeps } from '../storedCache.ts';
@@ -163,6 +165,12 @@ export function buildRoutes(deps: RoutesDeps): Hono {
       defaultBranch: branch,
     });
     return c.json({ repo }, 201);
+  });
+
+  // Server-side folder browsing for the add-repo picker.
+  app.get('/api/fs/dirs', async (c) => {
+    const query = parseQuery(listDirsQuerySchema, c);
+    return c.json(await listDirs(query.path, query.hidden !== undefined));
   });
 
   app.get('/api/me', async (c) => {

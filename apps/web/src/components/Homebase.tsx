@@ -33,7 +33,7 @@ import { useGlobalKeymap } from '../lib/keymap.ts';
 import { backdropProps, coverGlow, coverPainting, paintingUrl, useBackdrop } from '../lib/covers.ts';
 import { firstName, personFrom } from '../lib/people.ts';
 import { relativeTime } from '../lib/relativeTime.ts';
-import { goExplore, goReview } from '../lib/router.ts';
+import { goReview } from '../lib/router.ts';
 import { useHomeData, type HomeReview } from '../state/HomeData.tsx';
 import { CommandPalette } from './CommandPalette.tsx';
 import { BackdropPicker } from './home/BackdropPicker.tsx';
@@ -41,6 +41,7 @@ import { GlowScene } from './home/GlowScene.tsx';
 import { Panel } from './home/Panel.tsx';
 import { Avatar, Chip, CiIcon, DiffStat, EffortMeter, ProgressBar, type Tone } from './home/primitives.tsx';
 import { ExploreSection } from './Explore.tsx';
+import { FolderPicker } from './home/FolderPicker.tsx';
 
 type Order = 'effort' | 'recent';
 
@@ -119,6 +120,7 @@ export function Homebase(): React.JSX.Element {
   // Cmd+K / Cmd+Shift+P, as on the review page; without a review the palette
   // offers the reviews, themes and light/dark (see CommandPalette.tsx).
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [addingRepo, setAddingRepo] = useState(false);
   const [paletteMode, setPaletteMode] = useState<'command' | undefined>(undefined);
   useGlobalKeymap({
     openPalette: () => {
@@ -319,9 +321,9 @@ export function Homebase(): React.JSX.Element {
                 ) : showNoRepos ? (
                   <Panel title="Currently reviewing" className="flex-1">
                     <div className="flex flex-col items-center gap-3 py-16 text-center">
-                      <p className="text-xs text-chrome-fg-muted">No repositories yet</p>
-                      <button type="button" onClick={goExplore} className="chrome-btn">
-                        Add one in Explore
+                      <p className="text-xs text-chrome-fg-muted">Nothing here just yet!</p>
+                      <button type="button" onClick={() => setAddingRepo(true)} className="chrome-btn">
+                        Add your first repo
                       </button>
                     </div>
                   </Panel>
@@ -440,6 +442,7 @@ export function Homebase(): React.JSX.Element {
         </div>
       </div>
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} initialMode={paletteMode} />
+      {addingRepo && <FolderPicker onAdded={() => setAddingRepo(false)} onCancel={() => setAddingRepo(false)} />}
     </div>
   );
 }

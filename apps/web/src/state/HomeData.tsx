@@ -6,7 +6,7 @@
  * everything else here is plain module state shared by every component that
  * calls `useHomeData()`.
  */
-import type { Branch, Me, Pull, Repo, Review, ReviewSummary } from '@joinery/core';
+import type { Branch, Me, Pull, Repo, ResponseOf, Review, ReviewSummary } from '@joinery/core';
 import { useEffect, useSyncExternalStore } from 'react';
 import { ApiError, callApi } from '../lib/apiClient.ts';
 import { goReview } from '../lib/router.ts';
@@ -41,6 +41,12 @@ export interface HomeSnapshot {
   lastLoadedAt: number | null;
 }
 
+export type ListDirsResult = ResponseOf<'listDirs'>;
+export interface AddReposResult {
+  added: Repo[];
+  failed: { path: string; message: string; hint?: string | undefined }[];
+}
+
 export interface HomeActions {
   refresh(options?: { force?: boolean }): Promise<void>;
   openPull(repoId: string, pull: Pull): Promise<void>;
@@ -49,6 +55,8 @@ export interface HomeActions {
   unarchiveReview(id: string): Promise<void>;
   generateReadingOrder(id: string): Promise<void>;
   addRepo(path: string): Promise<Repo>;
+  addRepos(paths: string[]): Promise<AddReposResult>;
+  listDirs(path?: string): Promise<ListDirsResult>;
 }
 
 const AUTO_REFRESH_THROTTLE_MS = 30_000;
@@ -315,6 +323,27 @@ async function addRepo(path: string): Promise<Repo> {
   }
 }
 
+async function addRepos(paths: string[]): Promise<AddReposResult> {
+  const result: AddReposResult = { added: [], failed: [] };
+  for (const path of paths) {
+    try {
+      result.added.push((await callApi('addRepo', { body: { path } })).repo);
+    } catch (err) {
+      result.failed.push({
+        path,
+        message: errorMessage(err, 'Failed to add repository'),
+        hint: err instanceof ApiError ? err.hint : undefined,
+      });
+    }
+  }
+  await refresh();
+  return result;
+}
+
+function listDirs(path?: string): Promise<ListDirsResult> {
+  return callApi('listDirs', { query: path === undefined ? {} : { path } });
+}
+
 function shouldSkipAutoRefresh(): boolean {
   return snapshot.lastLoadedAt !== null && Date.now() - snapshot.lastLoadedAt < AUTO_REFRESH_THROTTLE_MS;
 }
@@ -381,6 +410,8 @@ const actions: HomeActions = {
   unarchiveReview,
   generateReadingOrder,
   addRepo,
+  addRepos,
+  listDirs,
 };
 
 export function useHomeData(): HomeSnapshot & HomeActions {

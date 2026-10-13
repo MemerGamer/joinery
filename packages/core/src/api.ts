@@ -122,6 +122,14 @@ export const listBranchesQuerySchema = z.object({
   filter: z.string().min(1).optional(),
   limit: z.coerce.number().int().positive().max(500).optional(),
 });
+export const listDirsQuerySchema = z.object({
+  /** Absolute (or `~`-prefixed) directory to list; defaults to the server user's home. */
+  path: z.string().optional(),
+  /** Include dot-directories. */
+  hidden: z.enum(['1', 'true']).optional(),
+});
+export const dirEntrySchema = z.object({ name: z.string(), path: z.string(), isRepo: z.boolean() });
+export type DirEntry = z.infer<typeof dirEntrySchema>;
 export const listReviewsQuerySchema = z.object({
   /** Omitted means every status — archived reviews included. */
   status: reviewStatusSchema.optional(),
@@ -193,6 +201,20 @@ export const api = {
     body: addRepoBodySchema,
     query: undefined,
     response: z.object({ repo: repoSchema }),
+  }),
+  listDirs: def({
+    method: 'GET',
+    path: () => '/api/fs/dirs',
+    body: undefined,
+    query: listDirsQuerySchema,
+    response: z.object({
+      /** Canonical absolute path of the directory that was listed. */
+      path: z.string(),
+      parent: z.string().nullable(),
+      /** The listed directory itself has a `.git`. */
+      isRepo: z.boolean(),
+      entries: z.array(dirEntrySchema),
+    }),
   }),
   listBranches: def({
     method: 'GET',

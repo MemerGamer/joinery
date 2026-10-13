@@ -21,6 +21,7 @@ import { firstName, personFrom, type Person } from '../lib/people.ts';
 import { relativeTime } from '../lib/relativeTime.ts';
 import { EXPLORE_ID } from '../lib/router.ts';
 import { useHomeData } from '../state/HomeData.tsx';
+import { FolderPicker } from './home/FolderPicker.tsx';
 import { Panel } from './home/Panel.tsx';
 import { Avatar, Chip, CiIcon, EffortMeter, Kbd, SectionHeading } from './home/primitives.tsx';
 
@@ -56,7 +57,7 @@ function repoLabel(r: Repo): string {
 }
 
 export function ExploreSection(): React.JSX.Element {
-  const { repos, pullsByRepo, pullsAvailable, me, loading, error, openPull, openBranch, addRepo } = useHomeData();
+  const { repos, pullsByRepo, pullsAvailable, me, loading, error, openPull, openBranch } = useHomeData();
   const you = me?.name ?? me?.login ?? null;
 
   const [repoId, setRepoIdState] = useState<string>(ALL_REPOS);
@@ -68,9 +69,6 @@ export function ExploreSection(): React.JSX.Element {
   const [openError, setOpenError] = useState<string | null>(null);
 
   const [addingRepo, setAddingRepo] = useState(false);
-  const [repoPath, setRepoPath] = useState('');
-  const [addRepoBusy, setAddRepoBusy] = useState(false);
-  const [addRepoError, setAddRepoError] = useState<{ message: string; hint?: string | undefined } | null>(null);
 
   // Branches are tagged with the scope + query they were fetched for, so a
   // switch keeps the old list on screen (dimmed) until the new one lands
@@ -84,7 +82,6 @@ export function ExploreSection(): React.JSX.Element {
   const branchAbortRef = useRef<AbortController | null>(null);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const repoPathInputRef = useRef<HTMLInputElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
   const rowRefs = useRef(new Map<string, HTMLLIElement>());
 
@@ -95,10 +92,6 @@ export function ExploreSection(): React.JSX.Element {
     if (repos.length === 0) return;
     setRepoIdState((prev) => (prev === ALL_REPOS || repos.some((r) => r.id === prev) ? prev : ALL_REPOS));
   }, [repos]);
-
-  useEffect(() => {
-    if (!loading && repos.length === 0) setAddingRepo(true);
-  }, [loading, repos.length]);
 
   const all = repoId === ALL_REPOS;
   const repo = all ? undefined : repos.find((r) => r.id === repoId);
@@ -272,25 +265,10 @@ export function ExploreSection(): React.JSX.Element {
     return r !== undefined ? repoLabel(r) : undefined;
   };
 
-  async function submitAddRepo(): Promise<void> {
-    const path = repoPath.trim();
-    if (path === '') return;
-    setAddRepoBusy(true);
-    setAddRepoError(null);
-    try {
-      const created = await addRepo(path);
-      setRepoIdState(created.id);
-      setAddingRepo(false);
-      setRepoPath('');
-    } catch (err) {
-      if (err instanceof ApiError) setAddRepoError({ message: err.message, hint: err.hint });
-      else setAddRepoError({ message: 'Failed to add repository.' });
-    } finally {
-      setAddRepoBusy(false);
-    }
+  function handleAdded(added: Repo[]): void {
+    if (added[0] !== undefined) setRepoIdState(added[0].id);
+    setAddingRepo(false);
   }
-
-  const formOpen = addingRepo || noRepos;
   const displayError = openError ?? error;
 
   return (
@@ -353,59 +331,16 @@ export function ExploreSection(): React.JSX.Element {
                     onSelect={() => setRepoIdState(r.id)}
                   />
                 ))}
-                {formOpen ? (
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      void submitAddRepo();
-                    }}
-                    className="flex h-7 items-center gap-1.5 rounded-full border border-dashed border-chrome-border-strong pr-1 pl-3"
-                  >
-                    <input
-                      ref={repoPathInputRef}
-                      type="text"
-                      autoFocus
-                      value={repoPath}
-                      disabled={addRepoBusy}
-                      onChange={(e) => setRepoPath(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Escape') {
-                          e.stopPropagation();
-                          if (!noRepos) {
-                            setAddingRepo(false);
-                            setRepoPath('');
-                            setAddRepoError(null);
-                          }
-                        } else if (e.key === 'Enter') {
-                          e.stopPropagation();
-                        }
-                      }}
-                      placeholder="Absolute path to a git clone"
-                      spellCheck={false}
-                      autoComplete="off"
-                      className="h-5 w-56 bg-transparent font-mono text-xs text-chrome-fg outline-hidden! placeholder:text-chrome-fg-subtle"
-                    />
-                    <button type="submit" disabled={addRepoBusy || repoPath.trim() === ''} className="chrome-btn h-5 px-2 text-xs">
-                      Add
-                    </button>
-                  </form>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setAddingRepo(true)}
-                    className="flex h-7 items-center gap-1.5 rounded-full border border-dashed border-chrome-border-strong px-3 text-xs font-medium text-chrome-fg-muted! transition-colors hover:border-chrome-fg-subtle hover:text-chrome-fg!"
-                  >
-                    <Plus size={13} strokeWidth={1.75} aria-hidden />
-                    Add repository
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => setAddingRepo(true)}
+                  className="flex h-7 items-center gap-1.5 rounded-full border border-dashed border-chrome-border-strong px-3 text-xs font-medium text-chrome-fg-muted! transition-colors hover:border-chrome-fg-subtle hover:text-chrome-fg!"
+                >
+                  <Plus size={13} strokeWidth={1.75} aria-hidden />
+                  Add repository
+                </button>
               </div>
-              {addRepoError !== null && (
-                <p className="text-micro text-chrome-danger">
-                  {addRepoError.message}
-                  {addRepoError.hint !== undefined ? ` — ${addRepoError.hint}` : ''}
-                </p>
-              )}
+              {addingRepo && <FolderPicker onAdded={handleAdded} onCancel={() => setAddingRepo(false)} />}
 
               {noRepos ? (
                 <Empty>Register a repository to start.</Empty>
