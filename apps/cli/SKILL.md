@@ -7,7 +7,7 @@ description: Drive the joinery code review app from a Claude Code session — pr
 
 `joinery` is a local HTTP client for a running joinery server
 (`http://127.0.0.1:7317` by default). It reads its bearer token from
-`data/token` next to the app (override with `JOINERY_DATA_DIR`), and the
+`~/.joinery/data/token` for installed builds (`data/token` in the repo for source checkouts; `JOINERY_DATA_DIR` overrides either), and the
 server URL from `JOINERY_URL`. Every subcommand supports `--json` for
 machine-readable output — pipe it to `jq`.
 

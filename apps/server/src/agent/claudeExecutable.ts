@@ -4,6 +4,9 @@
  * inside a `bun build --compile` executable — so in `installed` mode we use
  * the user's own `claude` from PATH. In dev the SDK default is left alone.
  */
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { runtimeLayout } from '../runtime.ts';
 
 export const CLAUDE_NOT_FOUND_MESSAGE =
@@ -12,7 +15,15 @@ export const CLAUDE_NOT_FOUND_MESSAGE =
 /** Spread into `query()` options. Throws with a clear message if `claude` is missing when installed. */
 export function claudeExecutableOption(): { pathToClaudeCodeExecutable?: string } {
   if (runtimeLayout().mode !== 'installed') return {};
-  const path = Bun.which('claude');
+  const path =
+    Bun.which('claude') ??
+    [
+      join(homedir(), '.claude', 'local', 'claude'),
+      join(homedir(), '.local', 'bin', 'claude'),
+      '/opt/homebrew/bin/claude',
+      '/usr/local/bin/claude',
+    ].find((candidate) => existsSync(candidate)) ??
+    null;
   if (path === null) throw new Error(CLAUDE_NOT_FOUND_MESSAGE);
   return { pathToClaudeCodeExecutable: path };
 }

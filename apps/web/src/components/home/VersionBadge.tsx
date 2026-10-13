@@ -6,7 +6,7 @@
  * until it answers with a different `current` and reload into the new build.
  */
 import type { VersionInfo } from '@joinery/core';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { callApi } from '../../lib/apiClient.ts';
 
 const POLL_MS = 2_000;
@@ -19,41 +19,62 @@ export function VersionBadge() {
   const [phase, setPhase] = useState<Phase>('idle');
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const stopPolling = useCallback(() => {
+    if (timer.current !== null) clearInterval(timer.current);
+    timer.current = null;
+  }, []);
+
+  // Poll until the server reports a `current` different from `before`, then reload.
+  const pollForNewVersion = useCallback(
+    (before: string) => {
+      stopPolling();
+      const deadline = Date.now() + POLL_TIMEOUT_MS;
+      const id = setInterval(() => {
+        void callApi('version')
+          .then((v) => {
+            if (timer.current !== id) return; // stopped (reloaded, failed or unmounted)
+            if (v.current !== before) {
+              stopPolling();
+              location.reload();
+            }
+          })
+          .catch(() => {
+            // Server is down mid-restart; keep polling until the deadline.
+          });
+        if (timer.current === id && Date.now() > deadline) {
+          stopPolling();
+          setPhase('failed');
+        }
+      }, POLL_MS);
+      timer.current = id;
+    },
+    [stopPolling],
+  );
+
   useEffect(() => {
     let live = true;
     callApi('version')
       .then((v) => {
-        if (live) setInfo(v);
+        if (!live) return;
+        setInfo(v);
+        if (v.updating) {
+          setPhase('updating');
+          pollForNewVersion(v.current);
+        }
       })
       .catch(() => {});
     return () => {
       live = false;
-      if (timer.current !== null) clearInterval(timer.current);
+      stopPolling();
     };
-  }, []);
+  }, [pollForNewVersion, stopPolling]);
 
   if (info === null) return null;
 
   const startUpdate = () => {
-    const before = info.current;
     setPhase('updating');
     callApi('startUpdate')
-      .then(() => {
-        const deadline = Date.now() + POLL_TIMEOUT_MS;
-        timer.current = setInterval(() => {
-          void callApi('version')
-            .then((v) => {
-              if (v.current !== before) location.reload();
-            })
-            .catch(() => {
-              // Server is down mid-restart; keep polling until the deadline.
-            });
-          if (Date.now() > deadline) {
-            if (timer.current !== null) clearInterval(timer.current);
-            setPhase('failed');
-          }
-        }, POLL_MS);
-      })
+      .then(() => pollForNewVersion(info.current))
       .catch(() => setPhase('failed'));
   };
 

@@ -12,8 +12,8 @@ const root = resolve(import.meta.dirname, '..');
 const releaseDir = join(root, 'dist', 'release');
 const stage = join(releaseDir, 'stage');
 
-async function run(cmd: string[], cwd = root): Promise<string> {
-  const proc = Bun.spawn(cmd, { cwd, stdout: 'pipe', stderr: 'inherit' });
+async function run(cmd: string[], cwd = root, env: Record<string, string> = {}): Promise<string> {
+  const proc = Bun.spawn(cmd, { cwd, env: { ...process.env, ...env }, stdout: 'pipe', stderr: 'inherit' });
   const out = await new Response(proc.stdout).text();
   if ((await proc.exited) !== 0) throw new Error(`command failed: ${cmd.join(' ')}`);
   return out;
@@ -43,7 +43,7 @@ console.log('signing');
 await run(['codesign', '--force', '--sign', '-', join(stage, 'joinery')]);
 await run(['codesign', '--verify', '--verbose=2', join(stage, 'joinery')]);
 
-await run(['tar', '-czf', archive, '-C', stage, '.']);
+await run(['tar', '-czf', archive, '-C', stage, '.'], root, { COPYFILE_DISABLE: '1' });
 const sha = (await run(['shasum', '-a', '256', archiveName], releaseDir)).trim();
 await writeFile(`${archive}.sha256`, `${sha}\n`);
 

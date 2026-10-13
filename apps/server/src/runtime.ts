@@ -45,11 +45,53 @@ export type RuntimeLayout = {
   readonly defaultDataDir: string;
 };
 
-/** The repo root in dev: three levels up from `apps/server/src`. */
-const REPO_ROOT = resolve(import.meta.dirname, '..', '..', '..');
+/** The repo root by position: three levels up from `apps/server/src`. Last-resort fallback. */
+const FALLBACK_REPO_ROOT = resolve(import.meta.dirname, '..', '..', '..');
+
+/** Walk up from `start` (max 12 levels) looking for `tsconfig.base.json`. */
+function walkUpForRoot(start: string): string | undefined {
+  let dir = resolve(start);
+  for (let i = 0; i < 12; i++) {
+    if (existsSync(join(dir, 'tsconfig.base.json'))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+  return undefined;
+}
+
+/**
+ * The repo root in dev. Inside a dev-compiled binary (`apps/cli` `bun run
+ * build`) `import.meta.dirname` is a virtual `/$bunfs` path, so also try the
+ * real executable's location and the working directory.
+ */
+function findRepoRoot(): string {
+  const starts: Array<() => string> = [
+    () => import.meta.dirname,
+    () => dirname(realpathSync(process.execPath)),
+    () => process.cwd(),
+  ];
+  for (const start of starts) {
+    try {
+      const found = walkUpForRoot(start());
+      if (found !== undefined) return found;
+    } catch {
+      // try the next candidate
+    }
+  }
+  return FALLBACK_REPO_ROOT;
+}
 
 function installHome(): string {
   return resolve(process.env['JOINERY_HOME']?.trim() || join(homedir(), '.joinery'));
+}
+
+function readVersionOr(file: string, fallback: string): string {
+  try {
+    return readVersion(file);
+  } catch {
+    return fallback;
+  }
 }
 
 function readVersion(file: string): string {
@@ -81,9 +123,10 @@ export function runtimeLayout(): RuntimeLayout {
       defaultDataDir: join(home, 'data'),
     };
   } else {
+    const REPO_ROOT = findRepoRoot();
     cached = {
       mode: 'dev',
-      version: readVersion(join(REPO_ROOT, 'package.json')),
+      version: readVersionOr(join(REPO_ROOT, 'package.json'), '0.0.0'),
       home,
       webDistDir: join(REPO_ROOT, 'apps', 'web', 'dist'),
       migrationsDir: join(REPO_ROOT, 'apps', 'server', 'migrations'),

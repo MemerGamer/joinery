@@ -102,8 +102,10 @@ export function startUpdate(): void {
     child.on('error', () => {
       updating = false;
     });
-    child.on('exit', (code) => {
-      if (code !== 0) updating = false;
+    child.on('exit', () => {
+      // Success normally means the LaunchAgent restarts us; if we're still
+      // alive (started by hand), allow another attempt.
+      updating = false;
     });
     child.unref();
   } catch (err) {

@@ -84,7 +84,7 @@ if [ "${JOINERY_SKIP_SERVICE:-}" = "1" ]; then
 else
   JOINERY_HOME="$HOME_DIR" "$HOME_DIR/current/joinery" service install
   say ""
-  say "Joinery is running at http://127.0.0.1:7317"
+  say "Joinery is running at http://127.0.0.1:${JOINERY_PORT:-7317}"
 fi
 say "  joinery open     open the web UI"
 say "  joinery update   update to the latest release"
