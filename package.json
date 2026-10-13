@@ -1,6 +1,7 @@
 {
   "name": "joinery",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "workspaces": [
     "packages/*",
