@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="apps/web/public/joinery-wordmark-squircle-light.svg" alt="Joinery" width="420" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="apps/web/public/joinery-wordmark-squircle-dark.svg" />
+    <img src="apps/web/public/joinery-wordmark-squircle-light.svg" alt="Joinery" width="420" />
+  </picture>
 </p>
 
 A local-first, agent-native code review app. Joinery renders diffs fast, walks
