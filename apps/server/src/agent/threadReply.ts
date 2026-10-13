@@ -10,6 +10,7 @@
  */
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentModel, Review, ServerEvent, Thread } from '@joinery/core';
+import { claudeExecutableOption } from './claudeExecutable.ts';
 import { AGENT_MODEL_ID } from './model.ts';
 import { makeAgentCanUseTool } from './permissions.ts';
 import { createReviewTools, trimToLines, type Invoke } from './tools.ts';
@@ -134,6 +135,7 @@ export async function runThreadReplyAgent(
   const stream = query({
     prompt: userMessage,
     options: {
+      ...claudeExecutableOption(),
       cwd,
       model,
       disallowedTools: ['Write', 'Edit', 'NotebookEdit', 'Bash'],

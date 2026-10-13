@@ -14,6 +14,7 @@ import {
   listDirsQuerySchema,
   listBranchesQuerySchema,
   listPullsQuerySchema,
+  versionQuerySchema,
   listReviewsQuerySchema,
   markViewedBodySchema,
   readingOrderPlanSchema,
@@ -27,6 +28,7 @@ import {
   type Thread,
 } from '@joinery/core';
 import { z } from 'zod';
+import { getVersionInfo, startUpdate } from '../updates.ts';
 import {
   appendReply,
   createReview,
@@ -176,6 +178,16 @@ export function buildRoutes(deps: RoutesDeps): Hono {
 
   app.get('/api/me', async (c) => {
     return c.json(await getMeCached(homeDeps));
+  });
+
+  app.get('/api/version', async (c) => {
+    const query = parseQuery(versionQuerySchema, c);
+    return c.json(await getVersionInfo(query.refresh === 'true'));
+  });
+
+  app.post('/api/update', (c) => {
+    startUpdate();
+    return c.json({ started: true as const }, 202);
   });
 
   // --- discovery: branches and PRs for a registered repo, so the web UI can

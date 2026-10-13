@@ -1,8 +1,7 @@
 /**
- * Resolves the on-disk layout of the `data/` directory.
- *
- * Everything lives under `data/` **inside the app**, never in a user
- * dot-folder, overridable with `JOINERY_DATA_DIR`:
+ * Resolves the on-disk layout of the data directory: the repo's `data/` in
+ * dev, `~/.joinery/data` when installed (see `runtime.ts`), overridable with
+ * `JOINERY_DATA_DIR`:
  *
  * ```
  * data/
@@ -15,10 +14,8 @@
  */
 import { randomBytes } from 'node:crypto';
 import { chmod, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
-
-/** The app root: two levels up from `apps/server/src/db`. */
-const APP_ROOT = resolve(import.meta.dirname, '..', '..', '..', '..');
+import { join } from 'node:path';
+import { dataDirRoot } from '../runtime.ts';
 
 export type DataPaths = {
   readonly root: string;
@@ -31,7 +28,7 @@ export type DataPaths = {
 
 /** Resolve the data directory. Does not touch the filesystem. */
 export function resolveDataPaths(): DataPaths {
-  const root = resolve(process.env['JOINERY_DATA_DIR']?.trim() || join(APP_ROOT, 'data'));
+  const root = dataDirRoot();
   return {
     root,
     dbFile: join(root, 'state.sqlite'),

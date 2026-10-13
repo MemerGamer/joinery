@@ -14,6 +14,7 @@
     "dev:web": "bun run --filter '@joinery/web' dev",
     "start": "bun run --filter '@joinery/web' build && bun run --filter '@joinery/server' start",
     "typecheck": "bun run --filter '*' typecheck",
+    "package": "bun scripts/package-release.ts",
     "build": "bun run --filter '@joinery/web' build && bun run --filter '@joinery/cli' build",
     "test": "bun test",
     "check": "bun run typecheck && bun test"

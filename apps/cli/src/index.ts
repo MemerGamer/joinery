@@ -7,9 +7,14 @@ import * as reviews from './commands/reviews.ts';
 import * as readingOrder from './commands/reading-order.ts';
 import * as threads from './commands/threads.ts';
 import * as runCmd from './commands/run.ts';
+import * as serveCmd from './commands/serve.ts';
+import * as updateCmd from './commands/update.ts';
+import * as serviceCmd from './commands/service.ts';
+import * as openCmd from './commands/open.ts';
 import type { Command } from './commands/types.ts';
+import { runtimeLayout } from '@joinery/server/runtime';
 
-const VERSION = '0.0.0';
+const VERSION = runtimeLayout().version;
 
 const groups: Readonly<Record<string, Readonly<Record<string, Command>>>> = {
   repos: { list: repos.reposList, add: repos.reposAdd },
@@ -31,6 +36,10 @@ const leaves: Readonly<Record<string, Command>> = {
   revision: reviews.revision,
   viewed: reviews.viewed,
   run: runCmd.run,
+  serve: serveCmd.serve,
+  update: updateCmd.update,
+  service: serviceCmd.service,
+  open: openCmd.open,
 };
 
 function allCommands(): Command[] {

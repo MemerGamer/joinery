@@ -41,6 +41,7 @@ import { GlowScene } from './home/GlowScene.tsx';
 import { Panel } from './home/Panel.tsx';
 import { Avatar, Chip, CiIcon, DiffStat, EffortMeter, ProgressBar, type Tone } from './home/primitives.tsx';
 import { ExploreSection } from './Explore.tsx';
+import { VersionBadge } from './home/VersionBadge.tsx';
 import { FolderPicker } from './home/FolderPicker.tsx';
 
 type Order = 'effort' | 'recent';
@@ -222,6 +223,7 @@ export function Homebase(): React.JSX.Element {
     <div className="home-shell h-full" {...backdropProps(backdrop)}>
       {/* Bottom-left corner: the Joinery mark — Homebase is the only place it appears. */}
       <img src="/joinery.svg" alt="Joinery" className="pointer-events-none absolute bottom-4 left-4 z-20 size-9 select-none" />
+      <VersionBadge />
       {/* Bottom-right corner: the backdrop switcher, then refresh. */}
       <div className="absolute right-4 bottom-4 z-20 flex items-end gap-2">
         <BackdropPicker value={backdrop} onChange={setBackdrop} />

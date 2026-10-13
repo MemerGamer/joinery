@@ -5,9 +5,8 @@
  * and request/response schemas, so a route or payload change in core is a
  * compile error here, not a runtime 404.
  */
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   api,
   DEFAULT_PORT,
@@ -18,6 +17,7 @@ import {
   type ResponseOf,
 } from '@joinery/core';
 import type { DiffQuery } from '@joinery/core';
+import { dataDirRoot } from '@joinery/server/runtime';
 
 /** A structured API error: the server's `{code, message, hint}` shape. */
 export class ApiError extends Error {
@@ -38,41 +38,9 @@ export function baseUrl(): string {
   return process.env['JOINERY_URL'] ?? `http://127.0.0.1:${DEFAULT_PORT}`;
 }
 
-/** Walks up from `startDir` looking for the workspace root marker. */
-function findRepoRoot(startDir: string): string | undefined {
-  let dir = startDir;
-  for (let i = 0; i < 12; i += 1) {
-    if (existsSync(join(dir, 'tsconfig.base.json'))) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
-  }
-  return undefined;
-}
-
-/**
- * The app's own `data/` directory, resolved relative to the CLI itself (its
- * source file in dev, or the compiled binary's own path when run as
- * `dist/joinery`) — never a user dot-folder. `JOINERY_DATA_DIR` overrides.
- */
+/** The data directory shared with the server (see `@joinery/server/runtime`). */
 export function dataDir(): string {
-  const override = process.env['JOINERY_DATA_DIR'];
-  if (override !== undefined && override.length > 0) return override;
-
-  const candidateDirs: string[] = [];
-  try {
-    candidateDirs.push(dirname(fileURLToPath(import.meta.url)));
-  } catch {
-    // import.meta.url is not a file:// URL inside a compiled binary.
-  }
-  candidateDirs.push(dirname(process.execPath));
-  candidateDirs.push(process.cwd());
-
-  for (const start of candidateDirs) {
-    const root = findRepoRoot(start);
-    if (root !== undefined) return join(root, 'data');
-  }
-  return join(process.cwd(), 'data');
+  return dataDirRoot();
 }
 
 let cachedToken: string | undefined;

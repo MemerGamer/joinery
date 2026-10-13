@@ -17,10 +17,45 @@ that Claude Code can answer asynchronously.
 
 Everything runs on your machine. State lives in SQLite under `data/`.
 
+## Install
+
+Joinery runs on macOS (Apple Silicon). You'll need `git`, the GitHub CLI
+(`gh auth login`), and Claude Code (logged in) on your PATH.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/szhabolcs/joinery/main/scripts/install.sh | sh
+```
+
+This installs to `~/.joinery`, links `joinery` into `~/.local/bin`, and starts
+the server as a background service (a LaunchAgent).
+
+```sh
+joinery open      # open the web UI
+joinery update    # update to the latest release and restart
+```
+
+To uninstall:
+
+```sh
+joinery service uninstall
+rm -rf ~/.joinery ~/.local/bin/joinery
+```
+
+Your data lives in `~/.joinery/data`, so keep it if you plan to reinstall.
+
 ## Development
 
 ```sh
 bun install
 bun run dev      # server + web
 bun run check    # typecheck + tests
+```
+
+## Releasing
+
+Bump `version` in the root `package.json`, then tag and push. GitHub Actions
+builds the tarball and publishes the release.
+
+```sh
+git tag vX.Y.Z && git push --tags
 ```

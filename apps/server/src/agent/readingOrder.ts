@@ -16,6 +16,7 @@
 import { query, type SDKMessage, type SDKResultMessage } from '@anthropic-ai/claude-agent-sdk';
 import { readingOrderPlanSchema, type FileEntry, type ReadingOrderPlan } from '@joinery/core';
 import { z } from 'zod';
+import { claudeExecutableOption } from './claudeExecutable.ts';
 import { READING_ORDER_MODEL_ID } from './model.ts';
 import { makeAgentCanUseTool } from './permissions.ts';
 
@@ -80,9 +81,17 @@ export async function generateReadingOrderPlan(options: GenerateReadingOrderPlan
     throw new ReadingOrderAgentError('review has no changed files to build a reading order from');
   }
 
+  let executable: ReturnType<typeof claudeExecutableOption>;
+  try {
+    executable = claudeExecutableOption();
+  } catch (err) {
+    throw new ReadingOrderAgentError(err instanceof Error ? err.message : String(err));
+  }
+
   const stream = query({
     prompt: buildReadingOrderPrompt(options.files),
     options: {
+      ...executable,
       cwd: options.cwd,
       model: READING_ORDER_MODEL_ID,
       // `Bash` is removed outright rather than gated through a read-only

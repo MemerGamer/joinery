@@ -1,6 +1,6 @@
 /**
  * A small, hand-rolled migration runner — not `drizzle-kit push`, never
- * auto-migrate. Applies numbered `.sql` files from `apps/server/migrations`
+ * auto-migrate. Applies numbered `.sql` files from the migrations dir
  * in order, inside a transaction each, tracked in a `schema_migrations`
  * table. Safe to call on every server start: already-applied files are
  * skipped.
@@ -8,9 +8,7 @@
 import type { Database } from 'bun:sqlite';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-
-/** `apps/server/migrations`, resolved relative to this file. */
-const MIGRATIONS_DIR = join(import.meta.dirname, '..', '..', 'migrations');
+import { runtimeLayout } from '../runtime.ts';
 
 const MIGRATION_FILE_RE = /^(\d+)_.+\.sql$/;
 
@@ -28,7 +26,7 @@ async function listMigrationFiles(dir: string): Promise<string[]> {
 }
 
 /**
- * Apply every migration in `migrationsDir` (default: `apps/server/migrations`)
+ * Apply every migration in `migrationsDir` (default: the runtime layout's migrations dir)
  * that is not already recorded in `schema_migrations`, each inside its own
  * transaction. Idempotent: running it twice applies nothing the second time.
  */
@@ -36,7 +34,7 @@ export async function runMigrations(
   sqlite: Database,
   options: { readonly migrationsDir?: string; readonly log?: MigrationLogger } = {},
 ): Promise<string[]> {
-  const migrationsDir = options.migrationsDir ?? MIGRATIONS_DIR;
+  const migrationsDir = options.migrationsDir ?? runtimeLayout().migrationsDir;
   const log = options.log ?? (() => {});
 
   sqlite.exec(

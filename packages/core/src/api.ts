@@ -136,6 +136,20 @@ export const listReviewsQuerySchema = z.object({
   /** `'true'` bypasses the server's short-lived `gh` cache for PR titles, CI, and diff sizes. */
   refresh: z.enum(['true', 'false']).optional(),
 });
+export const versionQuerySchema = z.object({
+  /** `'true'` forces a fresh GitHub release check instead of the 6-hour cache. */
+  refresh: z.enum(['true', 'false']).optional(),
+});
+export const versionInfoSchema = z.object({
+  current: z.string(),
+  /** Newest published release, or null when it couldn't be determined. */
+  latest: z.string().nullable(),
+  updateAvailable: z.boolean(),
+  mode: z.enum(['dev', 'installed']),
+  /** An update has been started and the server is about to restart. */
+  updating: z.boolean(),
+});
+export type VersionInfo = z.infer<typeof versionInfoSchema>;
 export const listPullsQuerySchema = z.object({
   /** `'true'` bypasses the server's short-lived `gh` cache. */
   refresh: z.enum(['true', 'false']).optional(),
@@ -238,6 +252,20 @@ export const api = {
     body: undefined,
     query: undefined,
     response: meSchema,
+  }),
+  version: def({
+    method: 'GET',
+    path: () => '/api/version',
+    body: undefined,
+    query: versionQuerySchema,
+    response: versionInfoSchema,
+  }),
+  startUpdate: def({
+    method: 'POST',
+    path: () => '/api/update',
+    body: undefined,
+    query: undefined,
+    response: z.object({ started: z.literal(true) }),
   }),
   listReviews: def({
     method: 'GET',

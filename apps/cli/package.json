@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@joinery/core": "workspace:*",
+    "@joinery/server": "workspace:*",
     "zod": "4.6.1"
   }
 }
