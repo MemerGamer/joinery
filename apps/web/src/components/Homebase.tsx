@@ -218,6 +218,8 @@ export function Homebase(): React.JSX.Element {
 
   return (
     <div className="home-shell h-full" {...backdropProps(backdrop)}>
+      {/* Bottom-left corner: the Joinery mark — Homebase is the only place it appears. */}
+      <img src="/joinery.svg" alt="Joinery" className="pointer-events-none absolute bottom-4 left-4 z-20 size-9 select-none" />
       {/* Bottom-right corner: the backdrop switcher, then refresh. */}
       <div className="absolute right-4 bottom-4 z-20 flex items-end gap-2">
         <BackdropPicker value={backdrop} onChange={setBackdrop} />
