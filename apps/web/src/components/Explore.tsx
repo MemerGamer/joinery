@@ -412,27 +412,6 @@ export function ExploreSection(): React.JSX.Element {
                 </div>
               )}
             </div>
-
-          <div className="flex h-8 shrink-0 items-center gap-3 border-t border-chrome-border px-3.5 text-micro text-chrome-fg-subtle">
-            <span className="flex items-center gap-1">
-              <Kbd>↑</Kbd>
-              <Kbd>↓</Kbd> navigate
-            </span>
-            <span className="flex items-center gap-1">
-              <Kbd>↵</Kbd> open
-            </span>
-            <span className="flex items-center gap-1">
-              <Kbd>esc</Kbd> clear
-            </span>
-            <div className="flex-1" />
-            {scopeIds.length > 0 && (
-              <span>
-                {branchState.truncated
-                  ? `${String(BRANCH_LIMIT)} most recent branches${all ? ' per repo' : ''} — type to search the rest`
-                  : `${String(branches.length)} ${branches.length === 1 ? 'branch' : 'branches'}`}
-              </span>
-            )}
-          </div>
       </div>
     </Panel>
   );
