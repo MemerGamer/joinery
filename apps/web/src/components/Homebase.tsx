@@ -16,7 +16,7 @@
  *
  * Everything here comes from `useHomeData()`.
  */
-import type { Pull, Repo, Review, ReviewSummary } from '@review/core';
+import type { Pull, Repo, Review, ReviewSummary } from '@joinery/core';
 import {
   Archive,
   Check,

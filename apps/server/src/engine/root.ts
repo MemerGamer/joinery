@@ -12,7 +12,7 @@
  * path conventions, no filesystem scanning, and a worktree an agent creates
  * mid-session starts being watched on the very next tick.
  */
-import type { Repo, Review, RootBinding } from '@review/core';
+import type { Repo, Review, RootBinding } from '@joinery/core';
 import { canonicalizePath, findWorktreeForBranch, type WorktreeEntry } from '../git/index.ts';
 
 export type RootResolution = RootBinding & {

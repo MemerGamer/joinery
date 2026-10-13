@@ -3,10 +3,10 @@
  * version** rather than replacing: old versions are retained, so progress and
  * threads survive a regenerate.
  */
-import { readingOrder, step, stepFile } from '@review/core/db';
-import type { ReadingOrder, ReadingOrderPlan, Step } from '@review/core';
+import { readingOrder, step, stepFile } from '@joinery/core/db';
+import type { ReadingOrder, ReadingOrderPlan, Step } from '@joinery/core';
 import { desc, eq, inArray, max } from 'drizzle-orm';
-import { readingOrderId, stepId } from '@review/core';
+import { readingOrderId, stepId } from '@joinery/core';
 import type { Db } from './client.ts';
 
 /** Write `plan` as a new version for `reviewId`. Never replaces an existing version. */

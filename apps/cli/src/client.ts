@@ -1,7 +1,7 @@
 /**
  * A thin typed client over the HTTP API.
  *
- * It calls through the `api` route map from `@review/core` for method, path,
+ * It calls through the `api` route map from `@joinery/core` for method, path,
  * and request/response schemas, so a route or payload change in core is a
  * compile error here, not a runtime 404.
  */
@@ -16,8 +16,8 @@ import {
   type BodyOf,
   type ErrorResponse,
   type ResponseOf,
-} from '@review/core';
-import type { DiffQuery } from '@review/core';
+} from '@joinery/core';
+import type { DiffQuery } from '@joinery/core';
 
 /** A structured API error: the server's `{code, message, hint}` shape. */
 export class ApiError extends Error {
@@ -35,7 +35,7 @@ export class ApiError extends Error {
 // --- configuration: base URL and bearer token ---
 
 export function baseUrl(): string {
-  return process.env['REVIEW_URL'] ?? `http://127.0.0.1:${DEFAULT_PORT}`;
+  return process.env['JOINERY_URL'] ?? `http://127.0.0.1:${DEFAULT_PORT}`;
 }
 
 /** Walks up from `startDir` looking for the workspace root marker. */
@@ -53,10 +53,10 @@ function findRepoRoot(startDir: string): string | undefined {
 /**
  * The app's own `data/` directory, resolved relative to the CLI itself (its
  * source file in dev, or the compiled binary's own path when run as
- * `dist/review`) — never a user dot-folder. `REVIEW_DATA_DIR` overrides.
+ * `dist/joinery`) — never a user dot-folder. `JOINERY_DATA_DIR` overrides.
  */
 export function dataDir(): string {
-  const override = process.env['REVIEW_DATA_DIR'];
+  const override = process.env['JOINERY_DATA_DIR'];
   if (override !== undefined && override.length > 0) return override;
 
   const candidateDirs: string[] = [];
@@ -87,7 +87,7 @@ function readToken(): string {
     throw new ApiError(
       'unauthorized',
       `could not read bearer token at ${tokenPath}`,
-      'start the review server first, or set REVIEW_DATA_DIR to a data/ directory containing a token file',
+      'start the joinery server first, or set JOINERY_DATA_DIR to a data/ directory containing a token file',
     );
   }
   cachedToken = raw.trim();
@@ -133,8 +133,8 @@ async function send<K extends ApiOperation>(
     const reason = err instanceof Error ? err.message : String(err);
     throw new ApiError(
       'internal',
-      `could not reach the review server at ${baseUrl()}: ${reason}`,
-      'is the server running? check REVIEW_URL if it is not on the default port',
+      `could not reach the joinery server at ${baseUrl()}: ${reason}`,
+      'is the server running? check JOINERY_URL if it is not on the default port',
     );
   }
 

@@ -3,7 +3,7 @@
  * stored as JSON. The values are opaque here; `../storedCache.ts` owns their
  * shape and freshness.
  */
-import { cacheEntry } from '@review/core/db';
+import { cacheEntry } from '@joinery/core/db';
 import { eq, lt } from 'drizzle-orm';
 import type { Db } from './client.ts';
 

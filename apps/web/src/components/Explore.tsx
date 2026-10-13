@@ -14,7 +14,7 @@
  */
 import { Cloud, FolderGit2, GitBranch, HardDrive, Layers, Plus, Search, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Branch, Pull, Repo, ReviewStatus } from '@review/core';
+import type { Branch, Pull, Repo, ReviewStatus } from '@joinery/core';
 import { ApiError, callApi } from '../lib/apiClient.ts';
 import { effortOf } from '../lib/effort.ts';
 import { firstName, personFrom, type Person } from '../lib/people.ts';

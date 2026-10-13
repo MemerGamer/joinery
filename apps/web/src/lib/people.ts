@@ -3,7 +3,7 @@
  * user.name`) into something the UI can render an avatar and a first-person
  * greeting from — with no server-side "people" concept to lean on.
  */
-import type { CiStatus, Me } from '@review/core';
+import type { CiStatus, Me } from '@joinery/core';
 
 export interface Person {
   name: string;

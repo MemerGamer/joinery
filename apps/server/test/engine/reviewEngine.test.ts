@@ -16,9 +16,9 @@ import {
 } from '../../src/db/index.ts';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { ServerEvent } from '@review/core';
+import type { ServerEvent } from '@joinery/core';
 import { gitCommit, headSha, runGit, setupRepo, setupRepoAndReview, writeRepoFile, type TestFixture } from './helpers.ts';
-import type { Review } from '@review/core';
+import type { Review } from '@joinery/core';
 
 type Ctx = TestFixture & { review: Review };
 

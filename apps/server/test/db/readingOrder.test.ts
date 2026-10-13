@@ -3,7 +3,7 @@ import { setupTestDb } from './helpers.ts';
 import { upsertRepo } from '../../src/db/repos.ts';
 import { createReview } from '../../src/db/reviews.ts';
 import { getLatestReadingOrder, writeReadingOrderPlan } from '../../src/db/readingOrder.ts';
-import { readingOrder } from '@review/core/db';
+import { readingOrder } from '@joinery/core/db';
 import { eq } from 'drizzle-orm';
 
 describe('reading order versioning', () => {

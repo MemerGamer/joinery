@@ -3,10 +3,10 @@
  * button (composer and thread card) and remembered across reloads, so
  * picking Opus once means the next Ask uses Opus too.
  */
-import { agentModelSchema, DEFAULT_AGENT_MODEL, type AgentModel } from '@review/core';
+import { agentModelSchema, DEFAULT_AGENT_MODEL, type AgentModel } from '@joinery/core';
 import { useSyncExternalStore } from 'react';
 
-const KEY = 'review-ui:agent-model';
+const KEY = 'joinery:agent-model';
 const listeners = new Set<() => void>();
 
 function load(): AgentModel {

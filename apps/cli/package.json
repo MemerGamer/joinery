@@ -1,15 +1,15 @@
 {
-  "name": "@review/cli",
+  "name": "@joinery/cli",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "bin": { "review": "./src/index.ts" },
+  "bin": { "joinery": "./src/index.ts" },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "build": "bun build ./src/index.ts --compile --outfile dist/review"
+    "build": "bun build ./src/index.ts --compile --outfile dist/joinery"
   },
   "dependencies": {
-    "@review/core": "workspace:*",
+    "@joinery/core": "workspace:*",
     "zod": "4.6.1"
   }
 }

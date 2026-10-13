@@ -17,7 +17,7 @@ export const get: Command = {
     const result = await client.getReadingOrder(id);
     if (maybePrintJson(parsed, result)) return;
     if (result.readingOrder === null) {
-      printLine('no reading order yet — run `review reading-order generate <id>`');
+      printLine('no reading order yet — run `joinery reading-order generate <id>`');
       return;
     }
     printTable(

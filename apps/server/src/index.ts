@@ -7,7 +7,7 @@
  * cache too (`storedCache.ts`).
  */
 import { resolve } from 'node:path';
-import { DEFAULT_HOST, DEFAULT_PORT } from '@review/core';
+import { DEFAULT_HOST, DEFAULT_PORT } from '@joinery/core';
 import { initDataDir, openDb, readToken, runMigrations } from './db/index.ts';
 import { EngineRegistry } from './engine/index.ts';
 import { createApp } from './http/app.ts';
@@ -31,8 +31,8 @@ async function main(): Promise<void> {
 
   const { app, websocket } = createApp({ db, registry, token, webDistDir });
 
-  const host = process.env['REVIEW_HOST']?.trim() || DEFAULT_HOST;
-  const port = Number(process.env['REVIEW_PORT']?.trim() || DEFAULT_PORT);
+  const host = process.env['JOINERY_HOST']?.trim() || DEFAULT_HOST;
+  const port = Number(process.env['JOINERY_PORT']?.trim() || DEFAULT_PORT);
 
   const server = Bun.serve({
     hostname: host,
@@ -41,7 +41,7 @@ async function main(): Promise<void> {
     websocket,
   });
 
-  console.log(`review-ui server listening on http://${host}:${String(port)}`);
+  console.log(`joinery server listening on http://${host}:${String(port)}`);
   console.log(`data dir: ${paths.root}`);
 
   let shuttingDown = false;

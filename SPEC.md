@@ -1,4 +1,4 @@
-# review-ui — spec
+# joinery — spec
 
 A local-first, agent-native code review app. Fast diff rendering (Pierre), a
 generated reading order that walks you through a change, and comment threads
@@ -86,7 +86,7 @@ that API:
 4. **No reconciliation.** No polling for edits/deletes, no dedupe against
    GitHub's threads, no ID mapping.
 
-The cost is that your review is invisible to teammates. `review feedback`
+The cost is that your review is invisible to teammates. `joinery feedback`
 (§10) is the mitigation.
 
 **Read-only agents keep the *code* still, not the UI.** Agents cannot edit the
@@ -116,7 +116,7 @@ apps/web       Vite + React 19 + Tailwind v4
                @pierre/trees 1.0.0-beta.6
                cmdk, tinykeys, react-markdown + remark-gfm
 
-apps/cli       Bun single-file binary `review`
+apps/cli       Bun single-file binary `joinery`
                thin client over the HTTP API, --json everywhere
                ships SKILL.md
 
@@ -157,7 +157,7 @@ Accessibility is a first-class requirement, not a pass at the end:
 ### Data directory
 
 All state lives in a **`data/` folder inside the app**, never in user dot-folders.
-Override with `REVIEW_DATA_DIR`.
+Override with `JOINERY_DATA_DIR`.
 
 ```
 data/
@@ -1098,10 +1098,10 @@ The embedded agent has **no shell and no write tools**:
 - `canUseTool` allows `Read`, `Grep`, `Glob` only for paths that resolve
   (through symlinks) under the run's `cwd`, and only with relative Glob
   patterns / Grep globs that don't climb out with `..`.
-- It allows the in-process `review` tools (below); everything else — including
+- It allows the in-process `joinery` tools (below); everything else — including
   any tool the SDK adds later — is denied by default.
 
-### The `review` tools
+### The `joinery` tools
 Everything the agent does to the app goes through an in-process MCP server
 (`agent/tools.ts`) whose tools are thin wrappers over the app's own HTTP routes,
 invoked in-process — so validation, events, and side effects are exactly the
@@ -1116,8 +1116,8 @@ Read: `get_review`, `list_files`, `get_diff`, `get_file`, `get_reading_order`,
 ### Run kinds
 | Kind | Trigger | Does |
 |---|---|---|
-| `reading_order` | "Generate reading order" button, or `review reading-order generate` | Explores the review root and returns a plan as structured output (`json_schema`), validated and persisted through the same path as `review reading-order set` |
-| `thread_reply` | "Ask agent" on a thread, `Cmd+Enter` on a comment, or `POST /api/threads/:id/ask` | Seeded with the thread, its anchor and diff, and the review's reading order; puts an `eyes` reaction on the latest user comment while working, then acts through the `review` tools (reply, react, ...). If it ends having written nothing, a short fallback reply is posted |
+| `reading_order` | "Generate reading order" button, or `joinery reading-order generate` | Explores the review root and returns a plan as structured output (`json_schema`), validated and persisted through the same path as `joinery reading-order set` |
+| `thread_reply` | "Ask agent" on a thread, `Cmd+Enter` on a comment, or `POST /api/threads/:id/ask` | Seeded with the thread, its anchor and diff, and the review's reading order; puts an `eyes` reaction on the latest user comment while working, then acts through the `joinery` tools (reply, react, ...). If it ends having written nothing, a short fallback reply is posted |
 
 Every complete SDK message is persisted to `agent_event(run_id, seq, type, payload)`,
 so a run's work is replayable (`GET /api/runs/:id`) and survives a page reload.
@@ -1128,40 +1128,40 @@ agent_run (id, review_id, thread_id?, kind, status, session_id,
 ```
 
 ### Tools for the embedded agent, the CLI for everyone else
-The embedded agent uses the in-process `review` tools rather than a shell:
+The embedded agent uses the in-process `joinery` tools rather than a shell:
 no shell means no allowlist to get wrong, and the tools can be scoped to one
-review. The `review` CLI stays the surface for humans and any outside Claude
+review. The `joinery` CLI stays the surface for humans and any outside Claude
 Code session (`SKILL.md`) — both end up on the same HTTP routes.
 
 ---
 
 ## 10. HTTP API and CLI
 
-Bearer token from `data/token` (or `$REVIEW_DATA_DIR/token`). Every CLI command supports `--json`.
+Bearer token from `data/token` (or `$JOINERY_DATA_DIR/token`). Every CLI command supports `--json`.
 
 | Method | Route | CLI |
 |---|---|---|
-| `GET` | `/api/repos` | `review repos list` |
-| `POST` | `/api/repos` | `review repos add <path>` |
-| `GET` | `/api/reviews` | `review list` |
-| `POST` | `/api/reviews` | `review create --branch <name> [--base <ref>]` |
-| `GET` | `/api/reviews/:id` | `review show <id>` |
-| `GET` | `/api/reviews/:id/files` | `review files <id>` |
-| `GET` | `/api/reviews/:id/diff?path=&rev=` | `review diff <id> <path> [--rev working\|head\|pr]` |
-| `GET` | `/api/reviews/:id/reading-order` | `review reading-order get <id>` |
-| `PUT` | `/api/reviews/:id/reading-order` | `review reading-order set <id> --file plan.json` |
-| `POST` | `/api/reviews/:id/reading-order/generate` | `review reading-order generate <id>` |
-| `GET` | `/api/reviews/:id/threads?status=` | `review threads <id> [--unresolved]` |
-| `GET` | `/api/threads/:id` | `review thread <id>` |
-| `POST` | `/api/threads/:id/replies` | `review reply <id> --body-file r.md` |
-| `POST` | `/api/threads/:id/resolve` | `review resolve <id>` |
+| `GET` | `/api/repos` | `joinery repos list` |
+| `POST` | `/api/repos` | `joinery repos add <path>` |
+| `GET` | `/api/reviews` | `joinery list` |
+| `POST` | `/api/reviews` | `joinery create --branch <name> [--base <ref>]` |
+| `GET` | `/api/reviews/:id` | `joinery show <id>` |
+| `GET` | `/api/reviews/:id/files` | `joinery files <id>` |
+| `GET` | `/api/reviews/:id/diff?path=&rev=` | `joinery diff <id> <path> [--rev working\|head\|pr]` |
+| `GET` | `/api/reviews/:id/reading-order` | `joinery reading-order get <id>` |
+| `PUT` | `/api/reviews/:id/reading-order` | `joinery reading-order set <id> --file plan.json` |
+| `POST` | `/api/reviews/:id/reading-order/generate` | `joinery reading-order generate <id>` |
+| `GET` | `/api/reviews/:id/threads?status=` | `joinery threads <id> [--unresolved]` |
+| `GET` | `/api/threads/:id` | `joinery thread <id>` |
+| `POST` | `/api/threads/:id/replies` | `joinery reply <id> --body-file r.md` |
+| `POST` | `/api/threads/:id/resolve` | `joinery resolve <id>` |
 | `POST` | `/api/threads/:id/ask` | — ("Ask agent" in the UI) |
 | `GET` | `/api/comments/:id` | — (the agent's `react` ownership check) |
-| `POST` | `/api/comments/:id/reactions` | `review react <commentId> <kind> [--off] [--actor user\|agent]` |
-| `GET` | `/api/reviews/:id/feedback?format=markdown` | `review feedback <id> [--unresolved]` |
-| `POST` | `/api/reviews/:id/revision` | `review revision <id> <working\|head\|pr>` |
-| `POST` | `/api/reviews/:id/viewed` | `review viewed <id> <path>` |
-| `GET` | `/api/runs/:id` | `review run <id>` |
+| `POST` | `/api/comments/:id/reactions` | `joinery react <commentId> <kind> [--off] [--actor user\|agent]` |
+| `GET` | `/api/reviews/:id/feedback?format=markdown` | `joinery feedback <id> [--unresolved]` |
+| `POST` | `/api/reviews/:id/revision` | `joinery revision <id> <working\|head\|pr>` |
+| `POST` | `/api/reviews/:id/viewed` | `joinery viewed <id> <path>` |
+| `GET` | `/api/runs/:id` | `joinery run <id>` |
 | `WS` | `/api/events` | — (per-review events; `subscribeHome` adds `reviews.changed` for Homebase) |
 
 `SKILL.md` ships alongside the CLI and documents the two workflows end to end:
@@ -1222,7 +1222,7 @@ window, a dock icon, and frees most of the rest.
 - **P2** Comments: gutter utility, inline annotations, markdown, threads panel,
   anchoring.
 - **P3** Real-time agent replies: unlimited concurrency, token-streamed work UI, replay.
-- **P4** Homebase, `Cmd+K`, full keymap, `review feedback` export.
+- **P4** Homebase, `Cmd+K`, full keymap, `joinery feedback` export.
 - **P4.5** Accessibility pass: axe audit, keyboard-only run-through, screen-reader
   walkthrough of a full review.
 - **P5** *(deferred)* Windows and Linux support (§14).
@@ -1240,7 +1240,7 @@ window, a dock icon, and frees most of the rest.
    otherwise `head`.
 3. **Regenerating a reading order supersedes** rather than replaces: the old
    version is retained, and threads and file-viewed state are preserved.
-4. **`review feedback`** is the outward path that substitutes for posting to GitHub.
+4. **`joinery feedback`** is the outward path that substitutes for posting to GitHub.
 5. **No agent auto-triggering.** Agents run only on a button press or a CLI call —
    never automatically on review creation.
 6. **Diff style is viewer-wide only** (§6). No per-file override.

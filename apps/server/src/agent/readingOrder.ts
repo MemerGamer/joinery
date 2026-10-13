@@ -14,7 +14,7 @@
  * structured output is a strong hint to the model, not a guarantee.
  */
 import { query, type SDKMessage, type SDKResultMessage } from '@anthropic-ai/claude-agent-sdk';
-import { readingOrderPlanSchema, type FileEntry, type ReadingOrderPlan } from '@review/core';
+import { readingOrderPlanSchema, type FileEntry, type ReadingOrderPlan } from '@joinery/core';
 import { z } from 'zod';
 import { READING_ORDER_MODEL_ID } from './model.ts';
 import { makeAgentCanUseTool } from './permissions.ts';

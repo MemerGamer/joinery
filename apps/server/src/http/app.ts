@@ -29,7 +29,7 @@ export type CreatedApp = {
    * Drives the app's own routes in-process, the same way an HTTP client
    * would: builds a `Request` against `http://review.local` carrying the
    * server's own bearer token, and calls `app.fetch`. The embedded agent's
-   * `review` MCP tools (`agent/tools.ts`) are thin wrappers over this, so
+   * `joinery` MCP tools (`agent/tools.ts`) are thin wrappers over this, so
    * they get exactly the HTTP route's validation, events, and side effects.
    */
   readonly invoke: Invoke;

@@ -4,7 +4,7 @@
  * Homebase/Explore should never wait on once any answer is stored. Fresh for
  * 60 s; a failed fetch (`available: false`) never replaces a good answer.
  */
-import type { Repo } from '@review/core';
+import type { Repo } from '@joinery/core';
 import { getMe } from './git/me.ts';
 import { listOpenPulls, type ListOpenPullsResult } from './git/github.ts';
 import { createStoredCache, type StoredCacheDeps } from './storedCache.ts';

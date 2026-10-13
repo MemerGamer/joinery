@@ -3,14 +3,14 @@
  * kind: it drives `@anthropic-ai/claude-agent-sdk` end to end (prompt,
  * read-only tool gating, structured output, schema validation) and persists
  * the result through the same `writeReadingOrderPlan` code path the CLI's
- * `review reading-order set --file plan.json` uses.
+ * `joinery reading-order set --file plan.json` uses.
  * See `agent/readingOrder.ts` for the agent side; the full session machinery
  * is deliberately not implemented there.
  *
  * `requestThreadReply` is the `thread_reply` run kind: create the run, put an
  * `eyes` reaction (as the agent) on
  * the thread's latest user comment as a working indicator, run the agent
- * (`threadReply.ts`) against the `review` MCP tools, then remove the `eyes`
+ * (`threadReply.ts`) against the `joinery` MCP tools, then remove the `eyes`
  * reaction and close out the run — on success or on error either way, so a
  * run never leaves a stray `eyes` reaction behind.
  *
@@ -18,7 +18,7 @@
  * agent itself runs in the background and reports back through `run.*`
  * events, so no HTTP request is held open for the length of an agent run.
  */
-import type { AgentModel, AgentRun, FileEntry, Review, ServerEvent } from '@review/core';
+import type { AgentModel, AgentRun, FileEntry, Review, ServerEvent } from '@joinery/core';
 import {
   appendEvent,
   createRun,
@@ -52,7 +52,7 @@ export type ReadingOrderContext = {
  * explores `context.cwd` with `context.files` as the changed-file list, its
  * structured output is validated against `readingOrderPlanSchema`, and the
  * plan is persisted via `writeReadingOrderPlan` (the same path
- * `review reading-order set` uses). Completion is reported through
+ * `joinery reading-order set` uses). Completion is reported through
  * `reading_order.updated` and `run.ended`; on any failure the run is marked
  * `error` with a real message.
  */

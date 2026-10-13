@@ -1,4 +1,4 @@
-import { revisionSchema } from '@review/core';
+import { revisionSchema } from '@joinery/core';
 import * as client from '../client.ts';
 import { UsageError } from '../args.ts';
 import { printLine, printTable } from '../format.ts';
@@ -15,7 +15,7 @@ export const list: Command = {
     const result = await client.listReviews();
     if (maybePrintJson(parsed, result)) return;
     if (result.reviews.length === 0) {
-      printLine('no reviews yet — run `review create --branch <name>`');
+      printLine('no reviews yet — run `joinery create --branch <name>`');
       return;
     }
     printTable(

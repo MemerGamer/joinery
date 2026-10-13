@@ -42,7 +42,7 @@ import {
   type ReviewState,
   type Repo,
   type Thread,
-} from '@review/core';
+} from '@joinery/core';
 import type { CodeViewDiffItem, DiffLineAnnotation } from '@pierre/diffs';
 import type { CodeViewHandle } from '@pierre/diffs/react';
 import {
@@ -73,7 +73,7 @@ export type DiffStyle = 'split' | 'unified';
  * explicitly expanded.
  */
 function collapseStorageKey(reviewId: string): string {
-  return `review-ui:collapsed:${reviewId}`;
+  return `joinery:collapsed:${reviewId}`;
 }
 
 function isCollapseOverrideRecord(value: unknown): value is Record<string, boolean> {

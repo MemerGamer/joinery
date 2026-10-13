@@ -7,7 +7,7 @@
  */
 import { createBunWebSocket } from 'hono/bun';
 import type { Hono } from 'hono';
-import { clientMessageSchema, type Revision, type ServerEvent } from '@review/core';
+import { clientMessageSchema, type Revision, type ServerEvent } from '@joinery/core';
 import type { EngineRegistry } from '../engine/index.ts';
 
 export type { BunWebSocketHandler } from 'hono/bun';

@@ -6,14 +6,14 @@ import './styles/index.css';
 
 declare global {
   interface Window {
-    __REVIEW_TOKEN__?: string;
+    __JOINERY_TOKEN__?: string;
   }
 }
 
 // The web app gets it at page load. The placeholder survives only
 // if neither the server nor the dev-server plugin substituted a real token.
-const injected = window.__REVIEW_TOKEN__;
-if (injected !== undefined && injected !== '__REVIEW_TOKEN_PLACEHOLDER__') {
+const injected = window.__JOINERY_TOKEN__;
+if (injected !== undefined && injected !== '__JOINERY_TOKEN_PLACEHOLDER__') {
   setAuthToken(injected);
 }
 

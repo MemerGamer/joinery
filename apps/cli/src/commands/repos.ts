@@ -14,7 +14,7 @@ export const reposList: Command = {
     const result = await client.listRepos();
     if (maybePrintJson(parsed, result)) return;
     if (result.repos.length === 0) {
-      printLine('no repos registered — run `review repos add <path>`');
+      printLine('no repos registered — run `joinery repos add <path>`');
       return;
     }
     printTable(

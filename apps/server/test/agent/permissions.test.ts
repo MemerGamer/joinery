@@ -20,8 +20,8 @@ describe('makeAgentCanUseTool (no shell, path-fenced reads)', () => {
     expect(result?.behavior).toBe('deny');
   });
 
-  test('allows any mcp__review__* tool', async () => {
-    const result = await agentCanUseTool('mcp__review__reply', { threadId: 't1', bodyMd: 'hi' }, baseOptions);
+  test('allows any mcp__joinery__* tool', async () => {
+    const result = await agentCanUseTool('mcp__joinery__reply', { threadId: 't1', bodyMd: 'hi' }, baseOptions);
     expect(result?.behavior).toBe('allow');
   });
 

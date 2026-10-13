@@ -2,7 +2,7 @@
  * `EngineRegistry` — one `ReviewEngine` actor per review, created lazily and
  * kept alive while anything subscribes to it.
  */
-import type { ServerEvent } from '@review/core';
+import type { ServerEvent } from '@joinery/core';
 import type { Db } from '../db/index.ts';
 import { getRepoById, getReview } from '../db/index.ts';
 import { ReviewEngine } from './reviewEngine.ts';
@@ -13,7 +13,7 @@ export type EventListener = (event: ServerEvent) => void;
  * Idle-eviction constants. Engines are a ceiling on concurrency, not a promise
  * to keep every engine ever touched alive forever. A `ReviewEngine` pins a poll timer, two recursive
  * `fs.watch` handles, and a live `git cat-file --batch` child process. A
- * one-shot HTTP/CLI call (e.g. `review files <id>`) goes through the same
+ * one-shot HTTP/CLI call (e.g. `joinery files <id>`) goes through the same
  * `requireEngine` path as a live review window and would otherwise leak all
  * three for the life of the server.
  *

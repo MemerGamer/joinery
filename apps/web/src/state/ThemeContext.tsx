@@ -39,7 +39,7 @@ interface ThemeCtxValue extends ThemeState {
 
 const ThemeCtx = createContext<ThemeCtxValue | null>(null);
 
-const STORAGE_KEY = 'review-ui:theme';
+const STORAGE_KEY = 'joinery:theme';
 
 function activeDiffThemeName(state: ThemeState): string {
   return state.chromeMode === 'dark' ? state.diffTheme.dark : state.diffTheme.light;

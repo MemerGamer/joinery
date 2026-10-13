@@ -3,7 +3,7 @@
  * state. Deleting every row costs one rebuild before the next agent
  * run.
  */
-import { agentWorktree } from '@review/core/db';
+import { agentWorktree } from '@joinery/core/db';
 import { and, eq, lt } from 'drizzle-orm';
 import type { Db } from './client.ts';
 

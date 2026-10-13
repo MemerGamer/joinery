@@ -2,9 +2,9 @@
  * `review` — one row per `(repo, branch)`. A detached review starts as
  * `(repo, pinned_sha)` with a null branch and adopts one later, in place.
  */
-import { review } from '@review/core/db';
-import type { Review, ReviewStatus, Revision } from '@review/core';
-import { reviewId, reviewStatusSchema, revisionSchema } from '@review/core';
+import { review } from '@joinery/core/db';
+import type { Review, ReviewStatus, Revision } from '@joinery/core';
+import { reviewId, reviewStatusSchema, revisionSchema } from '@joinery/core';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Db } from './client.ts';
 import { narrowUnion } from './narrow.ts';

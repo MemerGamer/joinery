@@ -1,9 +1,9 @@
 /**
  * Opens the SQLite database and returns a typed drizzle instance bound to
- * `@review/core`'s schema (the single source of truth for tables).
+ * `@joinery/core`'s schema (the single source of truth for tables).
  */
 import { Database } from 'bun:sqlite';
-import { schema } from '@review/core/db';
+import { schema } from '@joinery/core/db';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import type { BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite';
 import { dirname } from 'node:path';

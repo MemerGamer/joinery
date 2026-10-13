@@ -75,7 +75,7 @@ describe('read-only allowlist, exercised against a real repo', () => {
   });
 
   it('allows status and rejects commit through git()/gitOrThrow', async () => {
-    const dir = await makeTempDir('review-ui-run-');
+    const dir = await makeTempDir('joinery-run-');
     dirs.push(dir);
     await initRepo(dir);
     await writeRepoFile(dir, 'a.txt', 'hi\n');
@@ -93,7 +93,7 @@ describe('read-only allowlist, exercised against a real repo', () => {
     // A shim `git` that just dumps its GIT_OPTIONAL_LOCKS to a file, so we
     // can observe what run.ts actually put in the child's environment
     // rather than trusting real git's behavior with the flag.
-    const shimDir = await makeTempDir('review-ui-run-shim-');
+    const shimDir = await makeTempDir('joinery-run-shim-');
     dirs.push(shimDir);
     const outFile = join(shimDir, 'out.txt');
     const shimPath = join(shimDir, 'git');

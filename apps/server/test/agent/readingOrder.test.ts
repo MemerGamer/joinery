@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { FileEntry } from '@review/core';
+import type { FileEntry } from '@joinery/core';
 import { buildReadingOrderPrompt } from '../../src/agent/readingOrder.ts';
 
 function file(overrides: Partial<FileEntry>): FileEntry {

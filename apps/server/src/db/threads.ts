@@ -1,9 +1,9 @@
 /**
  * `thread` + `comment` — comment threads and anchoring.
  */
-import { comment, thread } from '@review/core/db';
-import type { Comment, Reaction, Thread, ThreadSide } from '@review/core';
-import { commentId, threadId as newThreadId, threadSideSchema } from '@review/core';
+import { comment, thread } from '@joinery/core/db';
+import type { Comment, Reaction, Thread, ThreadSide } from '@joinery/core';
+import { commentId, threadId as newThreadId, threadSideSchema } from '@joinery/core';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { Db } from './client.ts';
 import { narrowUnion } from './narrow.ts';

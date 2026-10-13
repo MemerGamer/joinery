@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { mountStatic } from '../../src/http/static.ts';
 import { makeTempDir, removeTempDir } from './helpers.ts';
 
-const PLACEHOLDER = '__REVIEW_TOKEN_PLACEHOLDER__';
+const PLACEHOLDER = '__JOINERY_TOKEN_PLACEHOLDER__';
 
 async function makeWebDist(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true });
@@ -24,7 +24,7 @@ async function makeWebDist(dir: string): Promise<void> {
 
 describe('static.ts: with a built web dist', () => {
   test('GET / substitutes the real token and does not leak the placeholder', async () => {
-    const dir = await makeTempDir('review-ui-static-dist-');
+    const dir = await makeTempDir('joinery-static-dist-');
     try {
       await makeWebDist(dir);
       const app = new Hono();
@@ -40,7 +40,7 @@ describe('static.ts: with a built web dist', () => {
   });
 
   test('the SPA catch-all also substitutes the token for an unknown client route', async () => {
-    const dir = await makeTempDir('review-ui-static-dist-');
+    const dir = await makeTempDir('joinery-static-dist-');
     try {
       await makeWebDist(dir);
       const app = new Hono();
@@ -56,7 +56,7 @@ describe('static.ts: with a built web dist', () => {
   });
 
   test('/api paths are not swallowed by the SPA catch-all (404, not the index page)', async () => {
-    const dir = await makeTempDir('review-ui-static-dist-');
+    const dir = await makeTempDir('joinery-static-dist-');
     try {
       await makeWebDist(dir);
       const app = new Hono();
@@ -71,7 +71,7 @@ describe('static.ts: with a built web dist', () => {
   });
 
   test('a rotated token is picked up on the very next request without a restart (reads the file per request)', async () => {
-    const dir = await makeTempDir('review-ui-static-dist-');
+    const dir = await makeTempDir('joinery-static-dist-');
     try {
       await makeWebDist(dir);
       const app = new Hono();
@@ -94,7 +94,7 @@ describe('static.ts: with a built web dist', () => {
   });
 
   test('static assets under the dist dir are served as-is (no token substitution)', async () => {
-    const dir = await makeTempDir('review-ui-static-dist-');
+    const dir = await makeTempDir('joinery-static-dist-');
     try {
       await makeWebDist(dir);
       const app = new Hono();
@@ -111,7 +111,7 @@ describe('static.ts: with a built web dist', () => {
 
 describe('static.ts: without a built web dist', () => {
   test('serves the fallback page when dist does not exist', async () => {
-    const dir = await makeTempDir('review-ui-static-missing-');
+    const dir = await makeTempDir('joinery-static-missing-');
     await rm(dir, { recursive: true, force: true }); // ensure it truly doesn't exist
     try {
       const app = new Hono();
@@ -119,14 +119,14 @@ describe('static.ts: without a built web dist', () => {
       const res = await app.fetch(new Request('http://localhost/'));
       expect(res.status).toBe(200);
       const html = await res.text();
-      expect(html).toContain('review-ui server is running');
+      expect(html).toContain('joinery server is running');
     } finally {
       // dir was already removed; nothing to clean up.
     }
   });
 
   test('/api paths are not swallowed by the fallback catch-all either', async () => {
-    const dir = await makeTempDir('review-ui-static-missing-');
+    const dir = await makeTempDir('joinery-static-missing-');
     await rm(dir, { recursive: true, force: true });
     try {
       const app = new Hono();

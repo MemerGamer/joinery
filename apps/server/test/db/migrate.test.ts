@@ -7,7 +7,7 @@ import { runMigrations } from '../../src/db/migrate.ts';
 
 describe('runMigrations', () => {
   test('applies all migrations and is idempotent when run twice', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'review-ui-migrate-test-'));
+    const dir = await mkdtemp(join(tmpdir(), 'joinery-migrate-test-'));
     try {
       const sqlite = new Database(join(dir, 'state.sqlite'), { create: true });
 

@@ -1,5 +1,5 @@
 {
-  "name": "@review/server",
+  "name": "@joinery/server",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.268",
-    "@review/core": "workspace:*",
+    "@joinery/core": "workspace:*",
     "drizzle-orm": "0.45.2",
     "hono": "4.10.7",
     "zod": "4.6.1"

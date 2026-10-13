@@ -91,9 +91,9 @@ describe('worktree lifecycle against a real repo', () => {
   });
 
   it('lists worktrees from any worktree of the repo, including one created elsewhere', async () => {
-    const repoDir = await makeTempDir('review-ui-wt-repo-');
+    const repoDir = await makeTempDir('joinery-wt-repo-');
     dirs.push(repoDir);
-    const dataDir = await canonicalizePath(await makeTempDir('review-ui-wt-data-'));
+    const dataDir = await canonicalizePath(await makeTempDir('joinery-wt-data-'));
     dirs.push(dataDir);
 
     await initRepo(repoDir);
@@ -115,9 +115,9 @@ describe('worktree lifecycle against a real repo', () => {
   });
 
   it('always creates worktrees detached, never holding a branch', async () => {
-    const repoDir = await makeTempDir('review-ui-wt-repo-');
+    const repoDir = await makeTempDir('joinery-wt-repo-');
     dirs.push(repoDir);
-    const dataDir = await canonicalizePath(await makeTempDir('review-ui-wt-data-'));
+    const dataDir = await canonicalizePath(await makeTempDir('joinery-wt-data-'));
     dirs.push(dataDir);
 
     await initRepo(repoDir);
@@ -138,7 +138,7 @@ describe('worktree lifecycle against a real repo', () => {
   });
 
   it('finds which worktree holds a named branch, with a canonicalized path', async () => {
-    const repoDir = await makeTempDir('review-ui-wt-repo-');
+    const repoDir = await makeTempDir('joinery-wt-repo-');
     dirs.push(repoDir);
     await initRepo(repoDir);
     await writeRepoFile(repoDir, 'a.txt', 'hi\n');
@@ -154,9 +154,9 @@ describe('worktree lifecycle against a real repo', () => {
   });
 
   it('scopedRemoveWorktree rm -rfs the directory and deletes exactly the registry entry, refusing paths outside dataDir', async () => {
-    const repoDir = await makeTempDir('review-ui-wt-repo-');
+    const repoDir = await makeTempDir('joinery-wt-repo-');
     dirs.push(repoDir);
-    const dataDir = await canonicalizePath(await makeTempDir('review-ui-wt-data-'));
+    const dataDir = await canonicalizePath(await makeTempDir('joinery-wt-data-'));
     dirs.push(dataDir);
 
     await initRepo(repoDir);

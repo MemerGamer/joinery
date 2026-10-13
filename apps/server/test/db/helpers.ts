@@ -1,4 +1,4 @@
-/** Shared test setup: a temp `REVIEW_DATA_DIR` per test file, migrated fresh. */
+/** Shared test setup: a temp `JOINERY_DATA_DIR` per test file, migrated fresh. */
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,7 +12,7 @@ export type TestDb = {
 };
 
 export async function setupTestDb(): Promise<TestDb> {
-  const dir = await mkdtemp(join(tmpdir(), 'review-ui-db-test-'));
+  const dir = await mkdtemp(join(tmpdir(), 'joinery-db-test-'));
   const opened: OpenedDb = openDb({ file: join(dir, 'state.sqlite') });
   await runMigrations(opened.sqlite);
 

@@ -3,7 +3,7 @@
  * only revisions that currently exist.
  */
 import { useEffect, useState } from 'react';
-import type { HeadSource, Revision } from '@review/core';
+import type { HeadSource, Revision } from '@joinery/core';
 import { useReview } from '../state/ReviewContext.tsx';
 
 const LABELS: Record<Revision, string> = { working: 'Working', head: 'Head', pr: 'PR' };

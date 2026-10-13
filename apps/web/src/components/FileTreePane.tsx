@@ -19,8 +19,8 @@ import { FileTree, useFileTree } from '@pierre/trees/react';
 import { preparePresortedFileTreeInput } from '@pierre/trees';
 import type { GitStatusEntry, FileTreeRowDecoration, TreeThemeStyles } from '@pierre/trees';
 import { useEffect, useMemo, useRef } from 'react';
-import type { FileStatus } from '@review/core';
-import { compareFileEntries } from '@review/core';
+import type { FileStatus } from '@joinery/core';
+import { compareFileEntries } from '@joinery/core';
 import { useReview } from '../state/ReviewContext.tsx';
 
 /**

@@ -5,7 +5,7 @@
  * alone, and never on the specific error text (the agent side is being
  * rewritten concurrently, so the message is arbitrary and may change).
  */
-import type { AgentRun } from '@review/core';
+import type { AgentRun } from '@joinery/core';
 
 export type RunUiState =
   | { phase: 'idle' }

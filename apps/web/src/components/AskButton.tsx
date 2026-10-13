@@ -3,7 +3,7 @@
  * a picker over `AGENT_MODELS`. The pick is shared and remembered
  * (`lib/agentModel.ts`), so every Ask button shows the same model.
  */
-import { AGENT_MODELS } from '@review/core';
+import { AGENT_MODELS } from '@joinery/core';
 import { Check, ChevronDown } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { setAgentModel, useAgentModel } from '../lib/agentModel.ts';

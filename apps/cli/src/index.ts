@@ -41,9 +41,9 @@ function allCommands(): Command[] {
 }
 
 function printHelp(): void {
-  printLine('review — local-first code review CLI');
+  printLine('joinery — local-first code review CLI');
   printLine('');
-  printLine('usage: review <command> [args] [--json]');
+  printLine('usage: joinery <command> [args] [--json]');
   printLine('');
   for (const command of allCommands()) {
     printLine(`  ${command.usage}`);
@@ -54,7 +54,7 @@ function printHelp(): void {
 }
 
 function printGroupHelp(name: string, group: Readonly<Record<string, Command>>): void {
-  printLine(`usage: review ${name} <${Object.keys(group).join('|')}> ...`);
+  printLine(`usage: joinery ${name} <${Object.keys(group).join('|')}> ...`);
   for (const command of Object.values(group)) {
     printLine(`  ${command.usage}`);
     printLine(`      ${command.summary}`);

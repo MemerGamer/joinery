@@ -5,7 +5,7 @@
  * in a try/catch to stay up.
  */
 import { z } from 'zod';
-import type { CiStatus, Pull } from '@review/core';
+import type { CiStatus, Pull } from '@joinery/core';
 import { getCachedLogin } from './me.ts';
 
 export type FindOpenPrOptions = { cwd: string };
@@ -156,7 +156,7 @@ const pullListItemSchema = z.object({
 
 const OPEN_PULLS_LIMIT = 200;
 
-/** Matches `Pull` from `@review/core` exactly; `reviewId` is always `null` here — the route fills it from the DB. */
+/** Matches `Pull` from `@joinery/core` exactly; `reviewId` is always `null` here — the route fills it from the DB. */
 export type PullSummary = Pull;
 
 export type ListOpenPullsResult = {

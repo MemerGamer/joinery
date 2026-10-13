@@ -3,7 +3,7 @@
  * throwable, plus the Hono error handler that renders it.
  */
 import type { Context } from 'hono';
-import type { ErrorResponse } from '@review/core';
+import type { ErrorResponse } from '@joinery/core';
 
 export type ErrorCode = ErrorResponse['error']['code'];
 

@@ -7,7 +7,7 @@
  * the worker pool's own highlight cache.
  */
 import { parsePatchFiles, trimPatchContext, type FileDiffLoadedFiles, type FileDiffMetadata } from '@pierre/diffs';
-import { NULL_BLOB, type FileEntry, type Revision } from '@review/core';
+import { NULL_BLOB, type FileEntry, type Revision } from '@joinery/core';
 import { callApi } from './apiClient.ts';
 
 const patchCache = new Map<string, Promise<FileDiffMetadata>>();

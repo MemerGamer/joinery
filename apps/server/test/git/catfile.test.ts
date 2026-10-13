@@ -12,7 +12,7 @@ describe('CatFile', () => {
   });
 
   it('reads a single blob correctly', async () => {
-    const dir = await makeTempDir('review-ui-catfile-');
+    const dir = await makeTempDir('joinery-catfile-');
     dirs.push(dir);
     await initRepo(dir);
     await writeRepoFile(dir, 'a.txt', 'hello world\n');
@@ -27,7 +27,7 @@ describe('CatFile', () => {
   });
 
   it('returns null for a missing object', async () => {
-    const dir = await makeTempDir('review-ui-catfile-');
+    const dir = await makeTempDir('joinery-catfile-');
     dirs.push(dir);
     await initRepo(dir);
     gitCommit(dir, 'initial');
@@ -39,7 +39,7 @@ describe('CatFile', () => {
   });
 
   it('reads many blobs through one batch process, including a binary one, preserving order', async () => {
-    const dir = await makeTempDir('review-ui-catfile-');
+    const dir = await makeTempDir('joinery-catfile-');
     dirs.push(dir);
     await initRepo(dir);
 
@@ -83,7 +83,7 @@ describe('CatFile', () => {
   });
 
   it('restarts the process if it dies between calls', async () => {
-    const dir = await makeTempDir('review-ui-catfile-');
+    const dir = await makeTempDir('joinery-catfile-');
     dirs.push(dir);
     await initRepo(dir);
     await writeRepoFile(dir, 'a.txt', 'first\n');

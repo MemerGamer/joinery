@@ -4,7 +4,7 @@
  * actual scrolling.
  */
 import type { CodeViewDiffItem, Hunk, SelectionSide } from '@pierre/diffs';
-import type { ReadingOrder, Thread } from '@review/core';
+import type { ReadingOrder, Thread } from '@joinery/core';
 
 type ReadingOrderStep = ReadingOrder['steps'][number];
 

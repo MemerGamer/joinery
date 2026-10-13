@@ -113,7 +113,7 @@ describe('readStatus (integration, against a real repo)', () => {
   });
 
   it('reports an untracked file and the branch oid matching HEAD', async () => {
-    const dir = await makeTempDir('review-ui-status-');
+    const dir = await makeTempDir('joinery-status-');
     dirs.push(dir);
     await initRepo(dir);
     await writeRepoFile(dir, 'README.md', 'hello\n');
@@ -128,7 +128,7 @@ describe('readStatus (integration, against a real repo)', () => {
   });
 
   it('does not report the worktree blob hash for a modified tracked file (only HEAD/index)', async () => {
-    const dir = await makeTempDir('review-ui-status-');
+    const dir = await makeTempDir('joinery-status-');
     dirs.push(dir);
     await initRepo(dir);
     await writeRepoFile(dir, 'a.txt', 'original\n');

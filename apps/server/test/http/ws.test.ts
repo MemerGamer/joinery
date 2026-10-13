@@ -21,7 +21,7 @@
  * client.
  */
 import { describe, expect, test } from 'bun:test';
-import { clientMessageSchema } from '@review/core';
+import { clientMessageSchema } from '@joinery/core';
 import { apiFetch, setupHttp } from './helpers.ts';
 
 describe('ws.ts: GET /api/events upgrade route is behind /api/* auth', () => {

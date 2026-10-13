@@ -1,9 +1,9 @@
 /**
- * Validation for the `plan.json` file consumed by `review reading-order set`.
+ * Validation for the `plan.json` file consumed by `joinery reading-order set`.
  * Kept separate from the command module so it can be unit tested without
  * touching the network or the filesystem.
  */
-import { readingOrderPlanSchema, type ReadingOrderPlan } from '@review/core';
+import { readingOrderPlanSchema, type ReadingOrderPlan } from '@joinery/core';
 import type { z } from 'zod';
 
 /** Thrown when `plan.json` fails validation. `message` is ready to print. */

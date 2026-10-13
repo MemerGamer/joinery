@@ -2,7 +2,7 @@
  * Display glyphs and titles for the six fixed reaction kinds. The contract only names the
  * kinds (`packages/core/src/domain/review.ts`) — the web owns how they look.
  */
-import type { Reaction, ReactionKind } from '@review/core';
+import type { Reaction, ReactionKind } from '@joinery/core';
 
 export const REACTIONS: { kind: ReactionKind; glyph: string; title: string }[] = [
   { kind: 'thumbs_up', glyph: '👍', title: 'Agree' },

@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { openDb, runMigrations, upsertRepo, createReview, setCurrentRevision, type Db, type OpenedDb } from '../../src/db/index.ts';
 import { EngineRegistry } from '../../src/engine/index.ts';
 import { createApp, type CreatedApp } from '../../src/http/app.ts';
-import type { Repo, Review } from '@review/core';
+import type { Repo, Review } from '@joinery/core';
 
 const ENV = {
   ...process.env,
@@ -90,7 +90,7 @@ export type HttpFixture = {
  * `/api/*` testing.
  */
 export async function setupHttp(branch = 'feature'): Promise<HttpFixture> {
-  const repoDir = await makeTempDir('review-ui-http-repo-');
+  const repoDir = await makeTempDir('joinery-http-repo-');
   await initRepo(repoDir);
   await writeRepoFile(repoDir, 'README.md', 'hello\n');
   gitCommit(repoDir, 'initial');
@@ -98,7 +98,7 @@ export async function setupHttp(branch = 'feature'): Promise<HttpFixture> {
   await writeRepoFile(repoDir, 'feature.txt', 'feature content\n');
   gitCommit(repoDir, 'add feature file');
 
-  const dataDir = await makeTempDir('review-ui-http-data-');
+  const dataDir = await makeTempDir('joinery-http-data-');
   const opened = openDb({ file: join(dataDir, 'state.sqlite') });
   await runMigrations(opened.sqlite);
 

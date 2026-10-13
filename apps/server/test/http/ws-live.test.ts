@@ -11,7 +11,7 @@
  * fails the test instead of hanging the suite.
  */
 import { describe, expect, test } from 'bun:test';
-import type { ServerEvent } from '@review/core';
+import type { ServerEvent } from '@joinery/core';
 import { createReview } from '../../src/db/index.ts';
 import { runGit, setupHttpWithReview, startLiveServer, type HttpFixture } from './helpers.ts';
 

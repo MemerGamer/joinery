@@ -11,7 +11,7 @@ describe('buildFileList', () => {
   });
 
   it('working revision: an untracked file is synthesized as an add-diff', async () => {
-    const dir = await makeTempDir('review-ui-filelist-');
+    const dir = await makeTempDir('joinery-filelist-');
     dirs.push(dir);
     await initRepo(dir);
     await writeRepoFile(dir, 'README.md', 'hello\n');
@@ -30,7 +30,7 @@ describe('buildFileList', () => {
   });
 
   it('working revision: a dirty tracked file gets a real worktree-side hash, not all-zeros', async () => {
-    const dir = await makeTempDir('review-ui-filelist-');
+    const dir = await makeTempDir('joinery-filelist-');
     dirs.push(dir);
     await initRepo(dir);
     await writeRepoFile(dir, 'a.txt', 'original\n');
@@ -46,7 +46,7 @@ describe('buildFileList', () => {
   });
 
   it('a rename carries oldPath', async () => {
-    const dir = await makeTempDir('review-ui-filelist-');
+    const dir = await makeTempDir('joinery-filelist-');
     dirs.push(dir);
     await initRepo(dir);
     await writeRepoFile(dir, 'old-name.txt', 'stable content that is long enough to be detected as a rename\n');
@@ -62,7 +62,7 @@ describe('buildFileList', () => {
   });
 
   it('working revision diffs from the merge-base, not HEAD: a committed change stays visible', async () => {
-    const dir = await makeTempDir('review-ui-filelist-');
+    const dir = await makeTempDir('joinery-filelist-');
     dirs.push(dir);
     await initRepo(dir);
     await writeRepoFile(dir, 'a.txt', 'v1\n');
@@ -80,7 +80,7 @@ describe('buildFileList', () => {
   });
 
   it('commit revisions never touch the filesystem (no worktree file needs to exist)', async () => {
-    const dir = await makeTempDir('review-ui-filelist-');
+    const dir = await makeTempDir('joinery-filelist-');
     dirs.push(dir);
     await initRepo(dir);
     await writeRepoFile(dir, 'a.txt', 'v1\n');
@@ -110,7 +110,7 @@ describe('merge-base 3-dot behaviour', () => {
   });
 
   it('a diverged local head does not show up as deletions in the pr-vs-base diff', async () => {
-    const dir = await makeTempDir('review-ui-filelist-');
+    const dir = await makeTempDir('joinery-filelist-');
     dirs.push(dir);
     await initRepo(dir);
     await writeRepoFile(dir, 'shared.txt', 'base content\n');

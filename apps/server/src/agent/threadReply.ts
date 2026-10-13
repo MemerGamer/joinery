@@ -2,14 +2,14 @@
  * The `thread_reply` run kind.
  * Mirrors `readingOrder.ts`'s shape (one `query()` per run, every SDK
  * message persisted via `appendEvent`) but the agent here acts through the
- * `review` MCP tools (`tools.ts`) instead of returning structured output,
+ * `joinery` MCP tools (`tools.ts`) instead of returning structured output,
  * and the "reply" it's asked for is a trigger, not a contract (design
  * decision 4): if it ends having written nothing, the caller (`runs.ts`)
  * appends a fallback reply so the click that started it never vanishes
  * silently.
  */
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import type { AgentModel, Review, ServerEvent, Thread } from '@review/core';
+import type { AgentModel, Review, ServerEvent, Thread } from '@joinery/core';
 import { AGENT_MODEL_ID } from './model.ts';
 import { makeAgentCanUseTool } from './permissions.ts';
 import { createReviewTools, trimToLines, type Invoke } from './tools.ts';
@@ -57,7 +57,7 @@ export function buildThreadReplyPrompt(input: {
   const systemPromptAppend = [
     'You are the review assistant for one code review. You cannot edit code —',
     'you have no Write, Edit, or shell access at all. Act on the review through',
-    'the `review` tools: reply, react, create_thread, resolve_thread,',
+    'the `joinery` tools: reply, react, create_thread, resolve_thread,',
     'mark_viewed, set_reading_order, set_review_status. Answer the latest user',
     'message in the thread below. Keep replies short and grounded in specific',
     "file paths and line numbers. Don't resolve a thread unless the user",

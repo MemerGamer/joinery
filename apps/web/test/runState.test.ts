@@ -6,7 +6,7 @@
  * `run.status`/`run.error` generically, never from a specific error string.
  */
 import { describe, expect, it } from 'bun:test';
-import type { AgentRun } from '@review/core';
+import type { AgentRun } from '@joinery/core';
 import { localRun, runUiState } from '../src/lib/runState.ts';
 
 function run(overrides: Partial<AgentRun> = {}): AgentRun {

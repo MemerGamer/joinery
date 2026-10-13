@@ -6,7 +6,7 @@
 import { access } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { git, gitOrThrow, type GitCallOptions } from './run.ts';
-import type { GitOperation } from '@review/core';
+import type { GitOperation } from '@joinery/core';
 
 /** `git rev-parse --git-common-dir`, resolved to an absolute path. */
 export async function gitCommonDir(options: GitCallOptions): Promise<string> {

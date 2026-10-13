@@ -3,7 +3,7 @@
  * `git diff -M` rename entry orphans both unless they are rewritten in the
  * same transaction that applies the new file list.
  */
-import { fileViewed, thread } from '@review/core/db';
+import { fileViewed, thread } from '@joinery/core/db';
 import { and, eq } from 'drizzle-orm';
 import type { Db } from './client.ts';
 

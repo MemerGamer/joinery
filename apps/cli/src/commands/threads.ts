@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { reactionKindSchema, type ReactionKind } from '@review/core';
+import { reactionKindSchema, type ReactionKind } from '@joinery/core';
 import * as client from '../client.ts';
 import { UsageError } from '../args.ts';
 import { printLine, printTable } from '../format.ts';

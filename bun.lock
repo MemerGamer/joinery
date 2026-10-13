@@ -10,22 +10,22 @@
       },
     },
     "apps/cli": {
-      "name": "@review/cli",
+      "name": "@joinery/cli",
       "version": "0.0.0",
       "bin": {
-        "review": "./src/index.ts",
+        "joinery": "./src/index.ts",
       },
       "dependencies": {
-        "@review/core": "workspace:*",
+        "@joinery/core": "workspace:*",
         "zod": "4.6.1",
       },
     },
     "apps/server": {
-      "name": "@review/server",
+      "name": "@joinery/server",
       "version": "0.0.0",
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "^0.3.268",
-        "@review/core": "workspace:*",
+        "@joinery/core": "workspace:*",
         "drizzle-orm": "0.45.2",
         "hono": "4.10.7",
         "zod": "4.6.1",
@@ -35,15 +35,15 @@
       },
     },
     "apps/web": {
-      "name": "@review/web",
+      "name": "@joinery/web",
       "version": "0.0.0",
       "dependencies": {
         "@base-ui-components/react": "1.0.0-rc.0",
+        "@joinery/core": "workspace:*",
         "@pierre/diffs": "1.4.1",
         "@pierre/theme": "2.0.0",
         "@pierre/theming": "1.0.1",
         "@pierre/trees": "1.0.0-beta.6",
-        "@review/core": "workspace:*",
         "@shikijs/themes": "4.4.3",
         "class-variance-authority": "0.7.1",
         "clsx": "2.1.1",
@@ -69,7 +69,7 @@
       },
     },
     "packages/core": {
-      "name": "@review/core",
+      "name": "@joinery/core",
       "version": "0.0.0",
       "dependencies": {
         "drizzle-orm": "0.45.2",
@@ -175,6 +175,14 @@
 
     "@hono/node-server": ["@hono/node-server@2.1.1", "", { "peerDependencies": { "hono": "^4" } }, "sha512-ELuehkj5VCBdgEw9zs+ivkKwyzzUCSQuE96YmiPvn1ECBoZCczbFXJLeEGMTYjphP6gydh4pHMqEYPVMYUVgQg=="],
 
+    "@joinery/cli": ["@joinery/cli@workspace:apps/cli"],
+
+    "@joinery/core": ["@joinery/core@workspace:packages/core"],
+
+    "@joinery/server": ["@joinery/server@workspace:apps/server"],
+
+    "@joinery/web": ["@joinery/web@workspace:apps/web"],
+
     "@jridgewell/gen-mapping": ["@jridgewell/gen-mapping@0.3.13", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.0", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA=="],
 
     "@jridgewell/remapping": ["@jridgewell/remapping@2.3.5", "", { "dependencies": { "@jridgewell/gen-mapping": "^0.3.5", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-LI9u/+laYG4Ds1TDKSJW2YPrIlcVYOwi2fUC6xB43lueCjgxV4lffOCZCtYFiH6TNOX+tQKXx97T4IKHbhyHEQ=="],
@@ -228,14 +236,6 @@
     "@radix-ui/react-use-effect-event": ["@radix-ui/react-use-effect-event@0.0.5", "", { "dependencies": { "@radix-ui/react-use-layout-effect": "1.1.4" }, "peerDependencies": { "@types/react": "*", "react": "^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc" }, "optionalPeers": ["@types/react"] }, "sha512-7cshFL8HGS/7HEiHH+9kL9HBwp2sa9yX18Knwek6KYWmXwM7pegMgta2AXMQKI+rq3JnfSj9x8wYqFMTdG1Jgg=="],
 
     "@radix-ui/react-use-layout-effect": ["@radix-ui/react-use-layout-effect@1.1.4", "", { "peerDependencies": { "@types/react": "*", "react": "^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc" }, "optionalPeers": ["@types/react"] }, "sha512-K20DkRkUwDnxEYMBPcg3Y6voLkEy5p5QQmszZgLngKKiC7dzBR/aEuK3w1qlx2JWDUNH6FluahYdgR3BP+QbYw=="],
-
-    "@review/cli": ["@review/cli@workspace:apps/cli"],
-
-    "@review/core": ["@review/core@workspace:packages/core"],
-
-    "@review/server": ["@review/server@workspace:apps/server"],
-
-    "@review/web": ["@review/web@workspace:apps/web"],
 
     "@rolldown/binding-android-arm-eabi": ["@rolldown/binding-android-arm-eabi@1.2.8", "", { "os": "android", "cpu": "arm" }, "sha512-tN5aztYkKCte4i5SIrrz5yK/HMjEuCqCSCJa418jOV8tZ1cBY3YF2otxB1ktPxzsLA1BeTqwapK0bfjxNvHJVw=="],
 

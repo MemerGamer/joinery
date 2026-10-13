@@ -11,7 +11,7 @@
  * or disappearing only ever changes which gap exists, never its size.
  */
 import { AlertTriangle, GitCompare } from 'lucide-react';
-import type { ReviewState } from '@review/core';
+import type { ReviewState } from '@joinery/core';
 
 export function DivergenceBanner({ state }: { state: ReviewState }): React.JSX.Element | null {
   const { divergence, basesMismatched, operationInProgress } = state;

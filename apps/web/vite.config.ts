@@ -5,15 +5,15 @@ import { fileURLToPath, URL } from 'node:url';
 import { readFileSync } from 'node:fs';
 import type { Plugin } from 'vite';
 
-// Inlined rather than imported from `@review/core`: `vite.config.ts` is
+// Inlined rather than imported from `@joinery/core`: `vite.config.ts` is
 // loaded by Node's native ESM loader (not Vite's own transform pipeline),
-// and `@review/core`'s package.json "exports" point straight at `.ts`
+// and `@joinery/core`'s package.json "exports" point straight at `.ts`
 // source, which that loader can't resolve — `bun run vite build` fails with
 // `ERR_UNKNOWN_FILE_EXTENSION` otherwise. Keep in sync with
 // `packages/core/src/api.ts`'s `DEFAULT_PORT`.
 const DEFAULT_PORT = 7317;
 
-const TOKEN_PLACEHOLDER = '__REVIEW_TOKEN_PLACEHOLDER__';
+const TOKEN_PLACEHOLDER = '__JOINERY_TOKEN_PLACEHOLDER__';
 
 /**
  * Hands the browser the bearer token at page load.
@@ -28,7 +28,7 @@ function reviewToken(): Plugin {
     name: 'review-token',
     apply: 'serve',
     transformIndexHtml(html) {
-      const dataDir = process.env['REVIEW_DATA_DIR'] ?? fileURLToPath(new URL('../../data', import.meta.url));
+      const dataDir = process.env['JOINERY_DATA_DIR'] ?? fileURLToPath(new URL('../../data', import.meta.url));
       try {
         const token = readFileSync(`${dataDir}/token`, 'utf8').trim();
         return html.replace(TOKEN_PLACEHOLDER, token);

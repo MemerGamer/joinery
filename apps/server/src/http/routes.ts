@@ -1,6 +1,6 @@
 /**
  * Every route, driven by the `api` map from
- * `@review/core`: validate params through each route's `body`/`query`
+ * `@joinery/core`: validate params through each route's `body`/`query`
  * schema, return exactly its `response` shape.
  */
 import { isAbsolute } from 'node:path';
@@ -24,7 +24,7 @@ import {
   NULL_BLOB,
   type ServerEvent,
   type Thread,
-} from '@review/core';
+} from '@joinery/core';
 import { z } from 'zod';
 import {
   appendReply,
@@ -81,7 +81,7 @@ import { parseBody, parseQuery } from './validate.ts';
 export type RoutesDeps = {
   readonly db: Db;
   readonly registry: EngineRegistry;
-  /** In-process app driver, built by `createApp` before routes are mounted — handed to `runs.ts` for the embedded agent's `review` tools. */
+  /** In-process app driver, built by `createApp` before routes are mounted — handed to `runs.ts` for the embedded agent's `joinery` tools. */
   readonly invoke: Invoke;
 };
 
@@ -136,7 +136,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     if (!isAbsolute(body.path)) {
       throw badRequest(
         `repo path must be absolute, got: ${body.path}`,
-        'Pass a full path, e.g. `review repos add "$(pwd)"`.',
+        'Pass a full path, e.g. `joinery repos add "$(pwd)"`.',
       );
     }
     let canonical: string;

@@ -14,7 +14,7 @@
 import type { CatFile } from '../git/index.ts';
 import { getFileContents } from '../git/index.ts';
 import { relocate } from './anchor.ts';
-import type { FileEntry, Revision, Thread } from '@review/core';
+import type { FileEntry, Revision, Thread } from '@joinery/core';
 
 export type ProjectionContext = {
   readonly cwd: string;

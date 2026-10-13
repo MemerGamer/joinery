@@ -21,7 +21,7 @@
  */
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { NULL_BLOB, sortFileEntries, type FileEntry, type FileStatus, type Revision } from '@review/core';
+import { NULL_BLOB, sortFileEntries, type FileEntry, type FileStatus, type Revision } from '@joinery/core';
 import { gitOrThrow, type GitCallOptions } from './run.ts';
 
 function splitNulRecords(bytes: Uint8Array): string[] {

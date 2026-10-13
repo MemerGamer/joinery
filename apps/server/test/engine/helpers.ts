@@ -11,7 +11,7 @@ import {
   type Db,
   type OpenedDb,
 } from '../../src/db/index.ts';
-import type { Repo, Review } from '@review/core';
+import type { Repo, Review } from '@joinery/core';
 
 const ENV = {
   ...process.env,
@@ -87,7 +87,7 @@ export type TestFixture = {
  * yet — for tests that want to create reviews themselves (e.g. adoption).
  */
 export async function setupRepo(branch = 'feature'): Promise<TestFixture> {
-  const repoDir = await makeTempDir('review-ui-engine-repo-');
+  const repoDir = await makeTempDir('joinery-engine-repo-');
   await initRepo(repoDir);
   await writeRepoFile(repoDir, 'README.md', 'hello\n');
   gitCommit(repoDir, 'initial');
@@ -95,7 +95,7 @@ export async function setupRepo(branch = 'feature'): Promise<TestFixture> {
   await writeRepoFile(repoDir, 'feature.txt', 'feature content\n');
   gitCommit(repoDir, 'add feature file');
 
-  const dataDir = await makeTempDir('review-ui-engine-data-');
+  const dataDir = await makeTempDir('joinery-engine-data-');
   const opened = openDb({ file: join(dataDir, 'state.sqlite') });
   await runMigrations(opened.sqlite);
 

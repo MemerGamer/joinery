@@ -47,7 +47,7 @@ describe('repo.ts against real repos', () => {
   });
 
   it('mergeBase finds the common ancestor of two diverged branches', async () => {
-    const dir = await makeTempDir('review-ui-repo-');
+    const dir = await makeTempDir('joinery-repo-');
     dirs.push(dir);
     await initRepo(dir);
     await writeRepoFile(dir, 'a.txt', 'v1\n');
@@ -66,7 +66,7 @@ describe('repo.ts against real repos', () => {
   });
 
   it('mergeBase returns null for unrelated histories', async () => {
-    const dir = await makeTempDir('review-ui-repo-');
+    const dir = await makeTempDir('joinery-repo-');
     dirs.push(dir);
     await initRepo(dir);
     await writeRepoFile(dir, 'a.txt', 'v1\n');
@@ -82,7 +82,7 @@ describe('repo.ts against real repos', () => {
   });
 
   it('revParse resolves a ref to a full sha and returns null for garbage', async () => {
-    const dir = await makeTempDir('review-ui-repo-');
+    const dir = await makeTempDir('joinery-repo-');
     dirs.push(dir);
     await initRepo(dir);
     await writeRepoFile(dir, 'a.txt', 'v1\n');
@@ -93,7 +93,7 @@ describe('repo.ts against real repos', () => {
   });
 
   it('divergence reports ahead/behind between head and pr', async () => {
-    const dir = await makeTempDir('review-ui-repo-');
+    const dir = await makeTempDir('joinery-repo-');
     dirs.push(dir);
     await initRepo(dir);
     await writeRepoFile(dir, 'a.txt', 'v1\n');
@@ -114,7 +114,7 @@ describe('repo.ts against real repos', () => {
   });
 
   it('detectInProgressOperation finds a rebase in progress via marker files', async () => {
-    const dir = await makeTempDir('review-ui-repo-');
+    const dir = await makeTempDir('joinery-repo-');
     dirs.push(dir);
     await initRepo(dir);
     await writeRepoFile(dir, 'a.txt', 'v1\n');
@@ -128,7 +128,7 @@ describe('repo.ts against real repos', () => {
   });
 
   it('detectInProgressOperation finds a cherry-pick via CHERRY_PICK_HEAD', async () => {
-    const dir = await makeTempDir('review-ui-repo-');
+    const dir = await makeTempDir('joinery-repo-');
     dirs.push(dir);
     await initRepo(dir);
     await writeRepoFile(dir, 'a.txt', 'v1\n');
@@ -140,7 +140,7 @@ describe('repo.ts against real repos', () => {
   });
 
   it('pinReviewRef writes refs/review/<id> and unpinReviewRef removes it', async () => {
-    const dir = await makeTempDir('review-ui-repo-');
+    const dir = await makeTempDir('joinery-repo-');
     dirs.push(dir);
     await initRepo(dir);
     await writeRepoFile(dir, 'a.txt', 'v1\n');
@@ -156,7 +156,7 @@ describe('repo.ts against real repos', () => {
   });
 
   it('remoteIdentity returns nulls when there is no origin remote', async () => {
-    const dir = await makeTempDir('review-ui-repo-');
+    const dir = await makeTempDir('joinery-repo-');
     dirs.push(dir);
     await initRepo(dir);
     gitCommit(dir, 'initial');
@@ -166,7 +166,7 @@ describe('repo.ts against real repos', () => {
   });
 
   it('remoteIdentity parses a configured origin URL', async () => {
-    const dir = await makeTempDir('review-ui-repo-');
+    const dir = await makeTempDir('joinery-repo-');
     dirs.push(dir);
     await initRepo(dir);
     gitCommit(dir, 'initial');

@@ -30,7 +30,7 @@ history behind them live in git (`git log -p -- IMPROVEMENTS.md`).
   the comment list with a `<pre>`, so the row has nowhere to go.
 - **Not verified end to end against a live server and a real agent run**
   (typecheck, tests and the web build pass). This covers the reply agent,
-  its `review` tools, reactions, background runs, and orphaned-run cleanup.
+  its `joinery` tools, reactions, background runs, and orphaned-run cleanup.
 
 ## Web
 

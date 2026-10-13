@@ -14,7 +14,7 @@ import {
   type ClientMessage,
   type Revision,
   type ServerEvent,
-} from '@review/core';
+} from '@joinery/core';
 
 type Listener = (event: ServerEvent) => void;
 

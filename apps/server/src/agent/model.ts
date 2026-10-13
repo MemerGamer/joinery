@@ -1,4 +1,4 @@
-import { DEFAULT_AGENT_MODEL, type AgentModel } from '@review/core';
+import { DEFAULT_AGENT_MODEL, type AgentModel } from '@joinery/core';
 
 /**
  * The Claude model used for thread replies when the request names none.

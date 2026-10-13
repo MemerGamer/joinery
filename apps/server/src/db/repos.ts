@@ -1,9 +1,9 @@
 /**
  * `repo` — a registered local clone, keyed by its canonical root path.
  */
-import { repo } from '@review/core/db';
-import type { Repo } from '@review/core';
-import { repoId } from '@review/core';
+import { repo } from '@joinery/core/db';
+import type { Repo } from '@joinery/core';
+import { repoId } from '@joinery/core';
 import { eq } from 'drizzle-orm';
 import type { Db } from './client.ts';
 

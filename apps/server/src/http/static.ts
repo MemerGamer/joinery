@@ -11,16 +11,16 @@ import { join } from 'node:path';
 
 const FALLBACK_HTML = `<!doctype html>
 <html>
-  <head><meta charset="utf-8" /><title>review-ui</title></head>
+  <head><meta charset="utf-8" /><title>joinery</title></head>
   <body style="font: 14px -apple-system, sans-serif; max-width: 640px; margin: 4rem auto; line-height: 1.5;">
-    <h1>review-ui server is running</h1>
+    <h1>joinery server is running</h1>
     <p>The web app hasn't been built yet — <code>apps/web/dist</code> doesn't exist.</p>
     <p>The HTTP API is live under <code>/api/*</code> (bearer token required).</p>
   </body>
 </html>
 `;
 
-const TOKEN_PLACEHOLDER = '__REVIEW_TOKEN_PLACEHOLDER__';
+const TOKEN_PLACEHOLDER = '__JOINERY_TOKEN_PLACEHOLDER__';
 
 export function mountStatic(app: Hono, webDistDir: string, token: string): void {
   const indexPath = join(webDistDir, 'index.html');

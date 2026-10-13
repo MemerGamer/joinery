@@ -168,7 +168,7 @@ export const readingOrderSchema = z.object({
 });
 export type ReadingOrder = z.infer<typeof readingOrderSchema>;
 
-/** The shape an agent writes via `review reading-order set --file plan.json`. */
+/** The shape an agent writes via `joinery reading-order set --file plan.json`. */
 export const readingOrderPlanSchema = z.object({
   steps: z
     .array(

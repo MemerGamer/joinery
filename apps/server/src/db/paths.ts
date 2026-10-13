@@ -2,7 +2,7 @@
  * Resolves the on-disk layout of the `data/` directory.
  *
  * Everything lives under `data/` **inside the app**, never in a user
- * dot-folder, overridable with `REVIEW_DATA_DIR`:
+ * dot-folder, overridable with `JOINERY_DATA_DIR`:
  *
  * ```
  * data/
@@ -31,7 +31,7 @@ export type DataPaths = {
 
 /** Resolve the data directory. Does not touch the filesystem. */
 export function resolveDataPaths(): DataPaths {
-  const root = resolve(process.env['REVIEW_DATA_DIR']?.trim() || join(APP_ROOT, 'data'));
+  const root = resolve(process.env['JOINERY_DATA_DIR']?.trim() || join(APP_ROOT, 'data'));
   return {
     root,
     dbFile: join(root, 'state.sqlite'),

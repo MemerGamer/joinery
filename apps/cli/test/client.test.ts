@@ -17,18 +17,18 @@ function mockFetch(response: { status: number; body: unknown }): void {
 let dataDir: string;
 
 beforeEach(() => {
-  dataDir = mkdtempSync(join(tmpdir(), 'review-cli-test-'));
+  dataDir = mkdtempSync(join(tmpdir(), 'joinery-cli-test-'));
   writeFileSync(join(dataDir, 'token'), 'test-token-value\n');
-  process.env['REVIEW_DATA_DIR'] = dataDir;
-  process.env['REVIEW_URL'] = 'http://127.0.0.1:7317';
+  process.env['JOINERY_DATA_DIR'] = dataDir;
+  process.env['JOINERY_URL'] = 'http://127.0.0.1:7317';
   _resetTokenCache();
 });
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
   rmSync(dataDir, { recursive: true, force: true });
-  delete process.env['REVIEW_DATA_DIR'];
-  delete process.env['REVIEW_URL'];
+  delete process.env['JOINERY_DATA_DIR'];
+  delete process.env['JOINERY_URL'];
 });
 
 describe('client error mapping', () => {
@@ -60,7 +60,7 @@ describe('client error mapping', () => {
         error: {
           code: 'not_found',
           message: 'repo not found',
-          hint: 'run `review repos add <path>` first',
+          hint: 'run `joinery repos add <path>` first',
         },
       },
     });
@@ -68,7 +68,7 @@ describe('client error mapping', () => {
       name: 'ApiError',
       code: 'not_found',
       message: 'repo not found',
-      hint: 'run `review repos add <path>` first',
+      hint: 'run `joinery repos add <path>` first',
     });
   });
 

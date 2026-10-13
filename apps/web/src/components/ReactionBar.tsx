@@ -13,7 +13,7 @@
  */
 import { Popover } from '@base-ui-components/react/popover';
 import { SmilePlus } from 'lucide-react';
-import type { Comment, ReactionKind } from '@review/core';
+import type { Comment, ReactionKind } from '@joinery/core';
 import { REACTIONS, glyphOf } from '../lib/reactions.ts';
 
 const TITLE_BY_KIND = new Map(REACTIONS.map((r) => [r.kind, r.title]));

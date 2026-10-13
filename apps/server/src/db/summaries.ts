@@ -6,8 +6,8 @@
  * costs six statements, not a hundred engines. Anything that needs git
  * (files changed, divergence) is deliberately absent; see Homebase.tsx.
  */
-import { agentRun, comment, fileViewed, readingOrder, review, thread } from '@review/core/db';
-import type { ReviewSummary } from '@review/core';
+import { agentRun, comment, fileViewed, readingOrder, review, thread } from '@joinery/core/db';
+import type { ReviewSummary } from '@joinery/core';
 import { and, count, countDistinct, eq, inArray, max, sql } from 'drizzle-orm';
 import type { Db } from './client.ts';
 

@@ -1,5 +1,5 @@
 /**
- * The `review` MCP server: every action the embedded agent can take on the
+ * The `joinery` MCP server: every action the embedded agent can take on the
  * app, as a thin
  * wrapper over the same in-process `invoke` the HTTP routes themselves run
  * through (`http/app.ts`'s `createApp().invoke`). A handler never touches
@@ -21,7 +21,7 @@
  * whether the run needs its "nothing to add" fallback reply.
  */
 import { createSdkMcpServer, tool, type McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk';
-import { reactionKindSchema, threadSideSchema } from '@review/core';
+import { reactionKindSchema, threadSideSchema } from '@joinery/core';
 import { z } from 'zod';
 
 export type Invoke = (method: string, path: string, body?: unknown) => Promise<Response>;
@@ -114,7 +114,7 @@ export function createReviewTools(options: CreateReviewToolsOptions): ReviewTool
   }
 
   const server = createSdkMcpServer({
-    name: 'review',
+    name: 'joinery',
     tools: [
       tool(
         'get_review',

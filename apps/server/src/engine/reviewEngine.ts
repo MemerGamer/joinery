@@ -19,8 +19,8 @@ import type {
   RootBinding,
   ServerEvent,
   Thread,
-} from '@review/core';
-import { diffFileLists, isEmptyDelta, type FileListDelta } from '@review/core';
+} from '@joinery/core';
+import { diffFileLists, isEmptyDelta, type FileListDelta } from '@joinery/core';
 import {
   bytesToText,
   buildFileList,

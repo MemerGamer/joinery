@@ -21,7 +21,7 @@
  * review's broken worktree/missing ref never fails the whole Homebase list
  * (see `homebase.ts`, which relies on this).
  */
-import type { FileEntry, Repo, Review } from '@review/core';
+import type { FileEntry, Repo, Review } from '@joinery/core';
 import { buildFileList } from './filelist.ts';
 import { baseMergeBase, revParse } from './repo.ts';
 import { bytesToText, gitOrThrow } from './run.ts';

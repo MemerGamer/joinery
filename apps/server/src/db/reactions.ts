@@ -3,8 +3,8 @@
  * on is insert-or-ignore, off is a delete; there is no update, since the row
  * carries no state beyond the triple existing.
  */
-import { reaction } from '@review/core/db';
-import { reactionKindSchema, type Reaction, type ReactionKind } from '@review/core';
+import { reaction } from '@joinery/core/db';
+import { reactionKindSchema, type Reaction, type ReactionKind } from '@joinery/core';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Db } from './client.ts';
 import { narrowUnion } from './narrow.ts';

@@ -10,7 +10,7 @@
  * here keeps "which remote" a non-question rather than inventing a
  * multi-remote UI nobody asked for.
  */
-import type { ReviewStatus } from '@review/core';
+import type { ReviewStatus } from '@joinery/core';
 import { git, gitOrThrow, bytesToText, type GitCallOptions } from './run.ts';
 
 export type BranchSummary = {

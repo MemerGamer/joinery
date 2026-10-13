@@ -6,7 +6,7 @@
  * everything else here is plain module state shared by every component that
  * calls `useHomeData()`.
  */
-import type { Branch, Me, Pull, Repo, Review, ReviewSummary } from '@review/core';
+import type { Branch, Me, Pull, Repo, Review, ReviewSummary } from '@joinery/core';
 import { useEffect, useSyncExternalStore } from 'react';
 import { ApiError, callApi } from '../lib/apiClient.ts';
 import { goReview } from '../lib/router.ts';

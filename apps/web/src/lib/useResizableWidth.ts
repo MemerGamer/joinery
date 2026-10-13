@@ -27,7 +27,7 @@ export function useResizableWidth(
     onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void;
   };
 } {
-  const storageKey = `review-ui.panel-width.${side}`;
+  const storageKey = `joinery.panel-width.${side}`;
 
   const [width, setWidth] = useState(() => {
     const stored = typeof window !== 'undefined' ? window.localStorage.getItem(storageKey) : null;

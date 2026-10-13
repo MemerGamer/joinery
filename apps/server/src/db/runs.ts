@@ -3,9 +3,9 @@
  * `seq` monotonic per run, so the work-in-progress UI is replayable and
  * survives a reload or restart.
  */
-import { agentEvent, agentRun } from '@review/core/db';
-import type { AgentRun, RunKind, RunStatus } from '@review/core';
-import { runId as newRunId, runKindSchema, runStatusSchema } from '@review/core';
+import { agentEvent, agentRun } from '@joinery/core/db';
+import type { AgentRun, RunKind, RunStatus } from '@joinery/core';
+import { runId as newRunId, runKindSchema, runStatusSchema } from '@joinery/core';
 import { asc, eq, inArray, max } from 'drizzle-orm';
 import type { Db } from './client.ts';
 import { narrowUnion } from './narrow.ts';

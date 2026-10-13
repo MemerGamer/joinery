@@ -12,7 +12,7 @@
  */
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Review } from '@review/core';
+import type { Review } from '@joinery/core';
 import {
   createWorktree,
   deleteWorktree,

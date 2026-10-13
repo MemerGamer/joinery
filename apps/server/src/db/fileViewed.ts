@@ -3,7 +3,7 @@
  * blob_sha)`. A changed blob simply fails to match and the check clears
  * itself; there is deliberately no invalidation code here.
  */
-import { fileViewed } from '@review/core/db';
+import { fileViewed } from '@joinery/core/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Db } from './client.ts';
 

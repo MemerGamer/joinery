@@ -1,5 +1,5 @@
 /**
- * Thin typed fetch wrapper over the route map in `@review/core`'s `api.ts`.
+ * Thin typed fetch wrapper over the route map in `@joinery/core`'s `api.ts`.
  *
  * The server may not be reachable (it's being built concurrently) — every
  * call surfaces a typed `ApiError` so the UI can degrade to a clear empty
@@ -13,7 +13,7 @@ import {
   type PathArgsOf,
   type QueryOf,
   type ResponseOf,
-} from '@review/core';
+} from '@joinery/core';
 
 export class ApiError extends Error {
   readonly status: number;

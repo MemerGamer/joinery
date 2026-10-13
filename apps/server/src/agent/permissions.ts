@@ -9,7 +9,7 @@
  *    auto-approves `Read`/`Grep`/`Glob` only when the path they'd touch
  *    resolves under the run's `cwd` (the attached root or agent worktree —
  *    see `worktree.ts`) and any Glob/Grep pattern stays relative to it,
- *    allows any `mcp__review__*` tool (the in-process
+ *    allows any `mcp__joinery__*` tool (the in-process
  *    app tools from `tools.ts`), and denies everything else — an allowlist,
  *    not a blocklist, so a new tool the SDK adds tomorrow is denied by
  *    default.
@@ -57,14 +57,14 @@ export type MakeAgentCanUseToolOptions = {
 /**
  * Builds the `canUseTool` callback for an embedded agent run.
  * `Read`/`Grep`/`Glob` are allowed only when the path they'd touch resolves
- * under `cwd`; any `mcp__review__*` tool (the in-process app tools) is
+ * under `cwd`; any `mcp__joinery__*` tool (the in-process app tools) is
  * always allowed since those are already scoped to the run's review server
  * side; everything else — including `Bash` and any future SDK tool — is
  * denied by default.
  */
 export function makeAgentCanUseTool(options: MakeAgentCanUseToolOptions): CanUseTool {
   return async (toolName, input) => {
-    if (toolName.startsWith('mcp__review__')) {
+    if (toolName.startsWith('mcp__joinery__')) {
       return ALLOW(input);
     }
     if (toolName === 'Read' || toolName === 'Grep' || toolName === 'Glob') {

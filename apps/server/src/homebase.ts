@@ -13,7 +13,7 @@
  * error) never fails the whole list — each review's enrichment is wrapped so
  * a failure degrades to the DB-only summary rather than 500ing the endpoint.
  */
-import type { CiStatus, Repo, Review, ReviewSummary } from '@review/core';
+import type { CiStatus, Repo, Review, ReviewSummary } from '@joinery/core';
 import { getRepoById, listRepos, listViewedForReviews, summarizeReviews } from './db/index.ts';
 import { computeReviewGitStats } from './git/reviewStats.ts';
 import { getMe, type Me } from './git/me.ts';

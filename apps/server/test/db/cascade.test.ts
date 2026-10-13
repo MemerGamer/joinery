@@ -5,7 +5,7 @@ import { createReview } from '../../src/db/reviews.ts';
 import { createThread, appendReply } from '../../src/db/threads.ts';
 import { writeReadingOrderPlan } from '../../src/db/readingOrder.ts';
 import { createRun, appendEvent } from '../../src/db/runs.ts';
-import { review, thread, comment, readingOrder, step, stepFile, agentRun, agentEvent, repo } from '@review/core/db';
+import { review, thread, comment, readingOrder, step, stepFile, agentRun, agentEvent, repo } from '@joinery/core/db';
 import { eq } from 'drizzle-orm';
 
 describe('cascade deletes', () => {

@@ -4,18 +4,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ensureDataDirs, ensureToken, readToken, resolveDataPaths } from '../../src/db/paths.ts';
 
-const originalEnv = process.env['REVIEW_DATA_DIR'];
+const originalEnv = process.env['JOINERY_DATA_DIR'];
 
 afterEach(() => {
-  if (originalEnv === undefined) delete process.env['REVIEW_DATA_DIR'];
-  else process.env['REVIEW_DATA_DIR'] = originalEnv;
+  if (originalEnv === undefined) delete process.env['JOINERY_DATA_DIR'];
+  else process.env['JOINERY_DATA_DIR'] = originalEnv;
 });
 
 describe('data directory resolution', () => {
-  test('honors REVIEW_DATA_DIR and lays out the expected tree', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'review-ui-paths-test-'));
+  test('honors JOINERY_DATA_DIR and lays out the expected tree', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'joinery-paths-test-'));
     try {
-      process.env['REVIEW_DATA_DIR'] = dir;
+      process.env['JOINERY_DATA_DIR'] = dir;
       const paths = resolveDataPaths();
       expect(paths.root).toBe(dir);
       expect(paths.dbFile).toBe(join(dir, 'state.sqlite'));
@@ -35,9 +35,9 @@ describe('data directory resolution', () => {
   });
 
   test('generates a token with mode 0600 and readToken reads it back', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'review-ui-paths-test-'));
+    const dir = await mkdtemp(join(tmpdir(), 'joinery-paths-test-'));
     try {
-      process.env['REVIEW_DATA_DIR'] = dir;
+      process.env['JOINERY_DATA_DIR'] = dir;
       const paths = resolveDataPaths();
       await ensureDataDirs(paths);
 

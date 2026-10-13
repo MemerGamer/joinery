@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import { realpath } from 'node:fs/promises';
 import { apiFetch, setupHttp, setupHttpWithReview } from './helpers.ts';
-import type { Repo, Review, ReviewState } from '@review/core';
+import type { Repo, Review, ReviewState } from '@joinery/core';
 
 type ErrorBody = { error: { code: string; message: string; hint?: string } };
 

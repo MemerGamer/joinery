@@ -1,5 +1,5 @@
 {
-  "name": "review-ui",
+  "name": "joinery",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -7,12 +7,12 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "bun run --filter '@review/server' --filter '@review/web' dev",
-    "dev:server": "bun run --filter '@review/server' dev",
-    "dev:web": "bun run --filter '@review/web' dev",
-    "start": "bun run --filter '@review/web' build && bun run --filter '@review/server' start",
+    "dev": "bun run --filter '@joinery/server' --filter '@joinery/web' dev",
+    "dev:server": "bun run --filter '@joinery/server' dev",
+    "dev:web": "bun run --filter '@joinery/web' dev",
+    "start": "bun run --filter '@joinery/web' build && bun run --filter '@joinery/server' start",
     "typecheck": "bun run --filter '*' typecheck",
-    "build": "bun run --filter '@review/web' build && bun run --filter '@review/cli' build",
+    "build": "bun run --filter '@joinery/web' build && bun run --filter '@joinery/cli' build",
     "test": "bun test",
     "check": "bun run typecheck && bun test"
   },

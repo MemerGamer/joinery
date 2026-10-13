@@ -1,6 +1,6 @@
 /**
  * Per-file patch and both-sides file contents: the `FilePatch` and
- * `FileContents` types from `@review/core`. Patches are fetched per file on
+ * `FileContents` types from `@joinery/core`. Patches are fetched per file on
  * demand, never shipped whole ("Never ship the whole patch" — a full 200-file
  * patch is 2.5 MB, the file list is a few KB). Context is trimmed by scoping
  * the diff to `-U<contextLines>` up front rather than fetching full unified
@@ -8,7 +8,7 @@
  */
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { NULL_BLOB, type FileContents, type FilePatch, type Revision } from '@review/core';
+import { NULL_BLOB, type FileContents, type FilePatch, type Revision } from '@joinery/core';
 import type { CatFile } from './catfile.ts';
 import { gitOrThrow, type GitCallOptions } from './run.ts';
 

@@ -5,7 +5,7 @@
  */
 import { Check, Loader2, MessageSquare, X } from 'lucide-react';
 import { useState } from 'react';
-import type { Thread } from '@review/core';
+import type { Thread } from '@joinery/core';
 import { useReview } from '../state/ReviewContext.tsx';
 import { threadSummary } from '../lib/threadSummary.ts';
 

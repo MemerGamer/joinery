@@ -7,7 +7,7 @@
  */
 import { AlertTriangle, Bot, Check, ChevronDown, History, Loader2, MessageSquare, User } from 'lucide-react';
 import { useState } from 'react';
-import type { Thread } from '@review/core';
+import type { Thread } from '@joinery/core';
 import { getAgentModel } from '../lib/agentModel.ts';
 import { callApi } from '../lib/apiClient.ts';
 import { AskButton } from './AskButton.tsx';
