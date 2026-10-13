@@ -21,9 +21,17 @@ CREATE TABLE review (
   pinned_sha         text,
   base_ref           text NOT NULL,
   pr_number          integer,
-  attached_path      text,
-  current_revision   text NOT NULL DEFAULT 'head',
+  -- 'working' | 'head' | 'pr'. NULL means the user has never picked a
+  -- revision, so the default applies (`working` when the branch is attached on
+  -- disk, `head` otherwise). Without a "not chosen" state the engine could not
+  -- tell a stored default from a deliberate choice, and would silently flip an
+  -- explicit `head` back to `working` the moment a branch is checked out again.
+  current_revision   text,
   last_seen_pr_sha   text,
+  -- Homebase "unread agent replies": agent comments created after this count
+  -- as unread; NULL (never opened) means every agent comment counts.
+  -- `GET /api/reviews/:id` sets it to `unixepoch()` after building its response.
+  last_opened_at     integer,
   status             text NOT NULL DEFAULT 'open',
   created_at         integer NOT NULL DEFAULT (unixepoch())
 );
@@ -129,4 +137,31 @@ CREATE TABLE agent_event (
   payload     text NOT NULL,
   created_at  integer NOT NULL DEFAULT (unixepoch()),
   PRIMARY KEY (run_id, seq)
+);
+
+-- Reactions on comments: one row per `(comment, actor, kind)`. Toggling a
+-- reaction off simply deletes its row, so the table carries no identity of its
+-- own beyond that triple.
+CREATE TABLE reaction (
+  comment_id  text NOT NULL REFERENCES comment (id) ON DELETE CASCADE,
+  actor       text NOT NULL,
+  kind        text NOT NULL,
+  created_at  integer NOT NULL DEFAULT (unixepoch()),
+  PRIMARY KEY (comment_id, actor, kind)
+);
+
+CREATE INDEX reaction_comment_idx ON reaction (comment_id);
+
+-- Last known answers for things computed from git or `gh` (open pulls per
+-- repo, git stats per review, the `gh` login), so Homebase can answer from
+-- them at once — across restarts too — while fresh ones are fetched behind
+-- them. A cache, not state: deleting every row costs one blocking fetch per
+-- key. Keys are namespaced (`pulls:<repoId>`, `reviewStats:<reviewId>`, `me`).
+CREATE TABLE cache_entry (
+  key         text PRIMARY KEY NOT NULL,
+  -- JSON.
+  value       text NOT NULL,
+  -- Milliseconds since epoch, unlike the `unixepoch()` seconds elsewhere: it
+  -- is compared against `Date.now()` for staleness.
+  fetched_at  integer NOT NULL
 );
