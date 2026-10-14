@@ -5,13 +5,14 @@
  * open. Resolve/reopen and reply round-trip through the API and then ask the
  * parent to reload threads.
  */
-import { AlertTriangle, Bot, Check, ChevronDown, History, Loader2, MessageSquare, User } from 'lucide-react';
+import { AlertTriangle, Bot, Check, ChevronDown, History, Loader2, MessageSquare, Trash2, User } from 'lucide-react';
 import { useState } from 'react';
 import type { Thread } from '@joinery/core';
 import { getAgentModel } from '../lib/agentModel.ts';
 import { callApi } from '../lib/apiClient.ts';
 import { AskButton } from './AskButton.tsx';
 import { CommentComposer } from './CommentComposer.tsx';
+import { ConfirmDelete } from './ConfirmDelete.tsx';
 import { Markdown } from './Markdown.tsx';
 import { ReactionBar } from './ReactionBar.tsx';
 import { threadSummary } from '../lib/threadSummary.ts';
@@ -110,6 +111,16 @@ export function ThreadArticle({
       body: { body, author: 'user', askAgent, ...(askAgent ? { model: getAgentModel() } : {}) },
     });
     setReplying(false);
+    onChanged();
+  };
+
+  const deleteThread = async () => {
+    await callApi('deleteThread', { params: [thread.id] });
+    onChanged();
+  };
+
+  const deleteComment = async (commentId: string) => {
+    await callApi('deleteComment', { params: [commentId] });
     onChanged();
   };
 
@@ -216,7 +227,7 @@ export function ThreadArticle({
           {thread.comments.map((comment) => {
             const agent = comment.author === 'agent';
             return (
-              <li key={comment.id} className="flex gap-2.5 px-3 py-1.5">
+              <li key={comment.id} className="group/comment flex gap-2.5 px-3 py-1.5">
                 <span
                   className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full ${
                     agent ? 'bg-chrome-accent-soft text-chrome-accent' : 'bg-chrome-bg-sunken text-chrome-fg-muted'
@@ -231,6 +242,16 @@ export function ThreadArticle({
                     <time className="text-chrome-fg-subtle" dateTime={new Date(toMs(comment.createdAt)).toISOString()}>
                       {formatTimestamp(comment.createdAt)}
                     </time>
+                    <div className="-my-1 ml-auto opacity-0 transition-opacity focus-within:opacity-100 group-hover/comment:opacity-100 has-[[aria-expanded=true]]:opacity-100">
+                      <ConfirmDelete
+                        onConfirm={() => deleteComment(comment.id)}
+                        prompt={commentCount === 1 ? 'Delete this comment and its thread?' : 'Delete this comment?'}
+                        triggerLabel="Delete comment"
+                        triggerClassName="chrome-icon-btn size-5 text-chrome-fg-subtle hover:text-chrome-danger"
+                      >
+                        <Trash2 size={12} strokeWidth={1.75} aria-hidden />
+                      </ConfirmDelete>
+                    </div>
                   </div>
                   <Markdown>{comment.body}</Markdown>
                   <ReactionBar comment={comment} />
@@ -289,6 +310,13 @@ export function ThreadArticle({
               disabled={runLive}
               title="Ask {model} to reply, without composing a new comment"
             />
+            <ConfirmDelete
+              onConfirm={deleteThread}
+              prompt="Delete this thread and all its comments?"
+              triggerClassName="chrome-btn hover:text-chrome-danger"
+            >
+              Delete
+            </ConfirmDelete>
           </div>
         )}
       </div>

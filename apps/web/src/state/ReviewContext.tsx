@@ -624,6 +624,15 @@ export function ReviewProvider({
           });
           break;
         }
+        case 'thread.deleted': {
+          setState((s) => {
+            const threadRuns = new Map(s.threadRuns);
+            threadRuns.delete(event.threadId);
+            return { ...s, threads: s.threads.filter((t) => t.id !== event.threadId), threadRuns };
+          });
+          setActiveThreadId((id) => (id === event.threadId ? null : id));
+          break;
+        }
         case 'thread.relocated': {
           setState((s) => {
             const byId = new Map(event.threads.map((t) => [t.id, t]));

@@ -33,6 +33,8 @@ const leaves: Readonly<Record<string, Command>> = {
   resolve: threads.resolve,
   react: threads.react,
   comment: threads.comment,
+  'delete-thread': threads.deleteThread,
+  'delete-comment': threads.deleteComment,
   revision: reviews.revision,
   viewed: reviews.viewed,
   run: runCmd.run,

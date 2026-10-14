@@ -36,6 +36,8 @@ import {
   appendReply,
   createReview,
   createThread,
+  deleteComment,
+  deleteThread,
   findReviewByBranch,
   findReviewByPinnedSha,
   getActiveRun,
@@ -50,6 +52,7 @@ import {
   listRepos,
   listReviews,
   listThreadsByReview,
+  listUnfinishedRuns,
   listViewed,
   markViewed,
   resolveThread,
@@ -115,6 +118,14 @@ async function requireReview(deps: RoutesDeps, reviewId: string) {
   const review = await getReview(deps.db, reviewId);
   if (review === null) throw notFound(`review ${reviewId} not found`);
   return review;
+}
+
+/** Stop a thread's live agent runs before deleting it, so none writes into a thread that's gone. */
+async function cancelThreadRuns(deps: RoutesDeps, thread: Thread): Promise<void> {
+  const runs = (await listUnfinishedRuns(deps.db)).filter((r) => r.threadId === thread.id);
+  for (const run of runs) {
+    await cancelRun({ db: deps.db, invoke: deps.invoke, emit: (e) => deps.registry.dispatch(thread.reviewId, e) }, run.id);
+  }
 }
 
 async function requireThread(deps: RoutesDeps, threadId: string): Promise<Thread> {
@@ -515,6 +526,15 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     return c.json({ thread });
   });
 
+  app.delete('/api/threads/:id', async (c) => {
+    const threadId = c.req.param('id');
+    const existing = await requireThread(deps, threadId);
+    await cancelThreadRuns(deps, existing);
+    await deleteThread(deps.db, threadId);
+    dispatch(existing.reviewId, { type: 'thread.deleted', reviewId: existing.reviewId, threadId });
+    return c.json({ ok: true as const });
+  });
+
   app.post('/api/threads/:id/replies', async (c) => {
     const threadId = c.req.param('id');
     const thread = await requireThread(deps, threadId);
@@ -602,6 +622,23 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     if (threadId === null) throw notFound(`comment ${commentId} not found`);
     const thread = await requireThread(deps, threadId);
     return c.json({ threadId, reviewId: thread.reviewId });
+  });
+
+  app.delete('/api/comments/:id', async (c) => {
+    const commentId = c.req.param('id');
+    const threadId = await getCommentThreadId(deps.db, commentId);
+    if (threadId === null) throw notFound(`comment ${commentId} not found`);
+    const existing = await requireThread(deps, threadId);
+    if (existing.comments.length === 1) await cancelThreadRuns(deps, existing);
+    const result = await deleteComment(deps.db, commentId);
+    if (result === null) throw notFound(`comment ${commentId} not found`);
+    if (result.threadDeleted) {
+      dispatch(existing.reviewId, { type: 'thread.deleted', reviewId: existing.reviewId, threadId });
+      return c.json({ threadId, thread: null });
+    }
+    const thread = await requireThread(deps, threadId);
+    dispatch(existing.reviewId, { type: 'thread.updated', reviewId: existing.reviewId, thread });
+    return c.json({ threadId, thread });
   });
 
   // --- revision / viewed ---

@@ -205,6 +205,18 @@ export function resolveThread(
   return send('resolveThread', { path: api.resolveThread.path(id), body });
 }
 
+export function deleteThread(id: string): Promise<ResponseOf<'deleteThread'>> {
+  return send('deleteThread', { path: api.deleteThread.path(id) });
+}
+
+export function getComment(id: string): Promise<ResponseOf<'getComment'>> {
+  return send('getComment', { path: api.getComment.path(id) });
+}
+
+export function deleteComment(id: string): Promise<ResponseOf<'deleteComment'>> {
+  return send('deleteComment', { path: api.deleteComment.path(id) });
+}
+
 export function setRevision(id: string, body: BodyOf<'setRevision'>): Promise<ResponseOf<'setRevision'>> {
   return send('setRevision', { path: api.setRevision.path(id), body });
 }

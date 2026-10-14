@@ -167,6 +167,27 @@ export async function getCommentThreadId(db: Db, id: string): Promise<string | n
   return rows[0]?.threadId ?? null;
 }
 
+/** Delete a thread; its comments, reactions, and runs go with it (`ON DELETE CASCADE`). */
+export async function deleteThread(db: Db, id: string): Promise<void> {
+  await db.delete(thread).where(eq(thread.id, id));
+}
+
+/**
+ * Delete one comment. A thread can't exist without comments, so deleting its
+ * last one deletes the thread too — `threadDeleted` says which happened.
+ */
+export async function deleteComment(db: Db, id: string): Promise<{ threadId: string; threadDeleted: boolean } | null> {
+  return db.transaction((tx) => {
+    const row = tx.select({ threadId: comment.threadId }).from(comment).where(eq(comment.id, id)).get();
+    if (row === undefined) return null;
+    tx.delete(comment).where(eq(comment.id, id)).run();
+    const remaining = tx.select({ id: comment.id }).from(comment).where(eq(comment.threadId, row.threadId)).limit(1).all();
+    if (remaining.length > 0) return { threadId: row.threadId, threadDeleted: false };
+    tx.delete(thread).where(eq(thread.id, row.threadId)).run();
+    return { threadId: row.threadId, threadDeleted: true };
+  });
+}
+
 async function setResolved(db: Db, id: string, resolved: boolean): Promise<Thread> {
   const rows = await db
     .update(thread)

@@ -134,6 +134,17 @@ joinery comment <reviewId> <path> --line 42 [--end 48] [--side old|new] --body-f
 `--line`. `--body-file -` reads the body from stdin. Prints the new thread id
 (or the thread JSON with `--json`).
 
+## Deleting
+
+```
+joinery delete-thread <threadId> --yes
+joinery delete-comment <commentId> --yes
+```
+
+Without `--yes` these only print what would be deleted and exit non-zero.
+Deleting a thread's last comment deletes the thread too. Only delete when
+asked to.
+
 ## Cancelling a run
 
 `joinery run <runId>` shows an agent run; `joinery run <runId> --cancel` stops

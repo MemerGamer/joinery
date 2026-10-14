@@ -43,6 +43,11 @@ export const serverEventSchema = z.discriminatedUnion('type', [
     thread: threadSchema,
   }),
   z.object({
+    type: z.literal('thread.deleted'),
+    reviewId: z.string(),
+    threadId: z.string(),
+  }),
+  z.object({
     type: z.literal('reading_order.updated'),
     reviewId: z.string(),
   }),

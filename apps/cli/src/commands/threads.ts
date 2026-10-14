@@ -152,6 +152,47 @@ export const resolve: Command = {
   },
 };
 
+/** Without `--yes`, deletes only say what they would remove. */
+function requireYes(parsed: ReturnType<typeof parseCommand>, what: string): void {
+  if (flagBoolean(parsed.flags, 'yes')) return;
+  throw new UsageError(`this would delete ${what} — pass --yes to delete it`);
+}
+
+export const deleteThread: Command = {
+  path: 'delete-thread',
+  summary: 'Delete a thread and all its comments (needs --yes)',
+  usage: 'joinery delete-thread <id> --yes [--json]',
+  async run(argv) {
+    const parsed = parseCommand(argv, [{ name: 'yes', type: 'boolean' }]);
+    if (wantsHelp(parsed)) return printLine(deleteThread.usage);
+    const id = requirePositional(parsed.positionals, 0, 'id');
+    const { thread: t } = await client.getThread(id);
+    const n = t.comments.length;
+    requireYes(parsed, `thread ${t.id} on ${t.path}:${t.startLine}-${t.endLine} (${n} ${n === 1 ? 'comment' : 'comments'})`);
+    const result = await client.deleteThread(id);
+    if (maybePrintJson(parsed, result)) return;
+    printLine(`deleted thread ${id}`);
+  },
+};
+
+export const deleteComment: Command = {
+  path: 'delete-comment',
+  summary: "Delete a comment (deleting a thread's last comment deletes the thread; needs --yes)",
+  usage: 'joinery delete-comment <commentId> --yes [--json]',
+  async run(argv) {
+    const parsed = parseCommand(argv, [{ name: 'yes', type: 'boolean' }]);
+    if (wantsHelp(parsed)) return printLine(deleteComment.usage);
+    const id = requirePositional(parsed.positionals, 0, 'commentId');
+    const { threadId } = await client.getComment(id);
+    const { thread: t } = await client.getThread(threadId);
+    const last = t.comments.length === 1;
+    requireYes(parsed, `comment ${id} on thread ${threadId}${last ? ' — its last comment, so the thread goes too' : ''}`);
+    const result = await client.deleteComment(id);
+    if (maybePrintJson(parsed, result)) return;
+    printLine(result.thread === null ? `deleted comment ${id} and thread ${threadId}` : `deleted comment ${id}`);
+  },
+};
+
 const EMOJI_TO_KIND: Readonly<Record<string, ReactionKind>> = {
   '👍': 'thumbs_up',
   '👎': 'thumbs_down',

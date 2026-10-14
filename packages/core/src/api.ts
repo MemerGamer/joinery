@@ -391,6 +391,25 @@ export const api = {
     query: undefined,
     response: z.object({ thread: threadSchema }),
   }),
+  /** Delete a thread and all its comments; also arrives as `thread.deleted`. */
+  deleteThread: def({
+    method: 'DELETE',
+    path: (id: string) => `/api/threads/${encodeURIComponent(id)}`,
+    body: undefined,
+    query: undefined,
+    response: noContent,
+  }),
+  /**
+   * Delete one comment. Deleting a thread's last comment deletes the thread:
+   * `thread` is then null (and `thread.deleted` is sent instead of `thread.updated`).
+   */
+  deleteComment: def({
+    method: 'DELETE',
+    path: (id: string) => `/api/comments/${encodeURIComponent(id)}`,
+    body: undefined,
+    query: undefined,
+    response: z.object({ threadId: z.string(), thread: threadSchema.nullable() }),
+  }),
   /**
    * The explicit "Ask agent" trigger for a thread that already carries the
    * question. `createThread`/`reply` with `askAgent: true` are sugar for the
