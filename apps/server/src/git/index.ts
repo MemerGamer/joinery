@@ -42,19 +42,17 @@ export {
 export { buildFileList, type BuildFileListParams } from './filelist.ts';
 
 export {
-  findOpenPrNumberForBranch,
-  listOpenPulls,
-  resolvePr,
-  deriveCiStatus,
-  deriveReviewRequested,
-  type FindOpenPrOptions,
-  type PullSummary,
+  forgeFor,
+  type Forge,
+  type ForgeOptions,
   type ListOpenPullsResult,
+  type MergedPrCommits,
+  type PullSearchHit,
+  type PullSummary,
   type ResolvedPr,
-} from './github.ts';
+} from './forge/index.ts';
 
-
-export { getMe, getCachedLogin, type Me } from './me.ts';
+export { getMe, type Me } from './me.ts';
 
 export { listBranches, type BranchSummary, type ListBranchesOptions } from './refs.ts';
 
@@ -72,6 +70,8 @@ export {
   defaultBranch,
   parseRemoteIdentity,
   remoteIdentity,
+  remoteHost,
+  parseRemoteHost,
   baseMergeBase,
   mergeBase,
   revParse,

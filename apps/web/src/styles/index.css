@@ -610,3 +610,15 @@ body {
   --home-card-tint: color-mix(in srgb, var(--chrome-bg-hover) 50%, transparent);
   background: linear-gradient(var(--home-card-tint), var(--home-card-tint)), var(--chrome-bg);
 }
+
+/* The end-of-review confetti (ReviewFooter): each piece flies out along its own --dx/--dy, spinning, and fades. */
+@keyframes chrome-confetti {
+  from {
+    transform: translate(0, 0) rotate(0deg);
+    opacity: 1;
+  }
+  to {
+    transform: translate(var(--dx), var(--dy)) rotate(var(--rot));
+    opacity: 0;
+  }
+}

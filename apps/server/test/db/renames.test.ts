@@ -32,7 +32,7 @@ describe('renamePaths: rewrites thread.path and file_viewed.path atomically', ()
         anchorBlobSha: 'blob1',
         anchorContextHash: 'ctx1',
         anchorContext: 'code',
-        bodyMd: 'comment on the old path',
+        body: 'comment on the old path',
       });
       await markViewed(db, review.id, 'old/name.ts', 'blob1');
 

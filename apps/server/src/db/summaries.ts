@@ -54,7 +54,6 @@ export async function summarizeReviews(db: Db, reviewIds: readonly string[]): Pr
     db
       .select({
         reviewId: readingOrder.reviewId,
-        version: max(readingOrder.version),
         latest: max(readingOrder.createdAt),
       })
       .from(readingOrder)
@@ -91,7 +90,7 @@ export async function summarizeReviews(db: Db, reviewIds: readonly string[]): Pr
         openThreads: 0,
         resolvedThreads: 0,
         viewedFiles: 0,
-        readingOrderVersion: null,
+        hasReadingOrder: false,
         agentRunning: false,
         lastActivityAt: null,
         // Filled by the Homebase composer (git stats + gh cache); DB-only defaults here.
@@ -130,7 +129,7 @@ export async function summarizeReviews(db: Db, reviewIds: readonly string[]): Pr
   for (const row of readingOrderRows) {
     const s = byId.get(row.reviewId);
     if (s === undefined) continue;
-    s.readingOrderVersion = row.version;
+    s.hasReadingOrder = true;
     touch(row.reviewId, row.latest);
   }
   for (const row of runRows) {

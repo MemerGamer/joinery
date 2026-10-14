@@ -73,6 +73,7 @@ const READ_ONLY_SUBCOMMANDS = new Set([
   'branch',
   'remote',
   'show',
+  'blame',
   'grep',
   // Added for the engine's remote poll: always called
   // with `--no-write-fetch-head` and never writes the working tree, index,

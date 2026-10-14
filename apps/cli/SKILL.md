@@ -3,7 +3,7 @@ name: joinery-cli
 description: Drive the joinery code review app from a Claude Code session — produce a reading order for a review, or answer a comment thread. Use whenever a task mentions "reading order", "review threads/comments", or the `joinery` CLI.
 ---
 
-# review CLI
+# joinery CLI
 
 `joinery` is a local HTTP client for a running joinery server
 (`http://127.0.0.1:7317` by default). It reads its bearer token from
@@ -13,7 +13,8 @@ machine-readable output — pipe it to `jq`.
 
 **You are read-only with respect to the code under review.** Never edit,
 `git commit`, or otherwise change files in the review root. Your only writes
-go through this CLI: `joinery reading-order set` and `joinery reply`. Use
+go through this CLI: `joinery reading-order set`, `joinery comment`,
+`joinery reply`, `joinery react`, and (only when asked) `joinery resolve`. Use
 `Read`, `Grep`, `Glob`, and read-only `Bash` (`git log|show|diff|blame|status`,
 `rg`, `ls`, `cat`, `head`, `sed -n`) to look at the code.
 
@@ -22,7 +23,7 @@ one command.
 
 ## Workflow 1: produce a reading order
 
-Triggered by `joinery reading-order generate <id>` (the server spawns you with
+Triggered by `joinery reading-order generate <id> [--model <model>]` (the server spawns you with
 this as your task) or manually.
 
 1. Look at what changed:
@@ -31,25 +32,42 @@ this as your task) or manually.
    ```
 2. Read the diffs that matter (`joinery diff <id> <path>`), and use read-only
    `git`/`rg`/`cat` in the review root to understand context around them.
-3. Group the changed files into an ordered sequence of steps that tells the
-   story of the change — foundational pieces first, call sites and tests
-   last. Write it to `plan.json`:
+3. Write a reviewer's guide, not a neutral tour, as an ordered sequence of
+   steps. `steps` render top to bottom and files within a step render in
+   listed order; that order is the reading order. Sequence it as the story of
+   the change so understanding accumulates; don't sort alphabetically.
+   - Risk-first: `focus` steps (risky logic, behaviour changes, anything you
+     have a concern about) come first. Order the rest by dependency:
+     definitions before their users, tests last.
+   - Group: aim for about 3 to 7 steps, however many files changed. Group
+     files that are read together (a type and its users, a feature and its
+     wiring, all the tests). A one-file step is only for a file that is a
+     concern on its own.
+   - Typical shapes: for a feature, storage, entry point, logic, callers,
+     tests; for a refactor, the new abstraction first, then each call site.
+   - Each step's `guidance` says what to notice. The best ones carry a small
+     verdict ("verified the correlation keys match", "check the blind spots
+     first", "faithful port, skim for shape").
+
+   Write it to `plan.json`:
    ```json
    {
      "steps": [
        {
          "title": "Add the retry policy type",
-         "explanation_md": "`RetryPolicy` is the new shared type everything else in this change builds on.",
+         "guidance": "`RetryPolicy` is the new shared type everything else in this change builds on.",
+         "attention": null,
          "files": [
-           { "path": "packages/core/src/domain/retry.ts", "note_md": "The policy shape and its defaults." }
+           { "path": "packages/core/src/domain/retry.ts", "note": "The policy shape and its defaults." }
          ]
        },
        {
          "title": "Wire it into the HTTP client",
-         "explanation_md": "The client now retries per `RetryPolicy` instead of a fixed count.",
+         "guidance": "The client now retries per `RetryPolicy` instead of a fixed count. Check the backoff arithmetic.",
+         "attention": "focus",
          "files": [
-           { "path": "apps/cli/src/client.ts", "note_md": null },
-           { "path": "apps/cli/test/client.test.ts", "note_md": "Covers the new backoff schedule." }
+           { "path": "apps/cli/src/client.ts", "note": null },
+           { "path": "apps/cli/test/client.test.ts", "note": "Covers the new backoff schedule." }
          ]
        }
      ]
@@ -57,10 +75,12 @@ this as your task) or manually.
    ```
    Rules (from `readingOrderPlanSchema` in `@joinery/core`):
    - `steps`: at least one.
-   - each step: non-empty `title`; `explanation_md` (markdown, defaults to `""`
-     if omitted); `files`: at least one.
+   - each step: non-empty `title`; `guidance` (markdown, 1 to 2 sentences on
+     what to notice, defaults to `""` if omitted); `attention` (`"focus"` for
+     risky logic or a concern, `"skim"` for mechanical changes, or `null` for a
+     normal read, defaults to `null`); `files`: at least one.
    - each file: non-empty `path` (must be one of the review's changed files);
-     `note_md` (markdown or `null`, defaults to `null`).
+     `note` (markdown or `null`, defaults to `null`).
    - every changed file should end up in exactly one step. Files you leave out
      land in an "unassigned" bucket in the UI — only do that on purpose.
 4. Submit it:
@@ -93,13 +113,31 @@ and the review's reading order, and talks to the server through `joinery`.
    in `packages/core/src/domain/retry.ts`; if you want connection errors
    retried too, that's the field to widen.
    EOF
-   joinery reply <threadId> --body-file reply.md
+   joinery reply <threadId> --body-file reply.md --actor agent
    ```
    `--body-file -` reads the reply body from stdin instead of a file.
 4. Only resolve the thread if you were explicitly asked to:
    ```
    joinery resolve <threadId>
    ```
+
+## Starting a thread
+
+To leave a new comment on a line (or range) of a changed file, write the body
+to a file and submit it:
+
+```
+joinery comment <reviewId> <path> --line 42 [--end 48] [--side old|new] --body-file c.md --actor agent
+```
+
+`--side` defaults to `new` (use `old` for a deleted line); `--end` defaults to
+`--line`. `--body-file -` reads the body from stdin. Prints the new thread id
+(or the thread JSON with `--json`).
+
+## Cancelling a run
+
+`joinery run <runId>` shows an agent run; `joinery run <runId> --cancel` stops
+one that is still in progress.
 
 ## Reacting
 
@@ -127,7 +165,7 @@ joinery react abc123 eyes --off --actor agent
 ```
 joinery list --json | jq -r '.reviews[] | "\(.id)\t\(.branch)\t\(.status)"'
 joinery threads <reviewId> --unresolved --json | jq -r '.threads[] | .id'
-joinery feedback <reviewId> --unresolved   # markdown summary, for a human to paste anywhere
+joinery threads <reviewId> --unresolved --markdown   # markdown summary, for a human to paste anywhere
 joinery show <reviewId> --json | jq '.state'
 ```
 

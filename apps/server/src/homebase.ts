@@ -1,15 +1,15 @@
 /**
  * Composes `ReviewSummary` for `GET /api/reviews`: the DB aggregate
  * (`summarizeReviews`) plus per-review git stats plus the matching PR from
- * the `gh` cache. Lives at the top level (not `db/` or `git/`) because it
+ * the forge cache. Lives at the top level (not `db/` or `git/`) because it
  * depends on both and belongs to neither.
  *
  * Git stats and `me` sit behind persisted stale-while-revalidate caches
  * (`storedCache.ts`), like pulls: the list answers from the last known
- * values and checks git/`gh` behind them, pushing `reviews.changed` when
+ * values and checks git/the forge behind them, pushing `reviews.changed` when
  * something moved.
  *
- * One review failing to resolve (a deleted branch, `gh` unavailable, a git
+ * One review failing to resolve (a deleted branch, forge unavailable, a git
  * error) never fails the whole list — each review's enrichment is wrapped so
  * a failure degrades to the DB-only summary rather than 500ing the endpoint.
  */
@@ -19,7 +19,7 @@ import { computeReviewGitStats } from './git/reviewStats.ts';
 import { getMe, type Me } from './git/me.ts';
 import { getPullsCached } from './pullsCache.ts';
 import { createStoredCache, type StoredCacheDeps } from './storedCache.ts';
-import type { ListOpenPullsResult, PullSummary } from './git/github.ts';
+import { forgeFor, type ListOpenPullsResult, type PullSummary } from './git/forge/index.ts';
 
 export type HomebaseDeps = StoredCacheDeps;
 
@@ -64,7 +64,7 @@ const reviewStatsCache = createStoredCache<HomeReviewStats | null>({
   concurrency: 4,
 });
 
-/** `getMe` resolves once per process; this only spares a restart the wait on `gh api user`. */
+/** `getMe` resolves once per process; this only spares a restart the wait on the forge login lookup. */
 const meCache = createStoredCache<Me>({
   namespace: 'me',
   version: 1,
@@ -77,8 +77,9 @@ const meCache = createStoredCache<Me>({
 /** `me` for `GET /api/me`, from the first registered repo (or the server's cwd). */
 export async function getMeCached(deps: HomebaseDeps): Promise<Me> {
   const repos = await listRepos(deps.db);
-  const cwd = repos[0]?.rootPath ?? null;
-  return meCache.get(deps, 'me', () => getMe(cwd));
+  const first = repos[0];
+  const cwd = first?.rootPath ?? null;
+  return meCache.get(deps, 'me', () => getMe(cwd, forgeFor(first), first?.remoteHost ?? null));
 }
 
 /** Reviews are independent I/O (git spawns, `gh` calls) — cap concurrency rather than fire a hundred at once. */
@@ -175,7 +176,7 @@ export async function buildReviewSummaries(
 
       return {
         ...base,
-        title: pull?.title ?? gitStats?.subject ?? null,
+        title: pull?.title ?? review.branch ?? gitStats?.subject ?? null,
         authorName: pull?.authorLogin ?? gitStats?.authorName ?? null,
         filesTotal: gitStats === null ? null : Object.keys(gitStats.blobByPath).length,
         additions: gitStats === null ? null : gitStats.additions,
@@ -199,7 +200,7 @@ function emptySummary(reviewId: string): ReviewSummary {
     openThreads: 0,
     resolvedThreads: 0,
     viewedFiles: 0,
-    readingOrderVersion: null,
+    hasReadingOrder: false,
     agentRunning: false,
     lastActivityAt: null,
     title: null,

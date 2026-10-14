@@ -1,9 +1,11 @@
 /**
  * "Ask ▾ Model": a split button. The "Ask" half acts; the model half opens
  * a picker over `AGENT_MODELS`. The pick is shared and remembered
- * (`lib/agentModel.ts`), so every Ask button shows the same model.
+ * (`lib/agentModel.ts`), so every Ask button shows the same model, unless
+ * the caller owns the pick (`model` + `onModelChange`), as the reading-order
+ * "Generate with" button does.
  */
-import { AGENT_MODELS } from '@joinery/core';
+import { AGENT_MODELS, type AgentModel } from '@joinery/core';
 import { Check, ChevronDown } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { setAgentModel, useAgentModel } from '../lib/agentModel.ts';
@@ -13,6 +15,9 @@ export function AskButton({
   disabled = false,
   title,
   onPicked,
+  label: actionLabel = 'Ask',
+  model: controlledModel,
+  onModelChange,
 }: {
   onAsk: () => void;
   disabled?: boolean;
@@ -20,8 +25,14 @@ export function AskButton({
   title: string;
   /** Called after a pick, e.g. to return focus to a textarea. */
   onPicked?: () => void;
+  /** The action half's text. */
+  label?: string;
+  /** A caller-owned pick; without it the shared Ask pick is used. */
+  model?: AgentModel;
+  onModelChange?: (model: AgentModel) => void;
 }): React.JSX.Element {
-  const model = useAgentModel();
+  const sharedModel = useAgentModel();
+  const model = controlledModel ?? sharedModel;
   const label = AGENT_MODELS.find((m) => m.id === model)?.label ?? model;
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -52,7 +63,7 @@ export function AskButton({
         title={title.replace('{model}', label)}
         className="rounded-l-md px-2.5 transition-colors hover:bg-chrome-bg-active hover:text-chrome-fg disabled:opacity-50 disabled:hover:bg-transparent"
       >
-        Ask
+        {actionLabel}
       </button>
       <span className="my-1.5 w-px bg-chrome-border-strong" aria-hidden />
       <button
@@ -78,7 +89,8 @@ export function AskButton({
               role="menuitemradio"
               aria-checked={m.id === model}
               onClick={() => {
-                setAgentModel(m.id);
+                if (onModelChange === undefined) setAgentModel(m.id);
+                else onModelChange(m.id);
                 setOpen(false);
                 onPicked?.();
               }}

@@ -29,7 +29,7 @@ export interface HomeSnapshot {
   drafts: HomeReview[];
   /** Repo id → open pulls (all, including already-reviewed ones; screens filter). */
   pullsByRepo: ReadonlyMap<string, Pull[]>;
-  /** Repo id → whether `gh` was available for that repo's pull list. */
+  /** Repo id → whether the forge CLI was available for that repo's pull list. */
   pullsAvailable: ReadonlyMap<string, boolean>;
   me: Me | null;
   /** True while the first load is in flight (no data yet). */
@@ -50,6 +50,8 @@ export interface AddReposResult {
 export interface HomeActions {
   refresh(options?: { force?: boolean }): Promise<void>;
   openPull(repoId: string, pull: Pull): Promise<void>;
+  /** For a PR not in the open list (a search hit): the server resolves its head/base from the number. */
+  openPullNumber(repoId: string, prNumber: number): Promise<void>;
   openBranch(repoId: string, branch: Branch | string): Promise<void>;
   archiveReview(id: string): Promise<void>;
   unarchiveReview(id: string): Promise<void>;
@@ -69,7 +71,7 @@ function defaultSummary(reviewId: string): ReviewSummary {
     openThreads: 0,
     resolvedThreads: 0,
     viewedFiles: 0,
-    readingOrderVersion: null,
+    hasReadingOrder: false,
     agentRunning: false,
     lastActivityAt: null,
     title: null,
@@ -255,6 +257,18 @@ async function openPull(repoId: string, pull: Pull): Promise<void> {
   }
 }
 
+async function openPullNumber(repoId: string, prNumber: number): Promise<void> {
+  try {
+    const detail = await callApi('createReview', { body: { repoId, prNumber, status: 'draft' } });
+    goReview(detail.review.id);
+    void refresh();
+  } catch (err) {
+    patch({ error: errorMessage(err, 'Failed to open pull request') });
+    void refresh();
+    throw err;
+  }
+}
+
 async function openBranch(repoId: string, branch: Branch | string): Promise<void> {
   const name = typeof branch === 'string' ? branch : branch.name;
   const reviewId = typeof branch === 'string' ? null : branch.reviewId;
@@ -405,6 +419,7 @@ function ensureWindowListeners(): void {
 const actions: HomeActions = {
   refresh,
   openPull,
+  openPullNumber,
   openBranch,
   archiveReview,
   unarchiveReview,

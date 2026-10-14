@@ -99,7 +99,7 @@ export function ThreadsPanel(): React.JSX.Element {
                 </span>
                 <span className="flex items-center gap-1.5 truncate text-body text-chrome-fg">
                   <span className="min-w-0 flex-1 truncate">
-                    {threadSummary(thread.comments[0]?.bodyMd ?? '') || '(empty)'}
+                    {threadSummary(thread.comments[0]?.body ?? '') || '(empty)'}
                   </span>
                   {agentIsLooking(thread) && (
                     <span title="Agent is looking" aria-label="Agent is looking" className="shrink-0">

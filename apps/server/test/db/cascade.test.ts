@@ -29,12 +29,12 @@ describe('cascade deletes', () => {
         anchorBlobSha: 'b1',
         anchorContextHash: 'c1',
         anchorContext: 'x',
-        bodyMd: 'first',
+        body: 'first',
       });
-      await appendReply(db, { threadId: thr.id, author: 'agent', bodyMd: 'reply' });
+      await appendReply(db, { threadId: thr.id, author: 'agent', body: 'reply' });
 
       await writeReadingOrderPlan(db, rev.id, {
-        steps: [{ title: 'S', explanation_md: '', files: [{ path: 'a.ts', note_md: null }] }],
+        steps: [{ title: 'S', guidance: '', attention: null, files: [{ path: 'a.ts', note: null }] }],
       });
 
       const run = await createRun(db, { reviewId: rev.id, threadId: thr.id, kind: 'thread_reply' });

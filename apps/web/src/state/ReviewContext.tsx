@@ -37,6 +37,7 @@ import {
   type FileListDelta,
   type ReactionKind,
   type ReadingOrder,
+  type AgentModel,
   type Revision,
   type Review,
   type ReviewState,
@@ -154,12 +155,11 @@ interface ReviewEngineState {
   readingOrderRun: AgentRun | null;
   /**
    * Live `thread_reply` runs, keyed by thread id. Fed by
-   * `run.started`/`run.delta`/`run.ended`; a thread with no live run (or none
-   * since load) simply has no entry. `lastDelta`
-   * is the concatenation of that run's `run.delta` text, trimmed to the
-   * last ~200 chars, for the "Thinking…" row's live preview.
+   * `run.started`/`run.activity`/`run.ended`; a thread with no live run (or none
+   * since load) simply has no entry. `activity` is the label of its latest
+   * tool call (`run.activity`), for the ghost agent comment.
    */
-  threadRuns: Map<string, { run: AgentRun; lastDelta: string }>;
+  threadRuns: Map<string, { run: AgentRun; activity: string | null }>;
 }
 
 export interface ReviewEngine extends ReviewEngineState {
@@ -207,8 +207,12 @@ export interface ReviewEngine extends ReviewEngineState {
   setRevision: (revision: Revision) => Promise<void>;
   /** Set a file's "viewed" check explicitly. */
   setViewed: (path: string, viewed: boolean) => Promise<void>;
-  /** Flip a file's "viewed" check — what the `v` key and the header box do. */
+  /** Flip a file's "viewed" check — what the header box does. */
   toggleViewed: (path: string) => Promise<void>;
+  /** Set every file's "viewed" check at once (the footer button and palette commands). */
+  setAllViewed: (viewed: boolean) => Promise<void>;
+  /** Resolve (or reopen) every thread of the review. */
+  setAllThreadsResolved: (resolved: boolean) => Promise<void>;
   isViewed: (entry: FileEntry) => boolean;
   applyPendingRefresh: () => void;
   pendingCount: number;
@@ -224,7 +228,7 @@ export interface ReviewEngine extends ReviewEngineState {
    * should call this instead of `callApi('generateReadingOrder', ...)`
    * directly, so the outcome is never silently dropped.
    */
-  generateReadingOrder: () => Promise<void>;
+  generateReadingOrder: (model?: AgentModel) => Promise<void>;
   /**
    * The explicit "Ask agent" trigger (the Ask button on a thread card, or
    * the composer's "Ask" split button via `submitDraftThread`/`reply`'s own
@@ -234,6 +238,11 @@ export interface ReviewEngine extends ReviewEngineState {
    * `run.started`/`run.ended` event for the same run) reports.
    */
   askAgent: (threadId: string) => Promise<void>;
+  /**
+   * Cancels an in-flight run (either kind). The cancelled run comes back as
+   * a `run.ended` event; a failed request just leaves the run running.
+   */
+  cancelRun: (runId: string) => Promise<void>;
   /** Toggle the *user's* reaction on a comment; `ReactionBar` is the only caller. */
   setReaction: (commentId: string, kind: ReactionKind, on: boolean) => Promise<void>;
   /**
@@ -250,7 +259,7 @@ export interface ReviewEngine extends ReviewEngineState {
   draftThread: DraftThread | null;
   startDraftThread: (draft: DraftThread) => void;
   cancelDraftThread: () => void;
-  submitDraftThread: (bodyMd: string, askAgent: boolean) => Promise<void>;
+  submitDraftThread: (body: string, askAgent: boolean) => Promise<void>;
   codeViewRef: React.RefObject<CodeViewHandle<ThreadAnnotationMeta, undefined> | null>;
   /** Toggle one file's collapsed state — an explicit, persisted choice. */
   toggleFileCollapsed: (path: string) => void;
@@ -642,32 +651,22 @@ export function ReviewProvider({
             const threadId = event.run.threadId;
             setState((s) => {
               const threadRuns = new Map(s.threadRuns);
-              threadRuns.set(threadId, { run: event.run, lastDelta: threadRuns.get(threadId)?.lastDelta ?? '' });
+              const prev = threadRuns.get(threadId);
+              threadRuns.set(threadId, { run: event.run, activity: prev?.activity ?? null });
               return { ...s, threadRuns };
             });
           }
           break;
         }
-        case 'run.delta': {
-          // The delta payload carries `{ text }`, kept as `unknown` on the
-          // wire (events.ts) so the UI can render what it knows without the
-          // schema pinning the SDK's message shape — read it defensively.
-          const text = extractDeltaText(event.payload);
-          if (text === null) break;
+        case 'run.activity': {
           setState((s) => {
-            let threadId: string | null = null;
             for (const [tid, entry] of s.threadRuns) {
-              if (entry.run.id === event.runId) {
-                threadId = tid;
-                break;
-              }
+              if (entry.run.id !== event.runId) continue;
+              const threadRuns = new Map(s.threadRuns);
+              threadRuns.set(tid, { ...entry, activity: event.label });
+              return { ...s, threadRuns };
             }
-            if (threadId === null) return s;
-            const threadRuns = new Map(s.threadRuns);
-            const prev = threadRuns.get(threadId);
-            if (prev === undefined) return s;
-            threadRuns.set(threadId, { run: prev.run, lastDelta: (prev.lastDelta + text).slice(-200) });
-            return { ...s, threadRuns };
+            return s;
           });
           break;
         }
@@ -888,13 +887,16 @@ export function ReviewProvider({
     setState((s) => ({ ...s, readingOrder: res.readingOrder }));
   }, [reviewId]);
 
-  const generateReadingOrder = useCallback(async () => {
+  const generateReadingOrder = useCallback(async (model?: AgentModel) => {
     // Optimistic pending feedback the instant the click registers, before
     // the POST (or the `run.started` event it triggers server-side) lands —
     // generation can take a while and the button must not look inert.
     setState((s) => ({ ...s, readingOrderRun: localRun(reviewId, 'pending') }));
     try {
-      const res = await callApi('generateReadingOrder', { params: [reviewId], body: {} });
+      const res = await callApi('generateReadingOrder', {
+        params: [reviewId],
+        body: model === undefined ? {} : { model },
+      });
       // The response's `run` is the just-started one (`running`); the
       // agent finishes in the background and its `run.ended` WS event
       // carries the outcome. Let `runUiState` (lib/runState.ts) interpret
@@ -929,7 +931,7 @@ export function ReviewProvider({
       };
       setState((s) => {
         const threadRuns = new Map(s.threadRuns);
-        threadRuns.set(threadId, { run: pending, lastDelta: '' });
+        threadRuns.set(threadId, { run: pending, activity: null });
         return { ...s, threadRuns };
       });
       try {
@@ -937,7 +939,7 @@ export function ReviewProvider({
         setState((s) => {
           const threadRuns = new Map(s.threadRuns);
           const prev = threadRuns.get(threadId);
-          threadRuns.set(threadId, { run: laterRun(prev?.run ?? null, res.run), lastDelta: prev?.lastDelta ?? '' });
+          threadRuns.set(threadId, { run: laterRun(prev?.run ?? null, res.run), activity: prev?.activity ?? null });
           return { ...s, threadRuns };
         });
       } catch (err) {
@@ -958,7 +960,7 @@ export function ReviewProvider({
               endedAt: Date.now(),
               error: err instanceof ApiError ? err.message : 'Could not reach the server.',
             },
-            lastDelta: '',
+            activity: null,
           });
           return { ...s, threadRuns };
         });
@@ -966,6 +968,14 @@ export function ReviewProvider({
     },
     [reviewId],
   );
+
+  const cancelRun = useCallback(async (runId: string) => {
+    try {
+      await callApi('cancelRun', { params: [runId] });
+    } catch {
+      // Nothing to undo: the run is still live and the button stays.
+    }
+  }, []);
 
   const setReaction = useCallback(async (commentId: string, kind: ReactionKind, on: boolean) => {
     setState((s) => ({
@@ -1053,6 +1063,34 @@ export function ReviewProvider({
     [setViewed, isViewed, state.fileList, setItemCollapsed],
   );
 
+  const setAllViewed = useCallback(
+    async (viewed: boolean) => {
+      setState((s) => ({
+        ...s,
+        viewed: viewed ? new Map(s.fileList.map((f) => [f.path, f.newBlob] as const)) : new Map(),
+      }));
+      try {
+        await callApi('setAllViewed', { params: [reviewId], body: { viewed } });
+      } catch {
+        // Optimistic, like `setViewed`.
+      }
+    },
+    [reviewId],
+  );
+
+  const setAllThreadsResolved = useCallback(
+    async (resolved: boolean) => {
+      try {
+        const res = await callApi('resolveAllThreads', { params: [reviewId], body: { resolved } });
+        const byId = new Map(res.threads.map((t) => [t.id, t]));
+        setState((s) => ({ ...s, threads: s.threads.map((t) => byId.get(t.id) ?? t) }));
+      } catch {
+        // Nothing changed server-side; the threads panel still shows the truth.
+      }
+    },
+    [reviewId],
+  );
+
   const expandFileForNavigation = useCallback(
     (path: string) => {
       const rec = itemsRef.current.get(path);
@@ -1087,9 +1125,9 @@ export function ReviewProvider({
   }, []);
 
   const submitDraftThread = useCallback(
-    async (bodyMd: string, askAgent: boolean) => {
+    async (body: string, askAgent: boolean) => {
       const draft = draftRef.current;
-      if (draft === null || bodyMd.trim().length === 0) return;
+      if (draft === null || body.trim().length === 0) return;
       try {
         await callApi('createThread', {
           params: [reviewId],
@@ -1098,7 +1136,7 @@ export function ReviewProvider({
             side: draft.side,
             startLine: draft.startLine,
             endLine: draft.endLine,
-            bodyMd,
+            body,
             askAgent,
             ...(askAgent ? { model: getAgentModel() } : {}),
           },
@@ -1158,6 +1196,8 @@ export function ReviewProvider({
     setRevision,
     setViewed,
     toggleViewed,
+    setAllViewed,
+    setAllThreadsResolved,
     isViewed,
     applyPendingRefresh,
     pendingCount:
@@ -1169,6 +1209,7 @@ export function ReviewProvider({
     reloadAll: load,
     generateReadingOrder,
     askAgent,
+    cancelRun,
     setReaction,
     startReview,
     bumpAnnotations,
@@ -1285,14 +1326,6 @@ function annotationsEqual(
 function laterRun(current: AgentRun | null, fromResponse: AgentRun): AgentRun {
   const ended = current !== null && current.id === fromResponse.id && current.endedAt !== null;
   return ended && fromResponse.endedAt === null ? current : fromResponse;
-}
-
-/** `run.delta`'s payload is `unknown` on the wire (events.ts) — read the
- * `{ text }` shape R3 promises without trusting it blindly. */
-function extractDeltaText(payload: unknown): string | null {
-  if (typeof payload !== 'object' || payload === null) return null;
-  const text = (payload as { text?: unknown }).text;
-  return typeof text === 'string' ? text : null;
 }
 
 function isLargeFile(entry: FileEntry): boolean {

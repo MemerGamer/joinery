@@ -22,8 +22,10 @@ export function runUiState(run: AgentRun | null): RunUiState {
     case 'pending':
     case 'running':
       return { phase: 'pending' };
-    case 'error':
     case 'cancelled':
+      // The user's own doing: nothing to report.
+      return { phase: 'idle' };
+    case 'error':
       return { phase: 'error', message: run.error ?? FALLBACK_ERROR_MESSAGE };
     case 'done':
       return { phase: 'done' };

@@ -7,7 +7,7 @@ import { maybePrintJson, parseCommand, requirePositional, wantsHelp } from './sh
 export const reposList: Command = {
   path: 'repos list',
   summary: 'List registered repos',
-  usage: 'review repos list [--json]',
+  usage: 'joinery repos list [--json]',
   async run(argv) {
     const parsed = parseCommand(argv);
     if (wantsHelp(parsed)) return printLine(reposList.usage);
@@ -27,7 +27,7 @@ export const reposList: Command = {
 export const reposAdd: Command = {
   path: 'repos add',
   summary: 'Register a repo by path',
-  usage: 'review repos add <path> [--json]',
+  usage: 'joinery repos add <path> [--json]',
   async run(argv) {
     const parsed = parseCommand(argv);
     if (wantsHelp(parsed)) return printLine(reposAdd.usage);

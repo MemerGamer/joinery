@@ -17,7 +17,7 @@ function toComment(row: typeof comment.$inferSelect, reactions: Reaction[]): Com
     id: row.id,
     threadId: row.threadId,
     author: narrowUnion(row.author, COMMENT_AUTHOR, 'comment.author'),
-    bodyMd: row.bodyMd,
+    body: row.body,
     agentRunId: row.agentRunId,
     createdAt: row.createdAt,
     reactions,
@@ -53,7 +53,7 @@ export type CreateThreadInput = {
   readonly anchorContextHash: string;
   readonly anchorContext: string;
   /** The thread's first comment. */
-  readonly bodyMd: string;
+  readonly body: string;
   readonly author?: 'user' | 'agent';
   readonly agentRunId?: string | null;
 };
@@ -86,7 +86,7 @@ export async function createThread(db: Db, input: CreateThreadInput): Promise<Th
         id: commentId(),
         threadId: id,
         author: input.author ?? 'user',
-        bodyMd: input.bodyMd,
+        body: input.body,
         agentRunId: input.agentRunId ?? null,
       })
       .returning()
@@ -141,7 +141,7 @@ export async function getThreadWithComments(db: Db, id: string): Promise<Thread 
 export type AppendReplyInput = {
   readonly threadId: string;
   readonly author: 'user' | 'agent';
-  readonly bodyMd: string;
+  readonly body: string;
   readonly agentRunId?: string | null;
 };
 
@@ -152,7 +152,7 @@ export async function appendReply(db: Db, input: AppendReplyInput): Promise<Comm
       id: commentId(),
       threadId: input.threadId,
       author: input.author,
-      bodyMd: input.bodyMd,
+      body: input.body,
       agentRunId: input.agentRunId ?? null,
     })
     .returning();

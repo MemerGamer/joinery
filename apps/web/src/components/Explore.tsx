@@ -8,13 +8,14 @@
  * the same shape as Homebase's queue so the two screens rhyme without
  * Explore growing a personality of its own.
  *
- * Data comes from `useHomeData()` (repos, open pulls) plus a direct,
- * debounced `listBranches` call per repo/query — branches aren't part of
- * the shared snapshot since there can be thousands of them per repo.
+ * Data comes from `useHomeData()` (repos, open pulls) plus direct, debounced
+ * calls per repo/query: `listBranches` (branches aren't part of the shared
+ * snapshot since there can be thousands of them per repo) and `searchPulls`
+ * (closed and merged PRs, and open ones beyond the cached 200).
  */
 import { Cloud, FolderGit2, GitBranch, HardDrive, Layers, Plus, Search, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Branch, Pull, Repo, ReviewStatus } from '@joinery/core';
+import type { Branch, Pull, PullSearchResult, PullState, Repo, ReviewStatus } from '@joinery/core';
 import { ApiError, callApi } from '../lib/apiClient.ts';
 import { effortOf } from '../lib/effort.ts';
 import { firstName, personFrom, type Person } from '../lib/people.ts';
@@ -23,14 +24,19 @@ import { EXPLORE_ID } from '../lib/router.ts';
 import { useHomeData } from '../state/HomeData.tsx';
 import { FolderPicker } from './home/FolderPicker.tsx';
 import { Panel } from './home/Panel.tsx';
-import { Avatar, Chip, CiIcon, EffortMeter, Kbd, SectionHeading } from './home/primitives.tsx';
+import { Avatar, Chip, CiIcon, EffortMeter, Kbd, SectionHeading, type Tone } from './home/primitives.tsx';
 
 const BRANCH_DEBOUNCE_MS = 200;
 const BRANCH_LIMIT = 50;
+const SEARCH_DEBOUNCE_MS = 300;
+const SEARCH_MIN_CHARS = 2;
 /** The repo pill that stands for every repository at once. */
 const ALL_REPOS = '*';
 
-type Row = { kind: 'pull'; repoId: string; pull: Pull } | { kind: 'branch'; repoId: string; branch: Branch };
+type Row =
+  | { kind: 'pull'; repoId: string; pull: Pull }
+  | { kind: 'found'; repoId: string; found: PullSearchResult }
+  | { kind: 'branch'; repoId: string; branch: Branch };
 type RepoPull = { repoId: string; pull: Pull };
 type RepoBranch = { repoId: string; branch: Branch };
 
@@ -41,7 +47,16 @@ function branchKey(repoId: string, name: string): string {
   return `branch-${repoId}-${name}`;
 }
 function rowKeyOf(row: Row): string {
-  return row.kind === 'pull' ? pullKey(row.repoId, row.pull.number) : branchKey(row.repoId, row.branch.name);
+  if (row.kind === 'pull') return pullKey(row.repoId, row.pull.number);
+  if (row.kind === 'found') return pullKey(row.repoId, row.found.number);
+  return branchKey(row.repoId, row.branch.name);
+}
+
+const STATE_TONE: Record<PullState, Tone> = { open: 'success', draft: 'neutral', merged: 'accent', closed: 'danger' };
+
+/** A PR number typed as `1234` or `#1234`; one digit is enough to search for it. */
+function isNumberQuery(needle: string): boolean {
+  return /^#?\d+$/.test(needle);
 }
 
 /** A pull/branch is claimed — and hidden from Explore — when its review is `open` or `orphaned`. */
@@ -57,7 +72,7 @@ function repoLabel(r: Repo): string {
 }
 
 export function ExploreSection(): React.JSX.Element {
-  const { repos, pullsByRepo, pullsAvailable, me, loading, error, openPull, openBranch } = useHomeData();
+  const { repos, pullsByRepo, pullsAvailable, me, loading, error, openPull, openPullNumber, openBranch } = useHomeData();
   const you = me?.name ?? me?.login ?? null;
 
   const [repoId, setRepoIdState] = useState<string>(ALL_REPOS);
@@ -77,6 +92,11 @@ export function ExploreSection(): React.JSX.Element {
     key: '',
     branches: [],
     truncated: false,
+  });
+  const [searchState, setSearchState] = useState<{ key: string; pulls: PullSearchResult[]; available: boolean }>({
+    key: '',
+    pulls: [],
+    available: true,
   });
   const branchReqIdRef = useRef(0);
   const branchAbortRef = useRef<AbortController | null>(null);
@@ -161,6 +181,46 @@ export function ExploreSection(): React.JSX.Element {
 
   useEffect(() => () => branchAbortRef.current?.abort(), []);
 
+  // Debounced PR search for what the cached open list can't answer. Each
+  // change of query/scope aborts the request still running for the last one.
+  const searchable = scopeIds.length > 0 && (isNumberQuery(needle) || needle.length >= SEARCH_MIN_CHARS);
+  const searching = searchable && searchState.key !== fetchKey;
+  useEffect(() => {
+    if (!searchable) {
+      setSearchState((prev) => (prev.pulls.length === 0 && prev.key === '' ? prev : { key: '', pulls: [], available: true }));
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await callApi('searchPulls', {
+            query: { q: needle, repos: scopeIds.join(',') },
+            signal: controller.signal,
+          });
+          setSearchState({ key: fetchKey, pulls: res.pulls, available: res.available });
+        } catch {
+          // Aborted by a newer query, or the search failed; either way the local matches stand.
+          if (!controller.signal.aborted) setSearchState({ key: fetchKey, pulls: [], available: true });
+        }
+      })();
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [searchable, needle, scopeIds, fetchKey]);
+
+  // Search hits not already listed above. Open PRs we already hold are
+  // dropped whatever their review status, so a claimed PR stays hidden.
+  const found = useMemo(() => {
+    if (!searchable || searchState.key !== fetchKey) return [];
+    const known = new Set(
+      Array.from(pullsByRepo.entries()).flatMap(([id, ps]) => ps.map((p) => pullKey(id, p.number))),
+    );
+    return searchState.pulls.filter((f) => !known.has(pullKey(f.repoId, f.number)));
+  }, [searchable, searchState, fetchKey, pullsByRepo]);
+
   const branches = useMemo(() => {
     const heads = new Set(
       Array.from(pullsByRepo.entries()).flatMap(([id, ps]) =>
@@ -173,9 +233,10 @@ export function ExploreSection(): React.JSX.Element {
   const rows = useMemo<Row[]>(
     () => [
       ...pulls.map(({ repoId: id, pull }): Row => ({ kind: 'pull', repoId: id, pull })),
+      ...found.map((f): Row => ({ kind: 'found', repoId: f.repoId, found: f })),
       ...branches.map(({ repoId: id, branch }): Row => ({ kind: 'branch', repoId: id, branch })),
     ],
-    [pulls, branches],
+    [pulls, found, branches],
   );
 
   // Reset the highlight whenever the query or the selected repo changes.
@@ -202,6 +263,8 @@ export function ExploreSection(): React.JSX.Element {
     try {
       if (row.kind === 'pull') {
         await openPull(row.repoId, row.pull);
+      } else if (row.kind === 'found') {
+        await openPullNumber(row.repoId, row.found.number);
       } else {
         await openBranch(row.repoId, row.branch);
       }
@@ -251,12 +314,6 @@ export function ExploreSection(): React.JSX.Element {
     main.addEventListener('keydown', listener);
     return () => main.removeEventListener('keydown', listener);
   }, []);
-
-  /** Open, unreviewed pulls only — branch counts would change the pill widths on every switch. */
-  function countFor(id: string): number {
-    const ids = id === ALL_REPOS ? repos.map((r) => r.id) : [id];
-    return ids.reduce((n, i) => n + (pullsByRepo.get(i) ?? []).filter((p) => !isClaimed(p.reviewStatus)).length, 0);
-  }
 
   const pullsUnavailable = scopeIds.length > 0 && scopeIds.every((id) => pullsAvailable.get(id) === false);
   const repoNameOf = (id: string): string | undefined => {
@@ -315,7 +372,6 @@ export function ExploreSection(): React.JSX.Element {
                   <RepoPill
                     icon={<Layers size={13} strokeWidth={1.75} aria-hidden />}
                     label="All"
-                    count={countFor(ALL_REPOS)}
                     selected={all}
                     onSelect={() => setRepoIdState(ALL_REPOS)}
                   />
@@ -326,7 +382,6 @@ export function ExploreSection(): React.JSX.Element {
                     icon={<FolderGit2 size={13} strokeWidth={1.75} aria-hidden />}
                     label={repoLabel(r)}
                     title={r.rootPath}
-                    count={countFor(r.id)}
                     selected={r.id === repoId || (all && repos.length === 1)}
                     onSelect={() => setRepoIdState(r.id)}
                   />
@@ -351,7 +406,7 @@ export function ExploreSection(): React.JSX.Element {
                     {loading ? (
                       <Empty>Loading…</Empty>
                     ) : pullsUnavailable ? (
-                      <Empty>Install and sign in to `gh` to list pull requests.</Empty>
+                      <Empty>Install and sign in to `gh` or `glab` to list pull requests.</Empty>
                     ) : pulls.length === 0 ? (
                       <Empty>{needle === '' ? "Nothing open that you aren't already reviewing." : `No pull requests match "${q.trim()}".`}</Empty>
                     ) : (
@@ -375,6 +430,39 @@ export function ExploreSection(): React.JSX.Element {
                       </ul>
                     )}
                   </section>
+
+                  {searchable && (found.length > 0 || searching || !searchState.available) && (
+                    <section className="flex flex-col gap-2">
+                      <SectionHeading title="More pull requests" count={found.length} hint="any state, from your code host" />
+                      {found.length === 0 ? (
+                        <Empty>{searching ? 'Searching…' : 'Install and sign in to `gh` or `glab` to search pull requests.'}</Empty>
+                      ) : (
+                        <ul
+                          role="listbox"
+                          aria-label="More pull requests"
+                          aria-busy={searching}
+                          className="-mx-2.5 flex flex-col"
+                        >
+                          {found.map((f) => {
+                            const key = pullKey(f.repoId, f.number);
+                            const idx = rows.findIndex((r) => rowKeyOf(r) === key);
+                            return (
+                              <FoundRow
+                                key={key}
+                                found={f}
+                                repoName={repoNameOf(f.repoId)}
+                                you={you}
+                                highlighted={idx === highlighted}
+                                busy={busyKey === key}
+                                registerRef={(el) => setRowRef(key, el)}
+                                onOpen={() => void openRow({ kind: 'found', repoId: f.repoId, found: f })}
+                              />
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </section>
+                  )}
 
                   <section className="flex flex-col gap-2">
                     <SectionHeading title="Branches" count={branches.length} hint="local and remote, newest first" />
@@ -421,14 +509,12 @@ function RepoPill({
   icon,
   label,
   title,
-  count,
   selected,
   onSelect,
 }: {
   icon: React.ReactNode;
   label: string;
   title?: string;
-  count: number;
   selected: boolean;
   onSelect: () => void;
 }): React.JSX.Element {
@@ -448,7 +534,6 @@ function RepoPill({
     >
       {icon}
       {label}
-      <span className={`tabular-nums ${selected ? 'opacity-70' : 'text-chrome-fg-subtle'}`}>{count}</span>
     </button>
   );
 }
@@ -507,6 +592,49 @@ function PullRow({
           <EffortMeter level={effort.level} label={effort.label} minutes={effort.minutes} />
           <span className="text-micro tabular-nums text-chrome-fg-subtle">{relativeTime(p.updatedAtUnix)}</span>
         </span>
+      </button>
+    </li>
+  );
+}
+
+function FoundRow({
+  found: f,
+  repoName,
+  you,
+  highlighted,
+  busy,
+  registerRef,
+  onOpen,
+}: {
+  found: PullSearchResult;
+  repoName: string | undefined;
+  you: string | null;
+  highlighted: boolean;
+  busy: boolean;
+  registerRef: (el: HTMLLIElement | null) => void;
+  onOpen: () => void;
+}): React.JSX.Element {
+  const author: Person = personFrom(f.authorLogin);
+  return (
+    <li ref={registerRef} role="option" aria-selected={highlighted}>
+      <button
+        type="button"
+        aria-busy={busy}
+        disabled={busy}
+        onClick={onOpen}
+        className={`group flex w-full items-start gap-2.5 rounded-md px-2.5 py-2.5 text-left transition-colors hover:bg-chrome-bg-hover disabled:cursor-wait ${highlighted ? 'bg-chrome-bg-hover' : ''}`}
+      >
+        <Avatar person={author} size={24} />
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-body font-medium text-chrome-fg">{f.title}</span>
+            <Chip tone={STATE_TONE[f.state]}>{f.state}</Chip>
+          </span>
+          <span className="truncate text-micro text-chrome-fg-subtle">
+            {repoName !== undefined && `${repoName} `}#{f.number} · {firstName(author, you)}
+          </span>
+        </span>
+        <span className="shrink-0 pt-0.5 text-micro tabular-nums text-chrome-fg-subtle">{relativeTime(f.updatedAtUnix)}</span>
       </button>
     </li>
   );

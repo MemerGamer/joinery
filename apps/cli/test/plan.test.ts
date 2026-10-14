@@ -7,8 +7,8 @@ describe('parsePlan', () => {
       steps: [{ title: 'Read the schema change', files: [{ path: 'packages/core/src/domain/review.ts' }] }],
     });
     expect(plan.steps).toHaveLength(1);
-    expect(plan.steps[0]?.explanation_md).toBe('');
-    expect(plan.steps[0]?.files[0]?.note_md).toBeNull();
+    expect(plan.steps[0]?.guidance).toBe('');
+    expect(plan.steps[0]?.files[0]?.note).toBeNull();
   });
 
   test('rejects a plan with zero steps', () => {

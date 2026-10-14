@@ -2,12 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import { setupTestDb } from './helpers.ts';
 import { upsertRepo } from '../../src/db/repos.ts';
 import { createReview } from '../../src/db/reviews.ts';
-import { getLatestReadingOrder, writeReadingOrderPlan } from '../../src/db/readingOrder.ts';
+import { getReadingOrder, writeReadingOrderPlan } from '../../src/db/readingOrder.ts';
 import { readingOrder } from '@joinery/core/db';
 import { eq } from 'drizzle-orm';
 
-describe('reading order versioning', () => {
-  test('regenerating writes a new version, retains the old one, and returns the newest', async () => {
+describe('reading order replacement', () => {
+  test('regenerating replaces the old reading order', async () => {
     const { db, close } = await setupTestDb();
     try {
       const repo = await upsertRepo(db, {
@@ -24,35 +24,31 @@ describe('reading order versioning', () => {
       });
 
       const v1 = await writeReadingOrderPlan(db, review.id, {
-        steps: [{ title: 'Step one', explanation_md: '', files: [{ path: 'a.ts', note_md: null }] }],
+        steps: [{ title: 'Step one', guidance: '', attention: null, files: [{ path: 'a.ts', note: null }] }],
       });
-      expect(v1.version).toBe(1);
 
       const v2 = await writeReadingOrderPlan(db, review.id, {
         steps: [
-          { title: 'Step one', explanation_md: '', files: [{ path: 'a.ts', note_md: null }] },
-          { title: 'Step two', explanation_md: '', files: [{ path: 'b.ts', note_md: 'new file' }] },
+          { title: 'Step one', guidance: '', attention: null, files: [{ path: 'a.ts', note: null }] },
+          { title: 'Step two', guidance: '', attention: null, files: [{ path: 'b.ts', note: 'new file' }] },
         ],
       });
-      expect(v2.version).toBe(2);
       expect(v2.id).not.toBe(v1.id);
 
-      // Latest returns v2, fully assembled.
-      const latest = await getLatestReadingOrder(db, review.id, ['a.ts', 'b.ts']);
-      expect(latest?.version).toBe(2);
+      // The review's reading order is v2, fully assembled.
+      const latest = await getReadingOrder(db, review.id, ['a.ts', 'b.ts']);
+      expect(latest?.id).toBe(v2.id);
       expect(latest?.steps).toHaveLength(2);
       expect(latest?.steps[1]?.files[0]?.path).toBe('b.ts');
       expect(latest?.unassignedPaths).toEqual([]);
 
       // Files present but assigned to no step surface as unassigned.
-      const withExtra = await getLatestReadingOrder(db, review.id, ['a.ts', 'b.ts', 'c.ts']);
+      const withExtra = await getReadingOrder(db, review.id, ['a.ts', 'b.ts', 'c.ts']);
       expect(withExtra?.unassignedPaths).toEqual(['c.ts']);
 
-      // v1's row is retained, not destroyed, by regenerating.
+      // v1's row is deleted by regenerating, leaving exactly one.
       const rows = await db.select().from(readingOrder).where(eq(readingOrder.reviewId, review.id));
-      const versions = rows.map((r) => r.version).sort();
-      expect(versions).toEqual([1, 2]);
-      expect(rows.some((r) => r.id === v1.id)).toBe(true);
+      expect(rows.map((r) => r.id)).toEqual([v2.id]);
     } finally {
       await close();
     }

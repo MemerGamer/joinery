@@ -1,14 +1,19 @@
 /**
- * PR discovery via the `gh` CLI. Every function here follows the same
+ * The GitHub `Forge`: PR discovery via the `gh` CLI. Every function here follows the same
  * rule: a missing or unauthenticated `gh` is data ("no PR known", "gh
  * unavailable"), never a thrown error — the caller never has to wrap these
  * in a try/catch to stay up.
  */
 import { z } from 'zod';
-import type { CiStatus, Pull } from '@joinery/core';
-import { getCachedLogin } from './me.ts';
-
-export type FindOpenPrOptions = { cwd: string };
+import type { CiStatus, PullDetail } from '@joinery/core';
+import type {
+  Forge,
+  ForgeOptions,
+  ListOpenPullsResult,
+  MergedPrCommits,
+  PullSearchHit,
+  ResolvedPr,
+} from './types.ts';
 
 /** A `gh` call is a network round trip; one that hangs must not hold its caller (or its cache key) forever. */
 const GH_TIMEOUT_MS = 30_000;
@@ -19,7 +24,7 @@ const GH_TIMEOUT_MS = 30_000;
  * after `GH_TIMEOUT_MS`. stderr is drained so a chatty failure can't fill
  * its pipe and stall the process.
  */
-export async function runGh(args: readonly string[], cwd: string): Promise<string | null> {
+async function runGh(args: readonly string[], cwd: string): Promise<string | null> {
   let proc;
   try {
     proc = Bun.spawn(['gh', ...args], {
@@ -53,9 +58,9 @@ const prForBranchSchema = z.object({ number: z.number().int().positive(), state:
  * reused branch name would bind to an old, unrelated PR. The `--` keeps a
  * branch name from being read as a flag.
  */
-export async function findOpenPrNumberForBranch(
+async function findOpenPrNumberForBranch(
   branch: string,
-  options: FindOpenPrOptions,
+  options: ForgeOptions,
 ): Promise<number | null> {
   const stdout = await runGh(['pr', 'view', '--json', 'number,state', '--', branch], options.cwd);
   if (stdout === null) return null;
@@ -156,20 +161,6 @@ const pullListItemSchema = z.object({
 
 const OPEN_PULLS_LIMIT = 200;
 
-/** Matches `Pull` from `@joinery/core` exactly; `reviewId` is always `null` here — the route fills it from the DB. */
-export type PullSummary = Pull;
-
-export type ListOpenPullsResult = {
-  /**
-   * Whether `gh` could be asked at all — `false` means "not installed" or
-   * "not authenticated", which the UI renders as a one-line note, distinct
-   * from `true` with an empty `pulls` array ("asked, there just aren't
-   * any open PRs").
-   */
-  available: boolean;
-  pulls: PullSummary[];
-};
-
 /**
  * List open, same-repo PRs via `gh pr list`. Fork PRs are out of scope
  * (a harder, deliberately deferred case) — `gh pr list` run inside the registered
@@ -180,7 +171,7 @@ export type ListOpenPullsResult = {
  * physically lives, only that `headRefName` names something `gh`/git can
  * resolve.
  */
-export async function listOpenPulls(options: FindOpenPrOptions): Promise<ListOpenPullsResult> {
+async function listOpenPulls(options: ForgeOptions & { login: string | null }): Promise<ListOpenPullsResult> {
   const stdout = await runGh(
     [
       'pr',
@@ -207,7 +198,7 @@ export async function listOpenPulls(options: FindOpenPrOptions): Promise<ListOpe
   const parsed = z.array(pullListItemSchema).safeParse(raw);
   if (!parsed.success) return { available: true, pulls: [] };
 
-  const login = getCachedLogin();
+  const { login } = options;
   const pulls = parsed.data.map((p) => {
     const updatedAtMs = Date.parse(p.updatedAt);
     return {
@@ -236,11 +227,6 @@ const pullRefsSchema = z.object({
   baseRefName: z.string(),
 });
 
-export type ResolvedPr = {
-  headRefName: string;
-  baseRefName: string;
-};
-
 /**
  * Resolve a single PR number to its `(headRefName, baseRefName)` — the pair
  * that lets `POST /api/reviews` create/find the review at `(repo,
@@ -252,7 +238,7 @@ export type ResolvedPr = {
  * one PR and deserves to know it failed rather than silently getting `null`
  * folded into "no PR yet".
  */
-export async function resolvePr(prNumber: number, options: FindOpenPrOptions): Promise<ResolvedPr | null> {
+async function resolvePr(prNumber: number, options: ForgeOptions): Promise<ResolvedPr | null> {
   const stdout = await runGh(['pr', 'view', String(prNumber), '--json', 'headRefName,baseRefName'], options.cwd);
   if (stdout === null) return null;
   try {
@@ -262,3 +248,199 @@ export async function resolvePr(prNumber: number, options: FindOpenPrOptions): P
     return null;
   }
 }
+
+const mergedPrSchema = z.object({
+  state: z.string(),
+  mergeCommit: z.object({ oid: z.string() }).nullable().default(null),
+  headRefOid: z.string(),
+});
+
+/**
+ * The merge commit and head of a *merged* PR, for pinning the diff base of a
+ * review opened after the merge. `null` for a PR that isn't merged, or on any
+ * failure (missing/unauthed `gh`, unknown number, malformed response).
+ */
+async function viewMergedPrCommits(
+  prNumber: number,
+  options: ForgeOptions,
+): Promise<MergedPrCommits | null> {
+  const stdout = await runGh(['pr', 'view', String(prNumber), '--json', 'state,mergeCommit,headRefOid'], options.cwd);
+  if (stdout === null) return null;
+  try {
+    const parsed = mergedPrSchema.safeParse(JSON.parse(stdout));
+    if (!parsed.success || parsed.data.state !== 'MERGED' || parsed.data.mergeCommit === null) return null;
+    return { mergeCommit: parsed.data.mergeCommit.oid, headRefOid: parsed.data.headRefOid };
+  } catch {
+    return null;
+  }
+}
+
+const pullViewSchema = z.object({
+  number: z.number().int().positive(),
+  title: z.string(),
+  body: z.string().nullable().default(''),
+  /** 'OPEN' | 'CLOSED' | 'MERGED' */
+  state: z.string(),
+  isDraft: z.boolean().default(false),
+  author: z.object({ login: z.string() }).nullable().default(null),
+  baseRefName: z.string(),
+  statusCheckRollup: statusCheckRollupSchema.optional().default([]),
+  additions: z.number().int().nonnegative().optional(),
+  deletions: z.number().int().nonnegative().optional(),
+  changedFiles: z.number().int().nonnegative().optional(),
+});
+
+/**
+ * One PR in full (description, state, CI, size) for the review's summary
+ * card, in a single `gh pr view`. Any state, not just open. `null` on any
+ * failure (missing/unauthed `gh`, unknown number, malformed response).
+ */
+async function viewPull(prNumber: number, options: ForgeOptions): Promise<PullDetail | null> {
+  const stdout = await runGh(
+    [
+      'pr',
+      'view',
+      String(prNumber),
+      '--json',
+      'number,title,body,state,isDraft,author,baseRefName,statusCheckRollup,additions,deletions,changedFiles',
+    ],
+    options.cwd,
+  );
+  if (stdout === null) return null;
+  try {
+    const parsed = pullViewSchema.safeParse(JSON.parse(stdout));
+    if (!parsed.success) return null;
+    const p = parsed.data;
+    return {
+      number: p.number,
+      title: p.title,
+      body: p.body ?? '',
+      state: p.state === 'MERGED' ? 'merged' : p.state === 'CLOSED' ? 'closed' : p.isDraft ? 'draft' : 'open',
+      authorLogin: p.author?.login ?? null,
+      baseRefName: p.baseRefName,
+      ci: deriveCiStatus(p.statusCheckRollup),
+      additions: p.additions ?? null,
+      deletions: p.deletions ?? null,
+      changedFiles: p.changedFiles ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+const searchHitSchema = z.object({
+  number: z.number().int().positive(),
+  title: z.string(),
+  /** `gh search` says 'open' | 'closed' | 'merged'; `gh pr view` says 'OPEN' | 'CLOSED' | 'MERGED'. */
+  state: z.string(),
+  isDraft: z.boolean().default(false),
+  author: z.object({ login: z.string() }).nullable().default(null),
+  updatedAt: z.string(),
+  repository: z.object({ nameWithOwner: z.string() }).optional(),
+});
+
+function toSearchHit(raw: unknown, slug: string | undefined): PullSearchHit | null {
+  const parsed = searchHitSchema.safeParse(raw);
+  if (!parsed.success) return null;
+  const p = parsed.data;
+  const hitSlug = slug ?? p.repository?.nameWithOwner;
+  if (hitSlug === undefined) return null;
+  const state = p.state.toLowerCase();
+  const updatedAtMs = Date.parse(p.updatedAt);
+  return {
+    slug: hitSlug.toLowerCase(),
+    number: p.number,
+    title: p.title,
+    state: state === 'merged' ? 'merged' : state === 'closed' ? 'closed' : p.isDraft ? 'draft' : 'open',
+    authorLogin: p.author?.login ?? null,
+    updatedAt: p.updatedAt,
+    updatedAtUnix: Number.isFinite(updatedAtMs) ? Math.floor(updatedAtMs / 1000) : 0,
+  };
+}
+
+const SEARCH_LIMIT = 50;
+const SEARCH_FIELDS = 'number,title,state,author,updatedAt,isDraft';
+
+/**
+ * Search PRs of any state across `repos` (`slug` = `owner/name`, `cwd` = a
+ * clone to run `gh` in). A number query asks each repo for that PR in
+ * parallel (a repo without it just contributes nothing); anything else is
+ * one `gh search prs`. `available: false` means `gh` can't be asked at all.
+ */
+async function searchPulls(
+  query: string,
+  repos: readonly { slug: string; cwd: string }[],
+): Promise<{ available: boolean; pulls: PullSearchHit[] }> {
+  const first = repos[0];
+  if (first === undefined) return { available: true, pulls: [] };
+
+  const numberMatch = /^#?(\d+)$/.exec(query);
+  if (numberMatch !== null) {
+    const outputs = await Promise.all(
+      repos.map((r) =>
+        runGh(['pr', 'view', numberMatch[1] ?? '', '--repo', r.slug, '--json', SEARCH_FIELDS], r.cwd),
+      ),
+    );
+    const pulls: PullSearchHit[] = [];
+    outputs.forEach((stdout, i) => {
+      const repo = repos[i];
+      if (stdout === null || repo === undefined) return;
+      try {
+        const hit = toSearchHit(JSON.parse(stdout), repo.slug);
+        if (hit !== null) pulls.push(hit);
+      } catch {
+        // Malformed response: treat as not found.
+      }
+    });
+    // Every repo failing is "not found" when `gh` works, "unavailable" when it doesn't.
+    if (pulls.length === 0 && outputs.every((o) => o === null)) {
+      return { available: (await runGh(['auth', 'status'], first.cwd)) !== null, pulls };
+    }
+    return { available: true, pulls };
+  }
+
+  const stdout = await runGh(
+    [
+      'search',
+      'prs',
+      ...repos.flatMap((r) => ['--repo', r.slug]),
+      '--limit',
+      String(SEARCH_LIMIT),
+      '--json',
+      `${SEARCH_FIELDS},repository`,
+      '--',
+      query,
+    ],
+    first.cwd,
+  );
+  if (stdout === null) return { available: false, pulls: [] };
+  try {
+    const raw: unknown = JSON.parse(stdout);
+    if (!Array.isArray(raw)) return { available: true, pulls: [] };
+    const pulls = raw.flatMap((item) => toSearchHit(item, undefined) ?? []);
+    return { available: true, pulls };
+  } catch {
+    return { available: true, pulls: [] };
+  }
+}
+
+async function currentLogin(cwd: string): Promise<string | null> {
+  const stdout = await runGh(['api', 'user', '--jq', '.login'], cwd);
+  const login = stdout?.trim() ?? '';
+  return login === '' ? null : login;
+}
+
+export const githubForge: Forge = {
+  kind: 'github',
+  cli: 'gh',
+  setupHint: 'Check that `gh` is installed, authenticated (`gh auth status`), and the PR exists in this repo.',
+  // GitHub keeps every PR's head here, open or not, even after its branch is deleted.
+  pullHeadRef: (prNumber) => `refs/pull/${String(prNumber)}/head`,
+  currentLogin,
+  findOpenPrNumberForBranch,
+  listOpenPulls,
+  searchPulls,
+  resolvePr,
+  viewMergedPrCommits,
+  viewPull,
+};

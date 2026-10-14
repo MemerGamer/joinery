@@ -273,7 +273,7 @@ describe('engine tick', () => {
       anchorBlobSha: 'placeholder',
       anchorContextHash: '',
       anchorContext: 'hello',
-      bodyMd: 'a comment',
+      body: 'a comment',
     });
 
     runGit(ctx.repoDir, ['mv', 'README.md', 'renamed.md']);
@@ -312,7 +312,7 @@ describe('engine tick', () => {
       anchorBlobSha: entry?.newBlob ?? '',
       anchorContextHash: hash,
       anchorContext: context,
-      bodyMd: 'about line3',
+      body: 'about line3',
     });
 
     const goneThread = await createThread(ctx.db, {
@@ -324,7 +324,7 @@ describe('engine tick', () => {
       anchorBlobSha: entry?.newBlob ?? '',
       anchorContextHash: 'irrelevant',
       anchorContext: 'this text will never appear again anywhere',
-      bodyMd: 'a stale comment',
+      body: 'a stale comment',
     });
 
     // Shift line3's content up by inserting two lines above it, and nuke the
@@ -370,10 +370,10 @@ describe('engine tick', () => {
       anchorBlobSha: entry?.newBlob ?? '',
       anchorContextHash: hash,
       anchorContext: context,
-      bodyMd: 'first comment',
+      body: 'first comment',
     });
-    await appendReply(ctx.db, { threadId: editedThread.id, author: 'user', bodyMd: 'a follow-up' });
-    await appendReply(ctx.db, { threadId: editedThread.id, author: 'agent', bodyMd: 'an agent reply' });
+    await appendReply(ctx.db, { threadId: editedThread.id, author: 'user', body: 'a follow-up' });
+    await appendReply(ctx.db, { threadId: editedThread.id, author: 'agent', body: 'an agent reply' });
 
     // Rewrite the exact anchored line (and its surrounding context), so the
     // captured context can no longer be found anywhere in the new file —
@@ -389,7 +389,7 @@ describe('engine tick', () => {
     expect(reloaded).not.toBeNull(); // never deleted
     expect(reloaded?.outdated).toBe(true);
     expect(reloaded?.comments).toHaveLength(3); // original + two replies, all intact
-    expect(reloaded?.comments.map((c) => c.bodyMd)).toEqual(['first comment', 'a follow-up', 'an agent reply']);
+    expect(reloaded?.comments.map((c) => c.body)).toEqual(['first comment', 'a follow-up', 'an agent reply']);
     // The stale line numbers and captured context are preserved for display
     // against "the code context captured when it was written",
     // not reset or blanked out.
@@ -422,7 +422,7 @@ describe('engine tick', () => {
       anchorBlobSha: entry?.newBlob ?? '',
       anchorContextHash: hash,
       anchorContext: context,
-      bodyMd: 'about to be orphaned',
+      body: 'about to be orphaned',
     });
 
     await rm(join(ctx.repoDir, 'doomed.txt'));

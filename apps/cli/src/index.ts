@@ -32,7 +32,7 @@ const leaves: Readonly<Record<string, Command>> = {
   reply: threads.reply,
   resolve: threads.resolve,
   react: threads.react,
-  feedback: threads.feedback,
+  comment: threads.comment,
   revision: reviews.revision,
   viewed: reviews.viewed,
   run: runCmd.run,

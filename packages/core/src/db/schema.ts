@@ -17,6 +17,7 @@ export const repo = sqliteTable(
   {
     id: text('id').primaryKey(),
     rootPath: text('root_path').notNull(),
+    remoteHost: text('remote_host'),
     remoteOwner: text('remote_owner'),
     remoteName: text('remote_name'),
     defaultBranch: text('default_branch').notNull(),
@@ -80,7 +81,7 @@ export const agentWorktree = sqliteTable(
   (t) => [primaryKey({ columns: [t.repoId, t.sha] })],
 );
 
-/** Regenerating supersedes rather than replaces: old versions are retained. */
+/** One per review: regenerating deletes the old reading order and inserts the new one. */
 export const readingOrder = sqliteTable(
   'reading_order',
   {
@@ -88,11 +89,10 @@ export const readingOrder = sqliteTable(
     reviewId: text('review_id')
       .notNull()
       .references(() => review.id, { onDelete: 'cascade' }),
-    version: integer('version').notNull(),
     agentRunId: text('agent_run_id'),
     createdAt: integer('created_at').notNull().default(now),
   },
-  (t) => [uniqueIndex('reading_order_review_version_idx').on(t.reviewId, t.version)],
+  (t) => [uniqueIndex('reading_order_review_idx').on(t.reviewId)],
 );
 
 export const step = sqliteTable(
@@ -104,7 +104,8 @@ export const step = sqliteTable(
       .references(() => readingOrder.id, { onDelete: 'cascade' }),
     idx: integer('idx').notNull(),
     title: text('title').notNull(),
-    explanationMd: text('explanation_md').notNull().default(''),
+    guidance: text('guidance').notNull().default(''),
+    attention: text('attention'),
   },
   (t) => [uniqueIndex('step_order_idx').on(t.readingOrderId, t.idx)],
 );
@@ -117,7 +118,7 @@ export const stepFile = sqliteTable(
       .references(() => step.id, { onDelete: 'cascade' }),
     idx: integer('idx').notNull(),
     path: text('path').notNull(),
-    noteMd: text('note_md'),
+    note: text('note'),
   },
   (t) => [primaryKey({ columns: [t.stepId, t.idx] })],
 );
@@ -177,7 +178,7 @@ export const comment = sqliteTable(
       .references(() => thread.id, { onDelete: 'cascade' }),
     /** 'user' | 'agent' */
     author: text('author').notNull(),
-    bodyMd: text('body_md').notNull(),
+    body: text('body').notNull(),
     agentRunId: text('agent_run_id'),
     createdAt: integer('created_at').notNull().default(now),
   },

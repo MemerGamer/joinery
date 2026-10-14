@@ -8,7 +8,7 @@ import { maybePrintJson, parseCommand, requireFlag, requirePositional, wantsHelp
 export const list: Command = {
   path: 'list',
   summary: 'List reviews',
-  usage: 'review list [--json]',
+  usage: 'joinery list [--json]',
   async run(argv) {
     const parsed = parseCommand(argv);
     if (wantsHelp(parsed)) return printLine(list.usage);
@@ -28,7 +28,7 @@ export const list: Command = {
 export const create: Command = {
   path: 'create',
   summary: 'Create a review for a branch',
-  usage: 'review create --branch <name> [--base <ref>] [--json]',
+  usage: 'joinery create --branch <name> [--base <ref>] [--json]',
   async run(argv) {
     const parsed = parseCommand(argv, [
       { name: 'branch', type: 'string' },
@@ -50,7 +50,7 @@ export const create: Command = {
 export const show: Command = {
   path: 'show',
   summary: 'Show a review',
-  usage: 'review show <id> [--json]',
+  usage: 'joinery show <id> [--json]',
   async run(argv) {
     const parsed = parseCommand(argv);
     if (wantsHelp(parsed)) return printLine(show.usage);
@@ -68,7 +68,7 @@ export const show: Command = {
 export const files: Command = {
   path: 'files',
   summary: 'List changed files for a review',
-  usage: 'review files <id> [--json]',
+  usage: 'joinery files <id> [--json]',
   async run(argv) {
     const parsed = parseCommand(argv);
     if (wantsHelp(parsed)) return printLine(files.usage);
@@ -93,7 +93,7 @@ export const files: Command = {
 export const diff: Command = {
   path: 'diff',
   summary: 'Show the patch for one file',
-  usage: 'review diff <id> <path> [--rev working|head|pr] [--json]',
+  usage: 'joinery diff <id> <path> [--rev working|head|pr] [--json]',
   async run(argv) {
     const parsed = parseCommand(argv, [{ name: 'rev', type: 'string' }]);
     if (wantsHelp(parsed)) return printLine(diff.usage);
@@ -111,7 +111,7 @@ export const diff: Command = {
 export const revision: Command = {
   path: 'revision',
   summary: 'Switch the review revision',
-  usage: 'review revision <id> <working|head|pr> [--json]',
+  usage: 'joinery revision <id> <working|head|pr> [--json]',
   async run(argv) {
     const parsed = parseCommand(argv);
     if (wantsHelp(parsed)) return printLine(revision.usage);
@@ -130,7 +130,7 @@ export const revision: Command = {
 export const viewed: Command = {
   path: 'viewed',
   summary: 'Mark a file viewed',
-  usage: 'review viewed <id> <path> [--json]',
+  usage: 'joinery viewed <id> <path> [--json]',
   async run(argv) {
     const parsed = parseCommand(argv);
     if (wantsHelp(parsed)) return printLine(viewed.usage);

@@ -15,7 +15,9 @@ import {
   agentRunSchema,
   branchSchema,
   meSchema,
+  pullDetailSchema,
   pullSchema,
+  pullSearchResultSchema,
   readingOrderPlanSchema,
   readingOrderSchema,
   reactionKindSchema,
@@ -76,6 +78,8 @@ export const markViewedBodySchema = z.object({
   blobSha: z.string().optional(),
   viewed: z.boolean().default(true),
 });
+export const setAllViewedBodySchema = z.object({ viewed: z.boolean().default(true) });
+export const resolveAllThreadsBodySchema = z.object({ resolved: z.boolean().default(true) });
 /** The models a thread reply can run on, in picker order. Ids are exact; never add a date suffix. */
 export const AGENT_MODELS = [
   { id: 'claude-fable-5-1', label: 'Fable 5.1' },
@@ -86,13 +90,15 @@ export const AGENT_MODELS = [
 export const agentModelSchema = z.enum(['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5']);
 export type AgentModel = z.infer<typeof agentModelSchema>;
 export const DEFAULT_AGENT_MODEL: AgentModel = 'claude-haiku-5-5';
+/** Reading-order generation defaults to a stronger model than Ask: it runs once and sets the review's shape. */
+export const DEFAULT_READING_ORDER_MODEL: AgentModel = 'claude-sonnet-5-5';
 
 export const createThreadBodySchema = z.object({
   path: z.string().min(1),
   side: z.enum(['old', 'new']),
   startLine: z.number().int().positive(),
   endLine: z.number().int().positive(),
-  bodyMd: z.string().min(1),
+  body: z.string().min(1),
   author: z.enum(['user', 'agent']).default('user'),
   /** Post the comment, then immediately ask an agent to reply (Cmd+Enter). */
   askAgent: z.boolean().default(false),
@@ -100,13 +106,13 @@ export const createThreadBodySchema = z.object({
   model: agentModelSchema.optional(),
 });
 export const replyBodySchema = z.object({
-  bodyMd: z.string().min(1),
+  body: z.string().min(1),
   author: z.enum(['user', 'agent']).default('user'),
   agentRunId: z.string().optional(),
   askAgent: z.boolean().default(false),
   model: agentModelSchema.optional(),
 });
-export const generateReadingOrderBodySchema = z.object({});
+export const generateReadingOrderBodySchema = z.object({ model: agentModelSchema.optional() });
 export const askAgentBodySchema = z.object({ model: agentModelSchema.optional() });
 export const setReactionBodySchema = z.object({
   kind: reactionKindSchema,
@@ -154,6 +160,12 @@ export const listPullsQuerySchema = z.object({
   /** `'true'` bypasses the server's short-lived `gh` cache. */
   refresh: z.enum(['true', 'false']).optional(),
 });
+export const searchPullsQuerySchema = z.object({
+  /** Free text, or a PR number (`1234` / `#1234`). */
+  q: z.string().min(1),
+  /** Comma-separated repo ids; default is every registered repo. */
+  repos: z.string().optional(),
+});
 
 // --- responses ---
 
@@ -165,10 +177,6 @@ export const reviewDetailSchema = z.object({
   readingOrderRun: agentRunSchema.nullable(),
 });
 export type ReviewDetail = z.infer<typeof reviewDetailSchema>;
-
-export const feedbackSchema = z.object({
-  markdown: z.string(),
-});
 
 const noContent = z.object({ ok: z.literal(true) });
 
@@ -245,6 +253,14 @@ export const api = {
     body: undefined,
     query: listPullsQuerySchema,
     response: z.object({ available: z.boolean(), pulls: z.array(pullSchema) }),
+  }),
+  /** Search PRs of any state across repos via `gh`; `available` is false when `gh` can't be asked. */
+  searchPulls: def({
+    method: 'GET',
+    path: () => '/api/pulls/search',
+    body: undefined,
+    query: searchPullsQuerySchema,
+    response: z.object({ available: z.boolean(), pulls: z.array(pullSearchResultSchema) }),
   }),
   me: def({
     method: 'GET',
@@ -402,16 +418,6 @@ export const api = {
     query: undefined,
     response: z.object({ threadId: z.string(), reviewId: z.string() }),
   }),
-  feedback: def({
-    method: 'GET',
-    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/feedback`,
-    body: undefined,
-    query: z.object({
-      format: z.literal('markdown').optional(),
-      unresolved: z.enum(['true', 'false']).optional(),
-    }),
-    response: feedbackSchema,
-  }),
   setRevision: def({
     method: 'POST',
     path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/revision`,
@@ -435,6 +441,40 @@ export const api = {
     body: markViewedBodySchema,
     query: undefined,
     response: noContent,
+  }),
+  /** Mark (or clear) every file of the review's current revision as viewed, in one call. */
+  setAllViewed: def({
+    method: 'POST',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/viewed/all`,
+    body: setAllViewedBodySchema,
+    query: undefined,
+    response: noContent,
+  }),
+  /** Resolve (or reopen) every thread of the review; each change also arrives as `thread.updated`. */
+  resolveAllThreads: def({
+    method: 'POST',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/threads/resolve-all`,
+    body: resolveAllThreadsBodySchema,
+    query: undefined,
+    response: z.object({ threads: z.array(threadSchema) }),
+  }),
+  /**
+   * The review's PR in full, for the summary card. `pull` is null when the
+   * review has no PR or `gh` can't say; `refresh` skips the short cache.
+   */
+  getReviewPull: def({
+    method: 'GET',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/pull`,
+    body: undefined,
+    query: z.object({ refresh: z.enum(['true', 'false']).optional() }),
+    response: z.object({ pull: pullDetailSchema.nullable() }),
+  }),
+  cancelRun: def({
+    method: 'POST',
+    path: (id: string) => `/api/runs/${encodeURIComponent(id)}/cancel`,
+    body: undefined,
+    query: undefined,
+    response: z.object({ run: agentRunSchema }),
   }),
   getRun: def({
     method: 'GET',

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { reactionKindSchema, type ReactionKind } from '@joinery/core';
 import * as client from '../client.ts';
 import { UsageError } from '../args.ts';
-import { printLine, printTable } from '../format.ts';
+import { printLine, printTable, renderThreadsMarkdown } from '../format.ts';
 import type { Command } from './types.ts';
 import { flagBoolean, flagString } from '../args.ts';
 import { maybePrintJson, parseCommand, requireFlag, requirePositional, wantsHelp } from './shared.ts';
@@ -10,13 +10,17 @@ import { maybePrintJson, parseCommand, requireFlag, requirePositional, wantsHelp
 export const threads: Command = {
   path: 'threads',
   summary: 'List threads on a review',
-  usage: 'review threads <id> [--unresolved] [--json]',
+  usage: 'joinery threads <id> [--unresolved] [--markdown] [--json]',
   async run(argv) {
-    const parsed = parseCommand(argv, [{ name: 'unresolved', type: 'boolean' }]);
+    const parsed = parseCommand(argv, [{ name: 'unresolved', type: 'boolean' }, { name: 'markdown', type: 'boolean' }]);
     if (wantsHelp(parsed)) return printLine(threads.usage);
     const id = requirePositional(parsed.positionals, 0, 'id');
     const result = await client.listThreads(id, { unresolved: flagBoolean(parsed.flags, 'unresolved') });
     if (maybePrintJson(parsed, result)) return;
+    if (flagBoolean(parsed.flags, 'markdown')) {
+      process.stdout.write(renderThreadsMarkdown(result.threads));
+      return;
+    }
     if (result.threads.length === 0) {
       printLine('no threads');
       return;
@@ -37,7 +41,7 @@ export const threads: Command = {
 export const thread: Command = {
   path: 'thread',
   summary: 'Show a thread and its comments',
-  usage: 'review thread <id> [--json]',
+  usage: 'joinery thread <id> [--json]',
   async run(argv) {
     const parsed = parseCommand(argv);
     if (wantsHelp(parsed)) return printLine(thread.usage);
@@ -48,12 +52,12 @@ export const thread: Command = {
     for (const c of result.thread.comments) {
       printLine('');
       printLine(`-- ${c.author} --`);
-      printLine(c.bodyMd);
+      printLine(c.body);
     }
   },
 };
 
-async function readBodyMd(bodyFileFlag: string): Promise<string> {
+async function readBody(bodyFileFlag: string): Promise<string> {
   if (bodyFileFlag === '-') {
     return await Bun.stdin.text();
   }
@@ -68,26 +72,76 @@ async function readBodyMd(bodyFileFlag: string): Promise<string> {
 export const reply: Command = {
   path: 'reply',
   summary: 'Reply to a thread',
-  usage: 'review reply <id> --body-file r.md [--json]',
+  usage: 'joinery reply <id> --body-file r.md [--actor user|agent] [--json]',
   async run(argv) {
-    const parsed = parseCommand(argv, [{ name: 'body-file', type: 'string' }]);
+    const parsed = parseCommand(argv, [{ name: 'body-file', type: 'string' }, { name: 'actor', type: 'string' }]);
     if (wantsHelp(parsed)) return printLine(reply.usage);
     const id = requirePositional(parsed.positionals, 0, 'id');
     const bodyFile = requireFlag(parsed, 'body-file');
-    const bodyMd = await readBodyMd(bodyFile);
-    if (bodyMd.trim().length === 0) {
+    const body = await readBody(bodyFile);
+    if (body.trim().length === 0) {
       throw new UsageError(`${bodyFile} is empty — a reply needs a body`);
     }
-    const result = await client.reply(id, { bodyMd, author: 'user', askAgent: false });
+    const result = await client.reply(id, { body, author: parseActor(parsed), askAgent: false });
     if (maybePrintJson(parsed, result)) return;
     printLine(`replied to thread ${result.thread.id}`);
   },
 };
 
+export const comment: Command = {
+  path: 'comment',
+  summary: 'Start a new thread on a line of a file',
+  usage:
+    'joinery comment <reviewId> <path> --line N [--end M] [--side old|new] (--body-file <f> | --body-file -) [--actor user|agent] [--json]',
+  async run(argv) {
+    const parsed = parseCommand(argv, [
+      { name: 'line', type: 'string' },
+      { name: 'end', type: 'string' },
+      { name: 'side', type: 'string' },
+      { name: 'body-file', type: 'string' },
+      { name: 'actor', type: 'string' },
+    ]);
+    if (wantsHelp(parsed)) return printLine(comment.usage);
+    const id = requirePositional(parsed.positionals, 0, 'reviewId');
+    const path = requirePositional(parsed.positionals, 1, 'path');
+    const startLine = parseLine(requireFlag(parsed, 'line'), 'line');
+    const endFlag = flagString(parsed.flags, 'end');
+    const endLine = endFlag === undefined ? startLine : parseLine(endFlag, 'end');
+    if (endLine < startLine) throw new UsageError('--end must be >= --line');
+    const side = flagString(parsed.flags, 'side') ?? 'new';
+    if (side !== 'old' && side !== 'new') {
+      throw new UsageError(`--side must be "old" or "new", got "${side}"`);
+    }
+    const bodyFile = requireFlag(parsed, 'body-file');
+    const body = await readBody(bodyFile);
+    if (body.trim().length === 0) {
+      throw new UsageError(`${bodyFile} is empty — a comment needs a body`);
+    }
+    const result = await client.createThread(id, { path, side, startLine, endLine, body, author: parseActor(parsed), askAgent: false });
+    if (maybePrintJson(parsed, result)) return;
+    printLine(`created thread ${result.thread.id}`);
+  },
+};
+
+/** `--actor`: who the comment is from. Agents pass `agent` so their words don't show up as the user's. */
+function parseActor(parsed: ReturnType<typeof parseCommand>): 'user' | 'agent' {
+  const actor = flagString(parsed.flags, 'actor') ?? 'user';
+  if (actor !== 'user' && actor !== 'agent') {
+    throw new UsageError(`--actor must be "user" or "agent", got "${actor}"`);
+  }
+  return actor;
+}
+
+function parseLine(raw: string, flag: string): number {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1) throw new UsageError(`--${flag} must be a positive integer, got "${raw}"`);
+  return n;
+}
+
 export const resolve: Command = {
   path: 'resolve',
   summary: 'Resolve a thread',
-  usage: 'review resolve <id> [--json]',
+  usage: 'joinery resolve <id> [--json]',
   async run(argv) {
     const parsed = parseCommand(argv);
     if (wantsHelp(parsed)) return printLine(resolve.usage);
@@ -120,34 +174,16 @@ function parseKind(raw: string): ReactionKind {
 export const react: Command = {
   path: 'react',
   summary: 'Set or clear a reaction on a comment',
-  usage: 'review react <commentId> <kind> [--off] [--actor user|agent] [--json]',
+  usage: 'joinery react <commentId> <kind> [--off] [--actor user|agent] [--json]',
   async run(argv) {
     const parsed = parseCommand(argv, [{ name: 'off', type: 'boolean' }, { name: 'actor', type: 'string' }]);
     if (wantsHelp(parsed)) return printLine(react.usage);
     const commentId = requirePositional(parsed.positionals, 0, 'commentId');
     const kind = parseKind(requirePositional(parsed.positionals, 1, 'kind'));
-    const actorFlag = flagString(parsed.flags, 'actor') ?? 'user';
-    if (actorFlag !== 'user' && actorFlag !== 'agent') {
-      throw new UsageError(`--actor must be "user" or "agent", got "${actorFlag}"`);
-    }
+    const actorFlag = parseActor(parsed);
     const on = !flagBoolean(parsed.flags, 'off');
     const result = await client.setReaction(commentId, { kind, actor: actorFlag, on });
     if (maybePrintJson(parsed, result)) return;
     printLine(`${on ? 'reacted' : 'removed reaction'} ${kind} on comment ${commentId} as ${actorFlag}`);
-  },
-};
-
-export const feedback: Command = {
-  path: 'feedback',
-  summary: 'Print review feedback as markdown',
-  usage: 'review feedback <id> [--unresolved] [--json]',
-  async run(argv) {
-    const parsed = parseCommand(argv, [{ name: 'unresolved', type: 'boolean' }]);
-    if (wantsHelp(parsed)) return printLine(feedback.usage);
-    const id = requirePositional(parsed.positionals, 0, 'id');
-    const result = await client.feedback(id, { unresolved: flagBoolean(parsed.flags, 'unresolved') });
-    if (maybePrintJson(parsed, result)) return;
-    process.stdout.write(result.markdown);
-    if (!result.markdown.endsWith('\n')) process.stdout.write('\n');
   },
 };

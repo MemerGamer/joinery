@@ -14,10 +14,10 @@
  * structured output is a strong hint to the model, not a guarantee.
  */
 import { query, type SDKMessage, type SDKResultMessage } from '@anthropic-ai/claude-agent-sdk';
-import { readingOrderPlanSchema, type FileEntry, type ReadingOrderPlan } from '@joinery/core';
+import { DEFAULT_READING_ORDER_MODEL, readingOrderPlanSchema, type AgentModel, type FileEntry, type ReadingOrderPlan } from '@joinery/core';
 import { z } from 'zod';
 import { claudeExecutableOption } from './claudeExecutable.ts';
-import { READING_ORDER_MODEL_ID } from './model.ts';
+import { createGitTools } from './gitTools.ts';
 import { makeAgentCanUseTool } from './permissions.ts';
 
 const READING_ORDER_JSON_SCHEMA = (() => {
@@ -42,20 +42,31 @@ function describeFile(f: FileEntry): string {
 export function buildReadingOrderPrompt(files: readonly FileEntry[]): string {
   const fileLines = files.map(describeFile).join('\n');
   return [
-    'Turn this code review into a walkthrough: a short series of steps a',
-    'teammate reads in order, each covering one concern of the change.',
+    'Write a reviewer\'s guide to this code review: a short series of steps a',
+    'teammate reads in order, pointing them at what deserves their attention.',
     '',
     'Changed files:',
     fileLines,
     '',
-    '1. Read each changed file in the review root (Read, Grep, Glob). Done when',
-    '   you can say in one sentence what every file adds or changes.',
-    '2. Group the files by concern. Done when every changed file sits in',
-    '   exactly one step, under its exact path.',
-    '3. Order the steps by dependency: definitions and contracts before the code',
-    '   that uses them, call sites and tests last. Done when each step comes after',
-    '   the steps it builds on.',
-    '4. Write each step following the descriptions in the output schema.',
+    '1. Read each changed file in the review root (Read, Grep, Glob). Use the',
+    '   git tools (git_log, git_show, git_blame) when history explains a change.',
+    '   Done when you can say in one sentence what every file adds or changes',
+    '   and which parts are risky.',
+    '2. Group the files that are read together into steps (a type and its users,',
+    '   a feature and its wiring, all the tests). Aim for about 3 to 7 steps, not',
+    '   one per file; a one-file step is only for a file that is a concern on its',
+    '   own. Done when every changed file sits in exactly one step, under its',
+    '   exact path.',
+    '3. Order the steps risk-first: `focus` steps (risky logic, behaviour changes,',
+    '   anything you have a concern about) come first. Then order the rest by',
+    '   dependency: definitions and contracts before the code that uses them,',
+    '   call sites and tests last. Typical shapes: for a feature, storage, entry',
+    '   point, logic, callers, tests; for a refactor, the new abstraction, then',
+    '   each call site.',
+    '4. Write each step following the descriptions in the output schema. The',
+    '   guidance says what to notice and may carry a small verdict ("verified the',
+    '   correlation keys match", "faithful port, skim for shape"). Mark',
+    '   mechanical steps `skim`.',
     '',
     'Respond only with the structured output.',
   ].join('\n');
@@ -64,6 +75,10 @@ export function buildReadingOrderPrompt(files: readonly FileEntry[]): string {
 export type GenerateReadingOrderPlanOptions = {
   readonly cwd: string;
   readonly files: readonly FileEntry[];
+  /** Sonnet when absent. */
+  readonly model?: AgentModel;
+  /** Aborting it stops the agent; the stream then ends or throws. */
+  readonly abortController?: AbortController;
   /** Called with every SDK message as it streams in, for event logging. */
   readonly onMessage?: (message: unknown) => void | Promise<void>;
 };
@@ -92,8 +107,10 @@ export async function generateReadingOrderPlan(options: GenerateReadingOrderPlan
     prompt: buildReadingOrderPrompt(options.files),
     options: {
       ...executable,
+      ...(options.abortController === undefined ? {} : { abortController: options.abortController }),
       cwd: options.cwd,
-      model: READING_ORDER_MODEL_ID,
+      model: options.model ?? DEFAULT_READING_ORDER_MODEL,
+      mcpServers: { joinery: createGitTools({ cwd: options.cwd }) },
       // `Bash` is removed outright rather than gated through a read-only
       // allowlist: no shell at all for the embedded agent, on either run kind.
       disallowedTools: ['Write', 'Edit', 'NotebookEdit', 'Bash'],
@@ -107,8 +124,8 @@ export async function generateReadingOrderPlan(options: GenerateReadingOrderPlan
         type: 'preset',
         preset: 'claude_code',
         append:
-          'You are writing a walkthrough of a code review for a teammate. ' +
-          'Your tools are read-only: Read, Grep, Glob.',
+          'You are writing a reviewer\'s guide to a code review for a teammate. ' +
+          'Your tools are read-only: Read, Grep, Glob, and the git_log, git_show and git_blame tools.',
       },
       maxTurns: 30,
     },

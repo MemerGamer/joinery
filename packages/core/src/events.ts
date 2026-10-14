@@ -51,15 +51,12 @@ export const serverEventSchema = z.discriminatedUnion('type', [
     reviewId: z.string(),
     run: agentRunSchema,
   }),
-  /** Token-level streaming from `includePartialMessages`. */
+  /** The agent started a tool call: a short human label for the UI's activity line. */
   z.object({
-    type: z.literal('run.delta'),
+    type: z.literal('run.activity'),
     reviewId: z.string(),
     runId: z.string(),
-    seq: z.number().int().nonnegative(),
-    /** The SDK message type, kept opaque so the UI can render what it knows. */
-    messageType: z.string(),
-    payload: z.unknown(),
+    label: z.string(),
   }),
   z.object({
     type: z.literal('run.ended'),

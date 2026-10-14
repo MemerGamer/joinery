@@ -21,7 +21,7 @@ describe('makeAgentCanUseTool (no shell, path-fenced reads)', () => {
   });
 
   test('allows any mcp__joinery__* tool', async () => {
-    const result = await agentCanUseTool('mcp__joinery__reply', { threadId: 't1', bodyMd: 'hi' }, baseOptions);
+    const result = await agentCanUseTool('mcp__joinery__reply', { threadId: 't1', body: 'hi' }, baseOptions);
     expect(result?.behavior).toBe('allow');
   });
 

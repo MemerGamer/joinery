@@ -22,6 +22,7 @@ import type { AgentModel, AgentRun, FileEntry, Review, ServerEvent } from '@join
 import {
   appendEvent,
   createRun,
+  getRun,
   getThreadWithComments,
   setRunError,
   setRunStatus,
@@ -33,6 +34,9 @@ import { runThreadReplyAgent } from './threadReply.ts';
 import type { Invoke } from './tools.ts';
 import type { EngineForCwd } from './worktree.ts';
 
+/** Live runs by id: the controller that aborts the agent, and a promise that settles once the run row is closed out. */
+const activeRuns = new Map<string, { controller: AbortController; ended: Promise<void> }>();
+
 export type RunsDeps = {
   readonly db: Db;
   readonly invoke: Invoke;
@@ -43,6 +47,8 @@ export type RunsDeps = {
 export type ReadingOrderContext = {
   readonly cwd: string;
   readonly files: readonly FileEntry[];
+  /** The model for the run; Sonnet when absent. */
+  readonly model?: AgentModel;
 };
 
 /**
@@ -61,15 +67,18 @@ export async function generateReadingOrder(deps: RunsDeps, reviewId: string, con
   deps.emit({ type: 'run.started', reviewId, run: created });
   const run = await setRunStatus(deps.db, created.id, 'running');
 
-  runInBackground(deps, reviewId, run.id, async () => {
+  runInBackground(deps, reviewId, run.id, async (signal) => {
     const plan = await generateReadingOrderPlan({
       cwd: context.cwd,
+      abortController: signal,
       files: context.files,
+      ...(context.model === undefined ? {} : { model: context.model }),
       onMessage: async (message) => {
         const type = typeof (message as { type?: unknown }).type === 'string' ? (message as { type: string }).type : 'unknown';
         await appendEvent(deps.db, run.id, type, message);
       },
     });
+    signal.signal.throwIfAborted();
     await writeReadingOrderPlan(deps.db, reviewId, plan, run.id);
     deps.emit({ type: 'reading_order.updated', reviewId });
   }, {
@@ -114,14 +123,16 @@ export async function requestThreadReply(
   };
   await setEyes(true);
 
-  runInBackground(deps, reviewId, run.id, async () => {
+  runInBackground(deps, reviewId, run.id, async (signal) => {
     try {
       if (thread === null) throw new Error(`thread ${threadId} not found`);
-      await runThreadReplyAgent(deps, run.id, review, thread, engine, model);
+      await runThreadReplyAgent(deps, run.id, review, thread, engine, signal, model);
     } catch (err) {
+      // A cancel is not a failure: no "Agent run failed" reply.
+      if (signal.signal.aborted) throw err;
       const message = err instanceof Error ? err.message : `thread-reply agent run failed: ${String(err)}`;
       await deps.invoke('POST', `/api/threads/${encodeURIComponent(threadId)}/replies`, {
-        bodyMd: `Agent run failed: ${message}`,
+        body: `Agent run failed: ${message}`,
         author: 'agent',
         agentRunId: run.id,
       });
@@ -137,31 +148,62 @@ export async function requestThreadReply(
 }
 
 /**
+ * `POST /api/runs/:id/cancel`. Aborts the run's agent and waits for the run
+ * to be closed out as `cancelled` (`run.ended` is emitted by then). A no-op
+ * for a run that already finished; a `running` row with no live agent behind
+ * it (an orphan) is closed out directly.
+ */
+export async function cancelRun(deps: RunsDeps, runId: string): Promise<AgentRun | null> {
+  const run = await getRun(deps.db, runId);
+  if (run === null) return null;
+  if (run.status !== 'pending' && run.status !== 'running') return run;
+  const active = activeRuns.get(runId);
+  if (active === undefined) {
+    const ended = await setRunStatus(deps.db, runId, 'cancelled');
+    deps.emit({ type: 'run.ended', reviewId: run.reviewId, run: ended });
+    return ended;
+  }
+  active.controller.abort();
+  await active.ended;
+  return getRun(deps.db, runId);
+}
+
+/**
  * Runs `body` detached from the HTTP request that started the run, then
- * closes the run out as `done` (or `error`, with `describeError`'s message)
- * and emits `run.ended`. Never rejects — a failure here has no caller left
- * to report to, so it lands on the run row and the event stream instead.
+ * closes the run out as `done` (`cancelled` if `cancelRun` aborted it, `error`
+ * with `describeError`'s message otherwise) and emits `run.ended`. Never
+ * rejects — a failure here has no caller left to report to, so it lands on
+ * the run row and the event stream instead.
  */
 function runInBackground(
   deps: RunsDeps,
   reviewId: string,
   runId: string,
-  body: () => Promise<void>,
+  body: (controller: AbortController) => Promise<void>,
   options: { describeError: (err: unknown) => string },
 ): void {
-  void (async () => {
-    let status: 'done' | 'error' = 'done';
+  const controller = new AbortController();
+  const ended = (async () => {
+    let status: 'done' | 'error' | 'cancelled' = 'done';
     try {
-      await body();
+      await body(controller);
+      if (controller.signal.aborted) status = 'cancelled';
     } catch (err) {
-      status = 'error';
-      await setRunError(deps.db, runId, options.describeError(err)).catch(() => undefined);
+      if (controller.signal.aborted) {
+        status = 'cancelled';
+      } else {
+        status = 'error';
+        await setRunError(deps.db, runId, options.describeError(err)).catch(() => undefined);
+      }
     }
     try {
-      const ended = await setRunStatus(deps.db, runId, status);
-      deps.emit({ type: 'run.ended', reviewId, run: ended });
+      const run = await setRunStatus(deps.db, runId, status);
+      deps.emit({ type: 'run.ended', reviewId, run });
     } catch (err) {
       console.error(`agent run ${runId}: failed to record its end`, err);
+    } finally {
+      activeRuns.delete(runId);
     }
   })();
+  activeRuns.set(runId, { controller, ended });
 }

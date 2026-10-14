@@ -7,6 +7,8 @@ import { isAbsolute } from 'node:path';
 import { Hono } from 'hono';
 import {
   addRepoBodySchema,
+  setAllViewedBodySchema,
+  resolveAllThreadsBodySchema,
   askAgentBodySchema,
   createReviewBodySchema,
   createThreadBodySchema,
@@ -14,6 +16,7 @@ import {
   listDirsQuerySchema,
   listBranchesQuerySchema,
   listPullsQuerySchema,
+  searchPullsQuerySchema,
   versionQuerySchema,
   listReviewsQuerySchema,
   markViewedBodySchema,
@@ -37,7 +40,7 @@ import {
   findReviewByPinnedSha,
   getActiveRun,
   getCommentThreadId,
-  getLatestReadingOrder,
+  getReadingOrder,
   getRepoById,
   getRepoByPath,
   getReview,
@@ -63,21 +66,24 @@ import {
 import { listDirs } from '../fs/dirs.ts';
 import { buildReviewSummaries, getMeCached } from '../homebase.ts';
 import { getPullsCached } from '../pullsCache.ts';
+import { searchPullsCached } from '../pullSearchCache.ts';
+import { getPullDetailCached } from '../pullCache.ts';
 import type { StoredCacheDeps } from '../storedCache.ts';
 import {
   canonicalizePath,
   defaultBranch as gitDefaultBranch,
+  forgeFor,
   getFileContents,
   getFilePatch,
   listBranches,
+  remoteHost,
   remoteIdentity,
-  resolvePr,
   showToplevel,
 } from '../git/index.ts';
 import type { EngineRegistry } from '../engine/index.ts';
 import { captureContext } from '../engine/anchor.ts';
 import { projectThreads } from '../engine/threadProjection.ts';
-import { generateReadingOrder, requestThreadReply } from '../agent/runs.ts';
+import { cancelRun, generateReadingOrder, requestThreadReply } from '../agent/runs.ts';
 import type { Invoke } from '../agent/tools.ts';
 import { resolveRunCwd } from '../agent/worktree.ts';
 import { badRequest, conflict, notFound } from './errors.ts';
@@ -96,10 +102,7 @@ const threadsQuerySchema = z.object({
   status: z.enum(['open', 'resolved']).optional(),
   rev: revisionSchema.optional(),
 });
-const feedbackQuerySchema = z.object({
-  format: z.literal('markdown').optional(),
-  unresolved: z.enum(['true', 'false']).optional(),
-});
+const reviewPullQuerySchema = z.object({ refresh: z.enum(['true', 'false']).optional() });
 const resolveBodySchema = z.object({ resolved: z.boolean().default(true) });
 
 async function requireEngine(deps: RoutesDeps, reviewId: string) {
@@ -163,6 +166,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
 
     const repo = await upsertRepo(deps.db, {
       rootPath,
+      remoteHost: await remoteHost({ cwd: rootPath }),
       remoteOwner: identity.owner,
       remoteName: identity.name,
       defaultBranch: branch,
@@ -228,6 +232,22 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     return c.json({ available: result.available, pulls });
   });
 
+  app.get('/api/pulls/search', async (c) => {
+    const query = parseQuery(searchPullsQuerySchema, c);
+    const wanted = query.repos === undefined ? null : new Set(query.repos.split(',').filter((id) => id !== ''));
+    // Only repos on a supported forge can be searched.
+    const repos = (await listRepos(deps.db)).filter(
+      (r) => forgeFor(r).kind !== 'none' && (wanted === null || wanted.has(r.id)),
+    );
+    const result = await searchPullsCached(query.q, repos);
+    const idBySlug = new Map(repos.map((r) => [`${r.remoteOwner}/${r.remoteName}`.toLowerCase(), r.id]));
+    const pulls = result.pulls.flatMap(({ slug, ...hit }) => {
+      const repoId = idBySlug.get(slug);
+      return repoId === undefined ? [] : [{ repoId, ...hit }];
+    });
+    return c.json({ available: result.available, pulls });
+  });
+
   // --- reviews ---
 
   app.get('/api/reviews', async (c) => {
@@ -247,7 +267,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     }
     if (repo === null) throw badRequest('repoId or a registered repoPath is required');
 
-    // A bare `prNumber` (no branch/sha) resolves via `gh` to the PR's real
+    // A bare `prNumber` (no branch/sha) resolves via the forge to the PR's real
     // `(headRefName, baseRefName)` before falling into the normal
     // branch/sha identity logic below. A PR review is then identified as
     // `(repo, headRefName)` with `prNumber` set — the SAME identity as a
@@ -258,14 +278,12 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     let base = body.base;
     if (branch === undefined && body.sha === undefined) {
       if (body.prNumber === undefined) {
-        throw badRequest('one of branch or sha (or prNumber, resolved via gh) is required');
+        throw badRequest('one of branch or sha (or prNumber, resolved via the forge) is required');
       }
-      const resolved = await resolvePr(body.prNumber, { cwd: repo.rootPath });
+      const forge = forgeFor(repo);
+      const resolved = await forge.resolvePr(body.prNumber, { cwd: repo.rootPath });
       if (resolved === null) {
-        throw badRequest(
-          `could not resolve PR #${String(body.prNumber)} via gh`,
-          'Check that `gh` is installed, authenticated (`gh auth status`), and the PR exists in this repo.',
-        );
+        throw badRequest(`could not resolve PR #${String(body.prNumber)} via ${forge.cli}`, forge.setupHint);
       }
       branch = resolved.headRefName;
       // Stacked PRs diff against their real base, never the repo default.
@@ -308,6 +326,16 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     // against the *previous* `last_opened_at`, not the one it just set.
     await touchOpened(deps.db, id);
     return c.json({ review, repo, state, readingOrderRun });
+  });
+
+  app.get('/api/reviews/:id/pull', async (c) => {
+    const id = c.req.param('id');
+    const review = await requireReview(deps, id);
+    const repo = await getRepoById(deps.db, review.repoId);
+    if (repo === null) throw notFound(`repo ${review.repoId} not found`);
+    const query = parseQuery(reviewPullQuerySchema, c);
+    const pull = await getPullDetailCached(homeDeps, repo, review, { refresh: query.refresh === 'true' });
+    return c.json({ pull });
   });
 
   app.get('/api/reviews/:id/files', async (c) => {
@@ -376,7 +404,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     const id = c.req.param('id');
     const engine = await requireEngine(deps, id);
     const currentPaths = engine.getFileList().files.map((f) => f.path);
-    const readingOrder = await getLatestReadingOrder(deps.db, id, currentPaths);
+    const readingOrder = await getReadingOrder(deps.db, id, currentPaths);
     return c.json({ readingOrder });
   });
 
@@ -392,7 +420,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
   app.post('/api/reviews/:id/reading-order/generate', async (c) => {
     const id = c.req.param('id');
     const review = await requireReview(deps, id);
-    await parseBody(generateReadingOrderBodySchema, c);
+    const body = await parseBody(generateReadingOrderBodySchema, c);
     // One run at a time: a second request (palette, CLI, double click) gets
     // the run already in progress instead of starting a competing one.
     const active = await getActiveRun(deps.db, id, 'reading_order');
@@ -403,6 +431,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     const run = await generateReadingOrder({ db: deps.db, invoke: deps.invoke, emit: (e) => dispatch(id, e) }, id, {
       cwd,
       files,
+      ...(body.model === undefined ? {} : { model: body.model }),
     });
     return c.json({ run }, 202);
   });
@@ -471,7 +500,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
       anchorBlobSha: blobSha,
       anchorContextHash: hash,
       anchorContext: context,
-      bodyMd: body.bodyMd,
+      body: body.body,
     });
     dispatch(id, { type: 'thread.created', reviewId: id, thread });
 
@@ -494,7 +523,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     await appendReply(deps.db, {
       threadId,
       author: body.author,
-      bodyMd: body.bodyMd,
+      body: body.body,
       ...(body.agentRunId === undefined ? {} : { agentRunId: body.agentRunId }),
     });
     const updated = await requireThread(deps, threadId);
@@ -522,6 +551,20 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     const thread = body.resolved ? await resolveThread(deps.db, threadId) : await unresolveThread(deps.db, threadId);
     dispatch(existing.reviewId, { type: 'thread.updated', reviewId: existing.reviewId, thread });
     return c.json({ thread });
+  });
+
+  app.post('/api/reviews/:id/threads/resolve-all', async (c) => {
+    const id = c.req.param('id');
+    await requireReview(deps, id);
+    const body = await parseBody(resolveAllThreadsBodySchema, c);
+    const changed: Thread[] = [];
+    for (const t of await listThreadsByReview(deps.db, id)) {
+      if ((t.status === 'resolved') === body.resolved) continue;
+      const thread = body.resolved ? await resolveThread(deps.db, t.id) : await unresolveThread(deps.db, t.id);
+      dispatch(id, { type: 'thread.updated', reviewId: id, thread });
+      changed.push(thread);
+    }
+    return c.json({ threads: changed });
   });
 
   app.post('/api/threads/:id/ask', async (c) => {
@@ -559,21 +602,6 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     if (threadId === null) throw notFound(`comment ${commentId} not found`);
     const thread = await requireThread(deps, threadId);
     return c.json({ threadId, reviewId: thread.reviewId });
-  });
-
-  // --- feedback ---
-
-  app.get('/api/reviews/:id/feedback', async (c) => {
-    const id = c.req.param('id');
-    await requireReview(deps, id);
-    const query = parseQuery(feedbackQuerySchema, c);
-    const unresolvedOnly = query.unresolved === 'true';
-    const threads = unresolvedOnly
-      ? await listThreadsByReview(deps.db, id, { unresolvedOnly: true })
-      : await listThreadsByReview(deps.db, id);
-
-    const markdown = renderFeedbackMarkdown(threads);
-    return c.json({ markdown });
   });
 
   // --- revision / viewed ---
@@ -624,6 +652,18 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     return c.json({ ok: true as const });
   });
 
+  app.post('/api/reviews/:id/viewed/all', async (c) => {
+    const id = c.req.param('id');
+    await requireReview(deps, id);
+    const body = await parseBody(setAllViewedBodySchema, c);
+    const engine = await requireEngine(deps, id);
+    for (const file of engine.getFileList().files) {
+      if (body.viewed) await markViewed(deps.db, id, file.path, file.newBlob);
+      else await unmarkViewed(deps.db, id, file.path, file.newBlob);
+    }
+    return c.json({ ok: true as const });
+  });
+
   // --- runs ---
 
   app.get('/api/runs/:id', async (c) => {
@@ -634,30 +674,13 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     return c.json({ run, events: events.map((e) => ({ seq: e.seq, type: e.type, payload: e.payload })) });
   });
 
+  app.post('/api/runs/:id/cancel', async (c) => {
+    const id = c.req.param('id');
+    const existing = await getRun(deps.db, id);
+    if (existing === null) throw notFound(`run ${id} not found`);
+    const run = await cancelRun({ db: deps.db, invoke: deps.invoke, emit: (e) => dispatch(existing.reviewId, e) }, id);
+    return c.json({ run: run ?? existing });
+  });
+
   return app;
-}
-
-function renderFeedbackMarkdown(threads: Thread[]): string {
-  if (threads.length === 0) return '_No comments._\n';
-  const byPath = new Map<string, Thread[]>();
-  for (const t of threads) {
-    const list = byPath.get(t.path) ?? [];
-    list.push(t);
-    byPath.set(t.path, list);
-  }
-
-  const lines: string[] = [];
-  for (const [path, pathThreads] of [...byPath.entries()].sort(([a], [b]) => (a < b ? -1 : 1))) {
-    lines.push(`## ${path}`, '');
-    for (const t of pathThreads) {
-      const rangeLabel = t.startLine === t.endLine ? `L${String(t.startLine)}` : `L${String(t.startLine)}-${String(t.endLine)}`;
-      const status = t.status === 'resolved' ? ' (resolved)' : '';
-      const outdated = t.outdated ? ' _(outdated)_' : '';
-      lines.push(`### ${rangeLabel}${status}${outdated}`, '');
-      for (const comment of t.comments) {
-        lines.push(`**${comment.author}:** ${comment.bodyMd}`, '');
-      }
-    }
-  }
-  return lines.join('\n');
 }

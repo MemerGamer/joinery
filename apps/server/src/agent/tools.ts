@@ -153,7 +153,7 @@ export function createReviewTools(options: CreateReviewToolsOptions): ReviewTool
       ),
       tool(
         'get_reading_order',
-        "Get this review's reading order (if one has been generated): the steps, their explanations, and which files belong to each.",
+        "Get this review's reading order (if one has been generated): the steps, their guidance, and which files belong to each.",
         {},
         async () => callReadOnly('GET', `/api/reviews/${encodeURIComponent(reviewId)}/reading-order`),
       ),
@@ -179,12 +179,12 @@ export function createReviewTools(options: CreateReviewToolsOptions): ReviewTool
       tool(
         'reply',
         'Post a reply as yourself (the agent) in an existing thread. Use this to answer the question that triggered your run, or to follow up. The thread must belong to this review.',
-        { threadId: z.string().min(1), bodyMd: z.string().min(1) },
-        async ({ threadId, bodyMd }) => {
+        { threadId: z.string().min(1), body: z.string().min(1) },
+        async ({ threadId, body }) => {
           const err = await requireOwnedThread(threadId);
           if (err !== null) return errorResult(err);
           return callAndMarkWritten('POST', `/api/threads/${encodeURIComponent(threadId)}/replies`, {
-            bodyMd,
+            body,
             author: 'agent',
             agentRunId: runId,
           });
@@ -198,15 +198,15 @@ export function createReviewTools(options: CreateReviewToolsOptions): ReviewTool
           side: threadSideSchema,
           startLine: z.number().int().positive(),
           endLine: z.number().int().positive(),
-          bodyMd: z.string().min(1),
+          body: z.string().min(1),
         },
-        async ({ path, side, startLine, endLine, bodyMd }) =>
+        async ({ path, side, startLine, endLine, body }) =>
           callAndMarkWritten('POST', `/api/reviews/${encodeURIComponent(reviewId)}/threads`, {
             path,
             side,
             startLine,
             endLine,
-            bodyMd,
+            body,
             author: 'agent',
           }),
       ),
@@ -243,14 +243,15 @@ export function createReviewTools(options: CreateReviewToolsOptions): ReviewTool
       ),
       tool(
         'set_reading_order',
-        'Replace this review\'s reading order with a new plan: an ordered list of steps, each with a title, a markdown explanation, and the files (with optional per-file notes) it covers. Every changed file should appear in exactly one step.',
+        'Replace this review\'s reading order with a new plan: an ordered list of steps, each with a title, short markdown guidance, an optional attention level (focus or skim), and the files (with optional per-file notes) it covers. Every changed file should appear in exactly one step.',
         {
           steps: z
             .array(
               z.object({
                 title: z.string().min(1),
-                explanation_md: z.string().default(''),
-                files: z.array(z.object({ path: z.string().min(1), note_md: z.string().nullable().default(null) })).min(1),
+                guidance: z.string().default(''),
+                attention: z.enum(['focus', 'skim']).nullable().default(null),
+                files: z.array(z.object({ path: z.string().min(1), note: z.string().nullable().default(null) })).min(1),
               }),
             )
             .min(1),

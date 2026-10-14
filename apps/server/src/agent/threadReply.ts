@@ -10,6 +10,7 @@
  */
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentModel, Review, ServerEvent, Thread } from '@joinery/core';
+import { isAbsolute, relative } from 'node:path';
 import { claudeExecutableOption } from './claudeExecutable.ts';
 import { AGENT_MODEL_ID } from './model.ts';
 import { makeAgentCanUseTool } from './permissions.ts';
@@ -60,7 +61,9 @@ export function buildThreadReplyPrompt(input: {
     'you have no Write, Edit, or shell access at all. Act on the review through',
     'the `joinery` tools: reply, react, create_thread, resolve_thread,',
     'mark_viewed, set_reading_order, set_review_status. Answer the latest user',
-    'message in the thread below. Keep replies short and grounded in specific',
+    'message in the thread below by calling `reply` with that thread\'s id (given',
+    'in the thread header); text you write outside a tool call is not shown to',
+    'the user. Keep replies short and grounded in specific',
     "file paths and line numbers. Don't resolve a thread unless the user",
     'explicitly asked you to. Prefer `react` over a reply for a plain',
     'acknowledgement.',
@@ -80,14 +83,14 @@ export function buildThreadReplyPrompt(input: {
       ? 'Reading order: not generated yet.'
       : `Reading order steps:\n${readingOrderTitles.map((title, i) => `${String(i + 1)}. ${title}`).join('\n')}`;
 
-  const threadBody = thread.comments.map((c) => `${c.author}: ${c.bodyMd}`).join('\n\n');
+  const threadBody = thread.comments.map((c) => `${c.author}: ${c.body}`).join('\n\n');
 
   const userMessage = [
     header,
     '',
     readingOrderSection,
     '',
-    `Thread on ${thread.path}:${String(thread.startLine)}-${String(thread.endLine)} (${thread.side} side):`,
+    `Thread ${thread.id} on ${thread.path}:${String(thread.startLine)}-${String(thread.endLine)} (${thread.side} side):`,
     '',
     threadBody,
     '',
@@ -112,6 +115,7 @@ export async function runThreadReplyAgent(
   review: Review,
   thread: Thread,
   engine: EngineForCwd,
+  abortController: AbortController,
   model: AgentModel = AGENT_MODEL_ID,
 ): Promise<void> {
   const cwd = await resolveRunCwd({ db: deps.db }, review, engine);
@@ -136,57 +140,85 @@ export async function runThreadReplyAgent(
     prompt: userMessage,
     options: {
       ...claudeExecutableOption(),
+      abortController,
       cwd,
       model,
       disallowedTools: ['Write', 'Edit', 'NotebookEdit', 'Bash'],
       canUseTool: makeAgentCanUseTool({ cwd }),
-      mcpServers: { review: tools.server },
+      mcpServers: { joinery: tools.server },
       settingSources: [],
-      includePartialMessages: true,
       systemPrompt: { type: 'preset', preset: 'claude_code', append: systemPromptAppend },
       maxTurns: 40,
     },
   });
 
-  // Partial `stream_event` messages (one per streamed text chunk) are only
-  // forwarded live as `run.delta` — never persisted. The complete
-  // assistant/user/result messages that follow them carry the same content,
-  // so storing every chunk would only multiply `agent_event` rows.
-  let deltaSeq = 0;
+  // Text of the latest assistant message: if the agent ends without having
+  // written anything (e.g. it answered as plain final text), that is the
+  // best candidate for the reply.
+  let lastText = '';
   for await (const message of stream as AsyncIterable<SDKMessage>) {
-    const deltaText = extractDeltaText(message);
-    if (deltaText !== null) {
-      deltaSeq += 1;
-      deps.emit({
-        type: 'run.delta',
-        reviewId: review.id,
-        runId,
-        seq: deltaSeq,
-        messageType: message.type,
-        payload: { text: deltaText },
-      });
-      continue;
+    for (const label of toolActivityLabels(message, cwd)) {
+      deps.emit({ type: 'run.activity', reviewId: review.id, runId, label });
     }
-    if (message.type === 'stream_event') continue;
+    if (message.type === 'assistant') lastText = assistantText(message);
     await appendEvent(deps.db, runId, message.type, message);
   }
 
-  if (!tools.wasWritten()) {
+  if (!abortController.signal.aborted && !tools.wasWritten()) {
     await deps.invoke('POST', `/api/threads/${encodeURIComponent(thread.id)}/replies`, {
-      bodyMd: 'Looked at this and had nothing to add.',
+      body: lastText !== '' ? lastText : 'Looked at this and had nothing to add.',
       author: 'agent',
       agentRunId: runId,
     });
   }
 }
 
-/** Text of a `content_block_delta` `text_delta` event, or `null` for any other message. */
-function extractDeltaText(message: SDKMessage): string | null {
-  if (message.type !== 'stream_event') return null;
-  const event = (message as { event?: unknown }).event as
-    | { type?: string; delta?: { type?: string; text?: string } }
-    | undefined;
-  if (event?.type !== 'content_block_delta') return null;
-  if (event.delta?.type !== 'text_delta') return null;
-  return event.delta.text ?? null;
+/** Concatenated text blocks of a complete assistant message, trimmed ('' for a tool-only message). */
+function assistantText(message: SDKMessage): string {
+  const content = (message as { message?: { content?: unknown } }).message?.content;
+  if (!Array.isArray(content)) return '';
+  return (content as { type?: string; text?: unknown }[])
+    .map((block) => (block.type === 'text' && typeof block.text === 'string' ? block.text : ''))
+    .join('')
+    .trim();
+}
+
+/** Short labels ("Reading `src/foo.ts`") for each tool call in a complete assistant message. */
+function toolActivityLabels(message: SDKMessage, cwd: string): string[] {
+  if (message.type !== 'assistant') return [];
+  const content = (message as { message?: { content?: unknown } }).message?.content;
+  if (!Array.isArray(content)) return [];
+  const labels: string[] = [];
+  for (const block of content as { type?: string; name?: string; input?: unknown }[]) {
+    if (block.type === 'tool_use' && typeof block.name === 'string') {
+      labels.push(describeToolUse(block.name, (block.input ?? {}) as Record<string, unknown>, cwd));
+    }
+  }
+  return labels;
+}
+
+function describeToolUse(name: string, input: Record<string, unknown>, cwd: string): string {
+  const str = (key: string): string | null => (typeof input[key] === 'string' && input[key] !== '' ? (input[key] as string) : null);
+  const rel = (path: string): string => {
+    const r = relative(cwd, path);
+    return r !== '' && !r.startsWith('..') && !isAbsolute(r) ? r : path;
+  };
+  switch (name) {
+    case 'Read': {
+      const path = str('file_path');
+      return path === null ? 'Reading' : `Reading \`${rel(path)}\``;
+    }
+    case 'Grep': {
+      const pattern = str('pattern');
+      return pattern === null ? 'Searching' : `Searching for \`${pattern}\``;
+    }
+    case 'Glob': {
+      const pattern = str('pattern');
+      return pattern === null ? 'Listing files' : `Listing \`${pattern}\``;
+    }
+    case 'mcp__joinery__reply':
+      return 'Writing reply';
+    default:
+      return name.startsWith('mcp__joinery__git_') ? 'Checking git history' : name;
+  }
 }

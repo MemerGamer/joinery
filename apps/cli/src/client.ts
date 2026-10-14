@@ -16,7 +16,7 @@ import {
   type ErrorResponse,
   type ResponseOf,
 } from '@joinery/core';
-import type { DiffQuery } from '@joinery/core';
+import type { AgentModel, DiffQuery } from '@joinery/core';
 import { dataDirRoot } from '@joinery/server/runtime';
 
 /** A structured API error: the server's `{code, message, hint}` shape. */
@@ -172,8 +172,8 @@ export function setReadingOrder(
   return send('setReadingOrder', { path: api.setReadingOrder.path(id), body });
 }
 
-export function generateReadingOrder(id: string): Promise<ResponseOf<'generateReadingOrder'>> {
-  return send('generateReadingOrder', { path: api.generateReadingOrder.path(id), body: {} });
+export function generateReadingOrder(id: string, model?: AgentModel): Promise<ResponseOf<'generateReadingOrder'>> {
+  return send('generateReadingOrder', { path: api.generateReadingOrder.path(id), body: model === undefined ? {} : { model } });
 }
 
 export function listThreads(
@@ -184,6 +184,10 @@ export function listThreads(
     path: api.listThreads.path(id),
     query: { status: opts.unresolved === true ? 'open' : undefined },
   });
+}
+
+export function createThread(id: string, body: BodyOf<'createThread'>): Promise<ResponseOf<'createThread'>> {
+  return send('createThread', { path: api.createThread.path(id), body });
 }
 
 export function getThread(id: string): Promise<ResponseOf<'getThread'>> {
@@ -201,16 +205,6 @@ export function resolveThread(
   return send('resolveThread', { path: api.resolveThread.path(id), body });
 }
 
-export function feedback(
-  id: string,
-  opts: { unresolved?: boolean } = {},
-): Promise<ResponseOf<'feedback'>> {
-  return send('feedback', {
-    path: api.feedback.path(id),
-    query: { format: 'markdown', unresolved: opts.unresolved === true ? 'true' : undefined },
-  });
-}
-
 export function setRevision(id: string, body: BodyOf<'setRevision'>): Promise<ResponseOf<'setRevision'>> {
   return send('setRevision', { path: api.setRevision.path(id), body });
 }
@@ -221,6 +215,10 @@ export function markViewed(id: string, path: string): Promise<ResponseOf<'markVi
 
 export function getRun(id: string): Promise<ResponseOf<'getRun'>> {
   return send('getRun', { path: api.getRun.path(id) });
+}
+
+export function cancelRun(id: string): Promise<ResponseOf<'cancelRun'>> {
+  return send('cancelRun', { path: api.cancelRun.path(id) });
 }
 
 export function setReaction(id: string, body: BodyOf<'setReaction'>): Promise<ResponseOf<'setReaction'>> {

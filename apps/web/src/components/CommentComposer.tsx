@@ -16,7 +16,7 @@ export function CommentComposer({
   autoFocus = true,
   variant = 'card',
 }: {
-  onSubmit: (bodyMd: string, askAgent: boolean) => void;
+  onSubmit: (body: string, askAgent: boolean) => void;
   onCancel?: () => void;
   placeholder?: string;
   autoFocus?: boolean;

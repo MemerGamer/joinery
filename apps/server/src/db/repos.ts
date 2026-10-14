@@ -11,6 +11,7 @@ function toRepo(row: typeof repo.$inferSelect): Repo {
   return {
     id: row.id,
     rootPath: row.rootPath,
+    remoteHost: row.remoteHost,
     remoteOwner: row.remoteOwner,
     remoteName: row.remoteName,
     defaultBranch: row.defaultBranch,
@@ -20,6 +21,8 @@ function toRepo(row: typeof repo.$inferSelect): Repo {
 
 export type UpsertRepoInput = {
   readonly rootPath: string;
+  /** Picks the forge (`git/forge`); omitted means unknown. */
+  readonly remoteHost?: string | null | undefined;
   readonly remoteOwner: string | null;
   readonly remoteName: string | null;
   readonly defaultBranch: string;
@@ -33,6 +36,7 @@ export async function upsertRepo(db: Db, input: UpsertRepoInput): Promise<Repo> 
     .values({
       id,
       rootPath: input.rootPath,
+      remoteHost: input.remoteHost ?? null,
       remoteOwner: input.remoteOwner,
       remoteName: input.remoteName,
       defaultBranch: input.defaultBranch,
@@ -40,6 +44,7 @@ export async function upsertRepo(db: Db, input: UpsertRepoInput): Promise<Repo> 
     .onConflictDoUpdate({
       target: repo.rootPath,
       set: {
+        remoteHost: input.remoteHost ?? null,
         remoteOwner: input.remoteOwner,
         remoteName: input.remoteName,
         defaultBranch: input.defaultBranch,

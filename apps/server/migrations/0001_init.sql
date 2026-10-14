@@ -6,6 +6,7 @@
 CREATE TABLE repo (
   id              text PRIMARY KEY NOT NULL,
   root_path       text NOT NULL,
+  remote_host     text,
   remote_owner    text,
   remote_name     text,
   default_branch  text NOT NULL,
@@ -51,19 +52,19 @@ CREATE TABLE agent_worktree (
 CREATE TABLE reading_order (
   id            text PRIMARY KEY NOT NULL,
   review_id     text NOT NULL REFERENCES review (id) ON DELETE CASCADE,
-  version       integer NOT NULL,
   agent_run_id  text,
   created_at    integer NOT NULL DEFAULT (unixepoch())
 );
 
-CREATE UNIQUE INDEX reading_order_review_version_idx ON reading_order (review_id, version);
+CREATE UNIQUE INDEX reading_order_review_idx ON reading_order (review_id);
 
 CREATE TABLE step (
   id                text PRIMARY KEY NOT NULL,
   reading_order_id  text NOT NULL REFERENCES reading_order (id) ON DELETE CASCADE,
   idx               integer NOT NULL,
   title             text NOT NULL,
-  explanation_md    text NOT NULL DEFAULT ''
+  guidance          text NOT NULL DEFAULT '',
+  attention         text
 );
 
 CREATE UNIQUE INDEX step_order_idx ON step (reading_order_id, idx);
@@ -72,7 +73,7 @@ CREATE TABLE step_file (
   step_id  text NOT NULL REFERENCES step (id) ON DELETE CASCADE,
   idx      integer NOT NULL,
   path     text NOT NULL,
-  note_md  text,
+  note  text,
   PRIMARY KEY (step_id, idx)
 );
 
@@ -108,7 +109,7 @@ CREATE TABLE comment (
   id             text PRIMARY KEY NOT NULL,
   thread_id      text NOT NULL REFERENCES thread (id) ON DELETE CASCADE,
   author         text NOT NULL,
-  body_md        text NOT NULL,
+  body        text NOT NULL,
   agent_run_id   text,
   created_at     integer NOT NULL DEFAULT (unixepoch())
 );

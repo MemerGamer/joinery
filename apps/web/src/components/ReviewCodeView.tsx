@@ -15,7 +15,7 @@ import type {
   CodeViewItem,
 } from '@pierre/diffs';
 import { Check, ChevronDown, ChevronRight } from 'lucide-react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { makeLoadDiffFiles } from '../lib/diffLoader.ts';
 import {
   DRAFT_THREAD_ID,
@@ -25,6 +25,8 @@ import {
 } from '../state/ReviewContext.tsx';
 import { useTheme } from '../state/ThemeContext.tsx';
 import { CommentComposer } from './CommentComposer.tsx';
+import { ReviewFooter } from './ReviewFooter.tsx';
+import { ReviewSummaryCard } from './ReviewSummaryCard.tsx';
 import { ThreadArticle } from './ThreadArticle.tsx';
 
 /**
@@ -219,6 +221,11 @@ export function ReviewCodeView(): React.JSX.Element {
 
   const byPath = useMemo(() => new Map(fileList.map((f) => [f.path, f])), [fileList]);
 
+  // Both read the review through `useReview()` themselves, so these callbacks
+  // close over nothing and never go stale.
+  const renderHeader = useCallback(() => <ReviewSummaryCard />, []);
+  const renderFooter = useCallback(() => <ReviewFooter />, []);
+
   if (review === null) {
     return (
       <div className="flex h-full items-center justify-center text-body text-chrome-fg-muted">
@@ -242,6 +249,8 @@ export function ReviewCodeView(): React.JSX.Element {
       ref={codeViewRef}
       items={items}
       options={options}
+      renderCodeViewHeader={renderHeader}
+      renderCodeViewFooter={renderFooter}
       // Lets the reading order follow along (it unfolds the step holding
       // the file being read). React bails out when the path is unchanged,
       // so this only re-renders as a new file reaches the top.

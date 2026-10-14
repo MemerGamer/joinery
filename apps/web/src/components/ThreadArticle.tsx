@@ -75,7 +75,7 @@ export function ThreadArticle({
   thread: Thread;
   onChanged: () => void;
 }): React.JSX.Element {
-  const { threadRuns, askAgent, activeThreadId, setActiveThreadId } = useReview();
+  const { threadRuns, askAgent, cancelRun, activeThreadId, setActiveThreadId } = useReview();
   // Interacting with a thread makes it the "current thread" that `r`
   // resolves and `]`/`[` continue from (see ReviewContext `activeThreadId`).
   const active = activeThreadId === thread.id;
@@ -104,10 +104,10 @@ export function ThreadArticle({
     onChanged();
   };
 
-  const reply = async (bodyMd: string, askAgent: boolean) => {
+  const reply = async (body: string, askAgent: boolean) => {
     await callApi('reply', {
       params: [thread.id],
-      body: { bodyMd, author: 'user', askAgent, ...(askAgent ? { model: getAgentModel() } : {}) },
+      body: { body, author: 'user', askAgent, ...(askAgent ? { model: getAgentModel() } : {}) },
     });
     setReplying(false);
     onChanged();
@@ -116,10 +116,14 @@ export function ThreadArticle({
   const resolved = thread.status === 'resolved';
   const hasBadges = thread.outdated || thread.changedSinceComment || resolved;
   const commentCount = thread.comments.length;
-  const summary = threadSummary(thread.comments[0]?.bodyMd ?? '');
+  const summary = threadSummary(thread.comments[0]?.body ?? '');
 
   const runEntry = threadRuns.get(thread.id);
-  const runLive = runEntry !== undefined && (runEntry.run.status === 'pending' || runEntry.run.status === 'running');
+  // The agent often keeps working (a closing summary) after calling `reply`;
+  // once its comment for this run has landed the ghost has nothing left to say.
+  const replied = runEntry !== undefined && thread.comments.some((c) => c.agentRunId === runEntry.run.id);
+  const runLive =
+    runEntry !== undefined && !replied && (runEntry.run.status === 'pending' || runEntry.run.status === 'running');
 
   if (collapsed) {
     // One diff line tall, no card: a collapsed thread should read as part
@@ -228,28 +232,36 @@ export function ThreadArticle({
                       {formatTimestamp(comment.createdAt)}
                     </time>
                   </div>
-                  <Markdown>{comment.bodyMd}</Markdown>
+                  <Markdown>{comment.body}</Markdown>
                   <ReactionBar comment={comment} />
                 </div>
               </li>
             );
           })}
           {runLive && runEntry !== undefined && (
-            <li className="flex gap-2.5 px-3 py-1.5">
+            <li className="flex gap-2.5 px-3 py-1.5 opacity-60" aria-live="polite">
               <span
                 className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-chrome-accent-soft text-chrome-accent"
                 aria-hidden
               >
                 <Bot size={12} strokeWidth={1.75} />
               </span>
-              <div className="flex min-w-0 flex-1 items-center gap-2">
-                <span className="shrink-0 text-micro font-medium text-chrome-fg-muted">Thinking…</span>
-                {runEntry.lastDelta.length > 0 && (
-                  <span className="min-w-0 flex-1 truncate font-mono text-micro text-chrome-fg-subtle">
-                    {runEntry.lastDelta}
-                  </span>
-                )}
-                <Loader2 size={12} strokeWidth={2} className="shrink-0 animate-spin text-chrome-fg-subtle" aria-hidden />
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <div className="flex items-baseline gap-2 text-micro">
+                  <span className="font-medium text-chrome-fg">Agent</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-micro text-chrome-fg-subtle">
+                  <Loader2 size={12} strokeWidth={2} className="shrink-0 animate-spin" aria-hidden />
+                  <span className="min-w-0 flex-1 truncate">{runEntry.activity ?? 'Thinking…'}</span>
+                  <button
+                    type="button"
+                    onClick={() => void cancelRun(runEntry.run.id)}
+                    disabled={runEntry.run.id.startsWith('local_')}
+                    className="flex h-[26px] items-center rounded-md bg-chrome-bg-hover px-2.5 text-xs font-medium text-chrome-fg transition-colors hover:bg-chrome-bg-active disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             </li>
           )}

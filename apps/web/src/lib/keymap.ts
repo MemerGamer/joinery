@@ -30,7 +30,6 @@ export interface KeymapActions {
   expandHunk?: () => void;
   expandWholeFile?: () => void;
   toggleFocusedFileCollapsed?: () => void;
-  markViewed?: () => void;
   setRevisionWorking?: () => void;
   setRevisionHead?: () => void;
   setRevisionPr?: () => void;
@@ -97,7 +96,6 @@ function buildKeymap(actionsRef: { current: KeymapActions }): Record<string, (e:
     // Not in the key table (no key was assigned to per-file
     // collapse/expand there); `z` is free and mirrors vim's fold mnemonic.
     ...bind('z', 'toggleFocusedFileCollapsed'),
-    ...bind('v', 'markViewed'),
     ...bind('1', 'setRevisionWorking'),
     ...bind('2', 'setRevisionHead'),
     ...bind('3', 'setRevisionPr'),
@@ -166,7 +164,6 @@ export const SHORTCUT_HELP: readonly ShortcutHelpGroup[] = [
       { chords: ['e'], label: 'Expand context around the current hunk' },
       { chords: ['Shift+e'], label: 'Expand the whole file' },
       { chords: ['z'], label: 'Collapse / expand the focused file' },
-      { chords: ['v'], label: 'Mark file viewed' },
       { chords: ['u'], label: 'Unified / split' },
       { chords: ['1', '2', '3'], label: 'Revision: working / head / pr' },
     ],

@@ -34,7 +34,7 @@ describe('branch adoption', () => {
         anchorBlobSha: 'blob1',
         anchorContextHash: 'ctx1',
         anchorContext: 'const a = 1;',
-        bodyMd: 'why is this here?',
+        body: 'why is this here?',
       });
 
       await markViewed(db, review.id, 'src/b.ts', 'blob2');

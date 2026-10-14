@@ -1,9 +1,11 @@
 /**
  * `Cmd+K` command palette: a Linear-style, mode-scoped launcher.
  *
- * The default (root) mode ranks a small, bounded set of jump targets — files,
+ * The default (root) mode ranks a small, bounded set of jump targets —
  * reading-order steps, open threads — rather than dumping every file, every
- * thread, and all 75 themes into one flat list at once. Three explicit
+ * thread, and all 75 themes into one flat list at once. Typing a query adds
+ * commands, reviews and themes, with files last; an empty query lists no
+ * files at all. Three explicit
  * sub-modes are reached by typing a leading character in the search box,
  * exactly like VS Code's palette:
  *
@@ -39,6 +41,8 @@
 import { Command, defaultFilter } from 'cmdk';
 import {
   Check,
+  CheckCheck,
+  Eraser,
   Loader2,
   ChevronsDownUp,
   ChevronsUpDown,
@@ -47,6 +51,7 @@ import {
   GitBranch,
   GitCommitHorizontal,
   MessageSquare,
+  MessageSquareDashed,
   PanelLeft,
   PanelRight,
   Rows2,
@@ -84,7 +89,7 @@ const MODE_HINTS: [string, string][] = [
 ];
 
 const MODE_PLACEHOLDER: Record<Mode, string> = {
-  root: 'Search files, steps, and threads…',
+  root: 'Search commands, reviews, themes, and files…',
   command: 'Run a command…',
   theme: 'Switch theme…',
   review: 'Switch review…',
@@ -254,7 +259,8 @@ export function CommandPalette({
   };
 
   const allFiles = review?.fileList ?? [];
-  const files = query === '' ? allFiles.slice(0, ROOT_CAP) : allFiles;
+  // ⌘P's file mode lists them all; root only offers files once you type.
+  const files = mode === 'file' || query !== '' ? allFiles : [];
   const allSteps = review?.readingOrder?.steps ?? [];
   const steps = query === '' ? allSteps.slice(0, ROOT_CAP) : allSteps;
   const openThreads = (review?.threads ?? []).filter((t) => t.status === 'open');
@@ -302,6 +308,191 @@ export function CommandPalette({
       {generating ? `${generateVerb.replace(/e$/, '')}ing reading order…` : `${generateVerb} reading order`}
     </Command.Item>
   );
+
+  // Every command, shared by the `>` view and the typed root view.
+  const commandItems = (
+    <>
+      {generateItem}
+      {/* Only revisions that exist for this review right now (e.g. no
+        * `working` for a review that isn't checked out, no `pr`
+        * without a PR) — the server's `availableRevisions`. */}
+      {(review?.reviewState?.availableRevisions ?? []).map((rev) => (
+        <Command.Item
+          key={rev}
+          value={`switch revision ${rev}`}
+          onSelect={() => {
+            void review?.setRevision(rev);
+            close();
+          }}
+          className={ITEM_CLASS}
+        >
+          <GitCommitHorizontal size={14} strokeWidth={1.5} aria-hidden />
+          Switch to {rev}
+          {review?.reviewState?.currentRevision === rev && (
+            <Check size={13} strokeWidth={2} className="ml-auto text-chrome-accent!" aria-hidden />
+          )}
+        </Command.Item>
+      ))}
+      {/*
+        * Light/dark *chrome* mode, distinct from the `#` theme mode
+        * below (which picks the syntax theme used for whichever
+        * chrome mode is active). This used to live in a header
+        * ThemePicker; with that removed, the palette is the only
+        * place it is reachable from, so it belongs in the command
+        * list rather than only in the theme sub-mode.
+        */}
+      <Command.Item
+        value="toggle light dark chrome mode appearance"
+        onSelect={() => {
+          setChromeMode(chromeMode === 'dark' ? 'light' : 'dark');
+          close();
+        }}
+        className={ITEM_CLASS}
+      >
+        {chromeMode === 'dark' ? (
+          <Sun size={14} strokeWidth={1.5} aria-hidden />
+        ) : (
+          <Moon size={14} strokeWidth={1.5} aria-hidden />
+        )}
+        Switch to {chromeMode === 'dark' ? 'light' : 'dark'} mode
+      </Command.Item>
+      {review !== null && (
+        <>
+          <Command.Item
+            value="toggle left panel file tree"
+            onSelect={() => {
+              review.toggleLeftPanel();
+              close();
+            }}
+            className={ITEM_CLASS}
+          >
+            <PanelLeft size={14} strokeWidth={1.5} aria-hidden />
+            Toggle left panel
+          </Command.Item>
+          <Command.Item
+            value="toggle right panel reading order"
+            onSelect={() => {
+              review.toggleRightPanel();
+              close();
+            }}
+            className={ITEM_CLASS}
+          >
+            <PanelRight size={14} strokeWidth={1.5} aria-hidden />
+            Toggle right panel
+          </Command.Item>
+          <Command.Item
+            value="toggle threads panel"
+            onSelect={() => {
+              review.toggleThreadsPanel();
+              close();
+            }}
+            className={ITEM_CLASS}
+          >
+            <MessageSquare size={14} strokeWidth={1.5} aria-hidden />
+            Toggle threads panel
+          </Command.Item>
+          <Command.Item
+            value="diff style unified split toggle"
+            onSelect={() => {
+              review.setDiffStyle(review.diffStyle === 'split' ? 'unified' : 'split');
+              close();
+            }}
+            className={ITEM_CLASS}
+          >
+            {review.diffStyle === 'split' ? (
+              <Rows2 size={14} strokeWidth={1.5} aria-hidden />
+            ) : (
+              <Columns2 size={14} strokeWidth={1.5} aria-hidden />
+            )}
+            Switch to {review.diffStyle === 'split' ? 'unified' : 'split'} diff
+          </Command.Item>
+          <Command.Item
+            value="expand all files"
+            onSelect={() => {
+              review.expandAllFiles();
+              close();
+            }}
+            className={ITEM_CLASS}
+          >
+            <ChevronsUpDown size={14} strokeWidth={1.5} aria-hidden />
+            Expand all files
+          </Command.Item>
+          <Command.Item
+            value="collapse all files"
+            onSelect={() => {
+              review.collapseAllFiles();
+              close();
+            }}
+            className={ITEM_CLASS}
+          >
+            <ChevronsDownUp size={14} strokeWidth={1.5} aria-hidden />
+            Collapse all files
+          </Command.Item>
+        </>
+      )}
+      {review !== null && (
+        <>
+          <Command.Item
+            value="mark all files viewed"
+            onSelect={() => {
+              void review.setAllViewed(true);
+              close();
+            }}
+            className={ITEM_CLASS}
+          >
+            <CheckCheck size={14} strokeWidth={1.5} aria-hidden />
+            Mark all files viewed
+          </Command.Item>
+          <Command.Item
+            value="mark all files unviewed"
+            onSelect={() => {
+              void review.setAllViewed(false);
+              close();
+            }}
+            className={ITEM_CLASS}
+          >
+            <Eraser size={14} strokeWidth={1.5} aria-hidden />
+            Mark all files unviewed
+          </Command.Item>
+          <Command.Item
+            value="resolve all threads"
+            onSelect={() => {
+              void review.setAllThreadsResolved(true);
+              close();
+            }}
+            className={ITEM_CLASS}
+          >
+            <MessageSquareDashed size={14} strokeWidth={1.5} aria-hidden />
+            Resolve all threads
+          </Command.Item>
+          <Command.Item
+            value="unresolve reopen all threads"
+            onSelect={() => {
+              void review.setAllThreadsResolved(false);
+              close();
+            }}
+            className={ITEM_CLASS}
+          >
+            <MessageSquare size={14} strokeWidth={1.5} aria-hidden />
+            Unresolve all threads
+          </Command.Item>
+        </>
+      )}
+    </>
+  );
+
+  const themeItems = [...colorblindThemes, ...otherThemes].map((opt) => (
+    <ThemeItem
+      key={opt.name}
+      opt={opt}
+      active={opt.name === activeThemeName}
+      onSelect={() => {
+        if (previewRef.current !== null) previewRef.current.committed = true;
+        applyTheme(opt);
+        close();
+      }}
+    />
+  ));
 
   const fileItems = files.map((f) => (
     <Command.Item key={f.path} value={`file ${f.path}`} onSelect={() => goToFile(f.path)} className={ITEM_CLASS}>
@@ -404,9 +595,12 @@ export function CommandPalette({
                 <Group heading="Reviews">{query === '' ? reviewItems.slice(0, ROOT_CAP) : reviewItems}</Group>
               )}
 
-              {files.length > 0 && <Group heading="Files">{fileItems}</Group>}
+              {/* Typed query: everything actionable first, files last. An empty query lists no files. */}
+              {query !== '' && <Group heading="Commands">{commandItems}</Group>}
 
-              {query !== '' && generateItem !== false && <Group heading="Commands">{generateItem}</Group>}
+              {review !== null && query !== '' && reviewList.length > 0 && <Group heading="Reviews">{reviewItems}</Group>}
+
+              {query !== '' && <Group heading="Themes">{themeItems}</Group>}
 
               {steps.length > 0 && (
                 <Group heading="Steps">
@@ -433,7 +627,7 @@ export function CommandPalette({
                   {threads.map((t) => (
                     <Command.Item
                       key={t.id}
-                      value={`thread ${t.path} ${t.comments[0]?.bodyMd ?? ''}`}
+                      value={`thread ${t.path} ${t.comments[0]?.body ?? ''}`}
                       onSelect={() => {
                         if (review === null) return;
                         review.setSelectedPath(t.path);
@@ -452,139 +646,20 @@ export function CommandPalette({
                     >
                       <MessageSquare size={14} strokeWidth={1.5} aria-hidden />
                       <span className="truncate">
-                        {t.path}:{t.startLine} — {threadSummary(t.comments[0]?.bodyMd ?? '') || '(empty)'}
+                        {t.path}:{t.startLine} — {threadSummary(t.comments[0]?.body ?? '') || '(empty)'}
                       </span>
                     </Command.Item>
                   ))}
                 </Group>
               )}
+
+              {query !== '' && files.length > 0 && <Group heading="Files">{fileItems}</Group>}
             </>
           )}
 
           {mode === 'file' && files.length > 0 && <Group heading="Files">{fileItems}</Group>}
 
-          {mode === 'command' && (
-            <Group heading="Commands">
-              {generateItem}
-              {/* Only revisions that exist for this review right now (e.g. no
-                * `working` for a review that isn't checked out, no `pr`
-                * without a PR) — the server's `availableRevisions`. */}
-              {(review?.reviewState?.availableRevisions ?? []).map((rev) => (
-                <Command.Item
-                  key={rev}
-                  value={`switch revision ${rev}`}
-                  onSelect={() => {
-                    void review?.setRevision(rev);
-                    close();
-                  }}
-                  className={ITEM_CLASS}
-                >
-                  <GitCommitHorizontal size={14} strokeWidth={1.5} aria-hidden />
-                  Switch to {rev}
-                  {review?.reviewState?.currentRevision === rev && (
-                    <Check size={13} strokeWidth={2} className="ml-auto text-chrome-accent!" aria-hidden />
-                  )}
-                </Command.Item>
-              ))}
-              {/*
-                * Light/dark *chrome* mode, distinct from the `#` theme mode
-                * below (which picks the syntax theme used for whichever
-                * chrome mode is active). This used to live in a header
-                * ThemePicker; with that removed, the palette is the only
-                * place it is reachable from, so it belongs in the command
-                * list rather than only in the theme sub-mode.
-                */}
-              <Command.Item
-                value="toggle light dark chrome mode appearance"
-                onSelect={() => {
-                  setChromeMode(chromeMode === 'dark' ? 'light' : 'dark');
-                  close();
-                }}
-                className={ITEM_CLASS}
-              >
-                {chromeMode === 'dark' ? (
-                  <Sun size={14} strokeWidth={1.5} aria-hidden />
-                ) : (
-                  <Moon size={14} strokeWidth={1.5} aria-hidden />
-                )}
-                Switch to {chromeMode === 'dark' ? 'light' : 'dark'} mode
-              </Command.Item>
-              {review !== null && (
-                <>
-                  <Command.Item
-                    value="toggle left panel file tree"
-                    onSelect={() => {
-                      review.toggleLeftPanel();
-                      close();
-                    }}
-                    className={ITEM_CLASS}
-                  >
-                    <PanelLeft size={14} strokeWidth={1.5} aria-hidden />
-                    Toggle left panel
-                  </Command.Item>
-                  <Command.Item
-                    value="toggle right panel reading order"
-                    onSelect={() => {
-                      review.toggleRightPanel();
-                      close();
-                    }}
-                    className={ITEM_CLASS}
-                  >
-                    <PanelRight size={14} strokeWidth={1.5} aria-hidden />
-                    Toggle right panel
-                  </Command.Item>
-                  <Command.Item
-                    value="toggle threads panel"
-                    onSelect={() => {
-                      review.toggleThreadsPanel();
-                      close();
-                    }}
-                    className={ITEM_CLASS}
-                  >
-                    <MessageSquare size={14} strokeWidth={1.5} aria-hidden />
-                    Toggle threads panel
-                  </Command.Item>
-                  <Command.Item
-                    value="diff style unified split toggle"
-                    onSelect={() => {
-                      review.setDiffStyle(review.diffStyle === 'split' ? 'unified' : 'split');
-                      close();
-                    }}
-                    className={ITEM_CLASS}
-                  >
-                    {review.diffStyle === 'split' ? (
-                      <Rows2 size={14} strokeWidth={1.5} aria-hidden />
-                    ) : (
-                      <Columns2 size={14} strokeWidth={1.5} aria-hidden />
-                    )}
-                    Switch to {review.diffStyle === 'split' ? 'unified' : 'split'} diff
-                  </Command.Item>
-                  <Command.Item
-                    value="expand all files"
-                    onSelect={() => {
-                      review.expandAllFiles();
-                      close();
-                    }}
-                    className={ITEM_CLASS}
-                  >
-                    <ChevronsUpDown size={14} strokeWidth={1.5} aria-hidden />
-                    Expand all files
-                  </Command.Item>
-                  <Command.Item
-                    value="collapse all files"
-                    onSelect={() => {
-                      review.collapseAllFiles();
-                      close();
-                    }}
-                    className={ITEM_CLASS}
-                  >
-                    <ChevronsDownUp size={14} strokeWidth={1.5} aria-hidden />
-                    Collapse all files
-                  </Command.Item>
-                </>
-              )}
-            </Group>
-          )}
+          {mode === 'command' && <Group heading="Commands">{commandItems}</Group>}
 
           {/* No section headings in theme mode: colorblind-safe themes still
               lead the list, but as one run. It stays a `Command.Group` (just
@@ -592,20 +667,7 @@ export function CommandPalette({
               their group or the list, and throws on any other wrapper. */}
           {mode === 'theme' && (
             <Command.Group>
-              <div className="flex flex-col">
-                {[...colorblindThemes, ...otherThemes].map((opt) => (
-                  <ThemeItem
-                    key={opt.name}
-                    opt={opt}
-                    active={opt.name === activeThemeName}
-                    onSelect={() => {
-                      if (previewRef.current !== null) previewRef.current.committed = true;
-                      applyTheme(opt);
-                      close();
-                    }}
-                  />
-                ))}
-              </div>
+              <div className="flex flex-col">{themeItems}</div>
             </Command.Group>
           )}
 

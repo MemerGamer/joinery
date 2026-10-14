@@ -1,27 +1,31 @@
 /**
  * Right pane: the reading order. Agent-generated, read-only,
- * regenerable — regenerating supersedes rather than replaces. The threads
+ * regenerable — regenerating replaces the previous reading order. The threads
  * panel slides over this pane rather than replacing it. Each step's title +
- * explanation render here (not in the code view's header, see
- * ReviewCodeView.tsx) so the explanation stays adjacent to the step's file
+ * guidance render here (not in the code view's header, see
+ * ReviewCodeView.tsx) so the guidance stays adjacent to the step's file
  * list; regeneration is only reachable from the command palette once a
  * reading order already exists, so there is no "Generate" affordance beyond
  * the initial empty state below. The title row doubles as the home for the
  * Threads entry point, since the threads panel slides over this pane.
  */
-import { AlertTriangle, ChevronRight, Loader2, MessageSquare, Waypoints } from 'lucide-react';
+import { DEFAULT_READING_ORDER_MODEL, type AgentModel } from '@joinery/core';
+import { AlertTriangle, ChevronRight, Loader2, MessageSquare } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { resolveCurrentStepIndex } from '../lib/reviewNav.ts';
 import { runUiState } from '../lib/runState.ts';
 import { useReview, useScrolledPath } from '../state/ReviewContext.tsx';
+import { AskButton } from './AskButton.tsx';
 import { Markdown } from './Markdown.tsx';
 import { ThreadsPanel } from './ThreadsPanel.tsx';
 
 export function ReadingOrderPane(): React.JSX.Element {
   const {
     review,
+    fileList,
     readingOrder,
     readingOrderRun,
+    cancelRun,
     selectedPath,
     setSelectedPath,
     codeViewRef,
@@ -34,7 +38,7 @@ export function ReadingOrderPane(): React.JSX.Element {
   } = useReview();
   const scrolledPath = useScrolledPath();
   const openThreads = threads.filter((t) => t.status === 'open').length;
-  // A step's title and files always show; only its explanation folds. The
+  // A step's title and files always show; only its guidance folds. The
   // step you are at unfolds on its own (see below); a step folded or
   // unfolded by hand keeps that until you toggle it again, whatever the
   // reader moves on to.
@@ -49,14 +53,14 @@ export function ReadingOrderPane(): React.JSX.Element {
   const reveal = (stepId: string) =>
     stepRefs.current.get(stepId)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 
-  // Arriving at a step unfolds its explanation and folds the one auto-opened
+  // Arriving at a step unfolds its guidance and folds the one auto-opened
   // before it, so the pane shows where you are rather than everywhere you've
   // been, then scrolls the pane so the step is on screen — the list can run
   // long too. Arriving also undoes a hand-fold of that step.
   const arrive = (stepId: string | null) => {
     if (stepId === null) return;
-    const hasExplanation = readingOrder?.steps.some((s) => s.id === stepId && s.explanationMd.length > 0) === true;
-    if (isExpanded(stepId) || !hasExplanation) reveal(stepId);
+    const hasGuidance = readingOrder?.steps.some((s) => s.id === stepId && s.guidance.length > 0) === true;
+    if (isExpanded(stepId) || !hasGuidance) reveal(stepId);
     else pendingRevealRef.current = stepId;
     setArrivedStepId(stepId);
     if (handToggled.get(stepId) === false) {
@@ -87,10 +91,36 @@ export function ReadingOrderPane(): React.JSX.Element {
   const runState = runUiState(readingOrderRun);
   const generating = runState.phase === 'pending';
 
+  const cancelButton = readingOrderRun !== null && !readingOrderRun.id.startsWith('local_') && (
+    <button
+      type="button"
+      onClick={() => void cancelRun(readingOrderRun.id)}
+      className="flex h-[26px] items-center rounded-md bg-chrome-bg-hover px-2.5 text-xs font-medium text-chrome-fg transition-colors hover:bg-chrome-bg-active"
+    >
+      Cancel
+    </button>
+  );
+
+  // The empty state's own pick, not the Ask pick: generation defaults to a
+  // stronger model. Regenerating from the palette uses that default.
+  const [generateModel, setGenerateModel] = useState<AgentModel>(DEFAULT_READING_ORDER_MODEL);
+
   const generate = async () => {
     if (review === null) return;
-    await generateReadingOrder();
+    await generateReadingOrder(generateModel);
   };
+
+  // Paths the reading order names that the current revision's diff doesn't
+  // have, e.g. after switching revisions.
+  const missingPaths = (() => {
+    if (readingOrder === null) return [];
+    const present = new Set(fileList.map((f) => f.path));
+    const missing = new Set<string>();
+    for (const step of readingOrder.steps) {
+      for (const f of step.files) if (!present.has(f.path)) missing.add(f.path);
+    }
+    return [...missing];
+  })();
 
   const jumpTo = (path: string, stepId?: string) => {
     if (stepId !== undefined) setCurrentStepId(stepId);
@@ -108,7 +138,8 @@ export function ReadingOrderPane(): React.JSX.Element {
         {generating && !noReadingOrder && (
           <span className="flex items-center gap-1 text-xs text-chrome-fg-subtle">
             <Loader2 size={12} strokeWidth={1.75} className="animate-spin" aria-hidden />
-            Regenerating…
+            <span className="mr-1.5">Regenerating…</span>
+            {cancelButton}
           </span>
         )}
         <div className="flex-1" />
@@ -148,16 +179,21 @@ export function ReadingOrderPane(): React.JSX.Element {
             <p className="text-xs leading-snug text-chrome-fg-muted">
               No reading order yet. Generate one to get a guided walk through this change.
             </p>
-            <button
-              type="button"
-              onClick={() => void generate()}
-              disabled={generating}
-              aria-label="Generate reading order"
-              className="chrome-btn"
-            >
-              <Waypoints size={13} strokeWidth={1.5} aria-hidden />
-              {generating ? 'Generating…' : 'Generate reading order'}
-            </button>
+            {generating ? (
+              <span className="flex items-center gap-1.5 text-xs text-chrome-fg-subtle">
+                <Loader2 size={12} strokeWidth={1.75} className="animate-spin" aria-hidden />
+                <span className="mr-1.5">Generating…</span>
+                {cancelButton}
+              </span>
+            ) : (
+              <AskButton
+                label="Generate with"
+                title="Generate a reading order with {model}"
+                onAsk={() => void generate()}
+                model={generateModel}
+                onModelChange={setGenerateModel}
+              />
+            )}
           </div>
         ) : (
           <>
@@ -167,15 +203,15 @@ export function ReadingOrderPane(): React.JSX.Element {
                 busy and unresolved, especially alongside the "Also changed"
                 section's extra `border-t`. Dropped rules entirely in favor of
                 indentation + spacing + type weight alone: the chevron/title
-                row sits flush left, the explanation and file list indent
+                row sits flush left, the guidance and file list indent
                 under it by the same amount the chevron icon occupies, and
-                the numbered title (font-medium) plus muted explanation text
+                the numbered title (font-medium) plus muted guidance text
                 already read as a clear hierarchy without a ruled line doing
                 the same job redundantly. */}
             <ol className="flex flex-col gap-1">
               {readingOrder.steps.map((step, idx) => {
                 const isCollapsed = !isExpanded(step.id);
-                const hasExplanation = step.explanationMd.length > 0;
+                const hasGuidance = step.guidance.length > 0;
                 const isCurrent = idx === currentStepIndex;
                 return (
                   <li
@@ -189,11 +225,11 @@ export function ReadingOrderPane(): React.JSX.Element {
                     <button
                       type="button"
                       onClick={() => {
-                        if (!hasExplanation) return;
+                        if (!hasGuidance) return;
                         setHandToggled((prev) => new Map(prev).set(step.id, isCollapsed));
                       }}
-                      aria-expanded={hasExplanation ? !isCollapsed : undefined}
-                      className="group flex w-full items-baseline gap-2 rounded-md py-1.5 pl-1.5 pr-2 text-left text-body text-chrome-fg transition-colors hover:bg-chrome-bg-hover"
+                      aria-expanded={hasGuidance ? !isCollapsed : undefined}
+                      className="group flex w-full items-baseline gap-2 rounded-md py-1.5 pl-1.5 pr-2 text-left text-[14px] text-chrome-fg transition-colors hover:bg-chrome-bg-hover"
                     >
                       <span
                         className={`w-5 shrink-0 text-right font-mono text-micro tabular-nums ${
@@ -206,7 +242,18 @@ export function ReadingOrderPane(): React.JSX.Element {
                       {/* Titles wrap rather than truncate; the number sits on the first
                           line's baseline and the chevron centres on that line. */}
                       <span className="min-w-0 flex-1 break-words font-medium">{step.title}</span>
-                      {hasExplanation && (
+                      {step.attention !== null && (
+                        <span
+                          className={`shrink-0 self-start rounded px-1.5 text-micro font-medium ${
+                            step.attention === 'focus'
+                              ? 'bg-chrome-accent/15 text-chrome-accent'
+                              : 'bg-chrome-bg-hover text-chrome-fg-subtle'
+                          }`}
+                        >
+                          {step.attention === 'focus' ? 'Focus' : 'Skim'}
+                        </span>
+                      )}
+                      {hasGuidance && (
                         <span className="flex h-[1lh] shrink-0 items-center self-start" aria-hidden>
                           <ChevronRight
                             size={13}
@@ -221,10 +268,10 @@ export function ReadingOrderPane(): React.JSX.Element {
                     <div className="mb-2 ml-[2.125rem]">
                       {/* Folding animates `grid-template-rows` between 0fr and
                           1fr: it tweens to the content's natural height without
-                          measuring it. The explanation stays mounted while
+                          measuring it. The guidance stays mounted while
                           folded, so `inert` keeps its links out of the tab
                           order. The file list below never folds. */}
-                      {hasExplanation && (
+                      {hasGuidance && (
                         <div
                           inert={isCollapsed}
                           onTransitionEnd={(e) => {
@@ -237,15 +284,15 @@ export function ReadingOrderPane(): React.JSX.Element {
                           }`}
                         >
                           <div className="min-h-0 overflow-hidden">
-                            {/* The step's explanation used to render as a header card
+                            {/* The step's guidance used to render as a header card
                                 above the diff (see ReviewCodeView.tsx); it lives here
                                 now, right next to the step's own files. `prose-sm` in
                                 `Markdown` is unconstrained, so cap it to this narrow
                                 column explicitly rather than letting e.g. a wide code
                                 block or table blow out the panel; the trailing right
                                 padding keeps its measure off the panel's edge. */}
-                            <div className="min-w-0 overflow-hidden pb-2 pr-2 pt-0.5 text-xs leading-relaxed text-chrome-fg-muted [&_.prose-sm]:text-xs [&_.prose-sm]:leading-relaxed [&_code]:break-words [&_pre]:overflow-x-auto">
-                              <Markdown>{step.explanationMd}</Markdown>
+                            <div className="min-w-0 overflow-hidden pb-2 pr-2 pt-0.5 text-body leading-relaxed text-chrome-fg-muted [&_.prose-sm]:text-body [&_.prose-sm]:leading-relaxed [&_code]:break-words [&_pre]:overflow-x-auto">
+                              <Markdown>{step.guidance}</Markdown>
                             </div>
                           </div>
                         </div>
@@ -255,7 +302,7 @@ export function ReadingOrderPane(): React.JSX.Element {
                           <FileRow
                             key={f.path}
                             path={f.path}
-                            title={f.noteMd ?? undefined}
+                            title={f.note ?? undefined}
                             selected={selectedPath === f.path}
                             onClick={() => jumpTo(f.path, step.id)}
                           />
@@ -271,14 +318,14 @@ export function ReadingOrderPane(): React.JSX.Element {
               // a dot in the number column: these files arrived after the
               // order was generated, so they have no place in its sequence.
               <section className="mt-1">
-                <h3 className="flex items-baseline gap-2 py-1.5 pl-1.5 pr-2 text-body font-medium text-chrome-fg">
+                <h3 className="flex items-baseline gap-2 py-1.5 pl-1.5 pr-2 text-[14px] font-medium text-chrome-fg">
                   <span className="w-5 shrink-0 text-right font-mono text-micro text-chrome-fg-subtle" aria-hidden>
                     ·
                   </span>
                   Also changed
                 </h3>
                 <div className="mb-2 ml-[2.125rem]">
-                  <p className="pb-2 pr-2 pt-0.5 text-xs leading-relaxed text-chrome-fg-muted">
+                  <p className="pb-2 pr-2 pt-0.5 text-body leading-relaxed text-chrome-fg-muted">
                     Changed after this reading order was generated.
                   </p>
                   <ul className="flex flex-col gap-0.5">
@@ -292,6 +339,31 @@ export function ReadingOrderPane(): React.JSX.Element {
                     ))}
                   </ul>
                 </div>
+              </section>
+            )}
+            {missingPaths.length > 0 && (
+              // Last group, laid out like "Also changed": files the reading
+              // order names that this revision's diff doesn't have. Not
+              // clickable, since there is nothing to scroll to.
+              <section className="mt-1">
+                <h3 className="flex items-baseline gap-2 py-1.5 pl-1.5 pr-2 text-[14px] font-medium text-chrome-fg">
+                  <span className="w-5 shrink-0 text-right font-mono text-micro text-chrome-fg-subtle" aria-hidden>
+                    ·
+                  </span>
+                  Missing
+                  <span className="ml-auto text-xs font-normal text-chrome-fg-subtle">not in this revision</span>
+                </h3>
+                <ul className="mb-2 ml-[2.125rem] flex flex-col gap-0.5">
+                  {missingPaths.map((path) => (
+                    <li
+                      key={path}
+                      title={path}
+                      className="flex min-w-0 items-center px-2 py-[3px] font-mono text-xs text-chrome-fg-subtle"
+                    >
+                      <FilePath path={path} />
+                    </li>
+                  ))}
+                </ul>
               </section>
             )}
           </>

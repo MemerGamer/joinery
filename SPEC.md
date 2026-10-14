@@ -67,6 +67,7 @@ its committed head, and its PR head (§4) without leaving the review.
 | Code on disk | **Only when a live tree exists.** Attach if the branch is checked out; otherwise render from the object store. A worktree is created only as an agent run's `cwd`. |
 | Engine state | **The sorted file list is the state.** No snapshot hash, no delta protocol, no cache invalidation. |
 | Icons | **`lucide-react`, exclusively.** |
+| Code host | **One `Forge` seam** (`apps/server/src/git/forge/`). Everything host-specific (open and searched pulls, one pull's detail and CI, the pull head refspec, the login, review requests) sits behind it; `forgeFor(repo)` picks the implementation from the origin's host (stored as `repo.remoteHost`). GitHub (`gh`, `github.com`) and GitLab (`glab`, `gitlab.com` or any host containing "gitlab"; head ref `refs/merge-requests/N/head`) are implemented; any other remote gets a forge that reports unavailable. GitLab uses `glab api projects/:fullpath/merge_requests…` and degrades: no line counts, and CI only where GitLab includes `head_pipeline`. Self-hosted hosts need `glab auth login --hostname`. Nothing outside the module calls `gh`/`glab` or hard-codes `refs/pull/`. |
 
 ### Consequences worth remembering
 
@@ -86,13 +87,13 @@ that API:
 4. **No reconciliation.** No polling for edits/deletes, no dedupe against
    GitHub's threads, no ID mapping.
 
-The cost is that your review is invisible to teammates. `joinery feedback`
+The cost is that your review is invisible to teammates. `joinery threads --markdown`
 (§10) is the mitigation.
 
 **Read-only agents keep the *code* still, not the UI.** Agents cannot edit the
 files under review, so the diff you are reading never shifts beneath you and
 anchors never re-map mid-thread. Replies are still fully **real-time**: each run
-streams token-by-token via `includePartialMessages`, and many run at once. The
+reports tool-call activity as it works, and many run at once. The
 immutability claim is about the code, not the conversation.
 
 **Code intel deferred is also the fast path** — token metadata inflates DOM size
@@ -856,7 +857,7 @@ One `CodeView` per review — never one `FileDiff` per file. Items are the
 reading order's files, in order, as `{id, type:'diff', fileDiff, annotations,
 version}`.
 
-- `renderCodeViewHeader` → the current step's title + explanation card
+- `renderCodeViewHeader` → the current step's title + guidance card
   (non-virtualized, always in the DOM).
 - `lineNumber: 0` annotation → per-file note within a step.
 - `lineAnnotations` + `renderAnnotation` → inline comment threads. Annotations
@@ -1013,13 +1014,13 @@ ever need a custom gutter, switch separators to `'line-info-basic'`.
 
 ## 7. Reading order
 
-Agent-generated, read-only, regenerable. Versioned — regenerating supersedes
-rather than destroys, so progress and threads survive.
+Agent-generated, read-only, regenerable. One per review — regenerating replaces
+it, and progress and threads survive because they hang off the review and paths.
 
 ```
-reading_order  (id, review_id, version, agent_run_id, created_at)
-step           (id, reading_order_id, idx, title, explanation_md)
-step_file      (step_id, idx, path, note_md)
+reading_order  (id, review_id unique, agent_run_id, created_at)
+step           (id, reading_order_id, idx, title, guidance, attention('focus'|'skim'|null))
+step_file      (step_id, idx, path, note)
 file_viewed    (review_id, path, blob_sha, viewed_at)
 ```
 
@@ -1028,7 +1029,8 @@ keyed by `(review, path, blob_sha)`, so a file's check clears automatically when
 its content changes. This survives jumping around out of order, which step
 progress does not.
 
-One step = an ordered list of files with a prose explanation. Steps are the
+One step = an ordered list of files with short guidance and an optional
+focus/skim attention level. Steps are the
 navigation spine; the static file tree is the jump-anywhere escape hatch and
 indicates which step a file belongs to.
 
@@ -1039,7 +1041,7 @@ indicates which step a file belongs to.
 ```
 thread   (id, review_id, path, side, start_line, end_line,
           anchor_blob_sha, anchor_context_hash, status, outdated, created_at)
-comment  (id, thread_id, author('user'|'agent'), body_md,
+comment  (id, thread_id, author('user'|'agent'), body,
           agent_run_id, created_at)
 ```
 
@@ -1070,12 +1072,17 @@ uncommitted work is still there after you commit, push, and open a PR.
 ### Runs
 - **One `query()` per run.** A run is started by a button, the CLI, or the
   HTTP API; the request returns the `running` run immediately and the agent
-  works in the background, reporting through `run.started` / `run.delta` /
+  works in the background, reporting through `run.started` / `run.activity` /
   `run.ended` on the event channel. No HTTP request is held open for the
   length of a run.
-- `includePartialMessages: true` → token-level `run.delta` events for the
-  work-in-progress UI (thread replies). The deltas are forwarded live only;
-  the complete SDK messages are what get persisted.
+- No token streaming: the reply appears whole when the agent posts it. The
+  complete SDK messages are what get persisted. Each tool call emits
+  a small `run.activity` event (`{reviewId, runId, label}`, e.g. "Reading
+  `src/foo.ts`") for the ghost comment's activity line.
+- **Cancel.** `POST /api/runs/:id/cancel` (CLI: `joinery run <id> --cancel`)
+  aborts the run's `AbortController`; the run ends as `cancelled` with
+  `run.ended` emitted, writes no reply or reading order, and records no error.
+  A no-op for finished runs.
 - `systemPrompt: {type:'preset', preset:'claude_code', append: <harness instructions>}`.
 - `cwd` = the attached root when the review's branch is checked out, otherwise
   a cached detached agent worktree at the review's head (§4).
@@ -1143,6 +1150,7 @@ Bearer token from `data/token` (or `$JOINERY_DATA_DIR/token`). Every CLI command
 |---|---|---|
 | `GET` | `/api/repos` | `joinery repos list` |
 | `POST` | `/api/repos` | `joinery repos add <path>` |
+| `GET` | `/api/pulls/search?q=&repos=` | — (Explore: PRs of any state via the repo's forge; `q` is text or a PR number, `repos` are repo ids, default all with a supported forge; cached 60 s) |
 | `GET` | `/api/reviews` | `joinery list` |
 | `POST` | `/api/reviews` | `joinery create --branch <name> [--base <ref>]` |
 | `GET` | `/api/reviews/:id` | `joinery show <id>` |
@@ -1150,18 +1158,19 @@ Bearer token from `data/token` (or `$JOINERY_DATA_DIR/token`). Every CLI command
 | `GET` | `/api/reviews/:id/diff?path=&rev=` | `joinery diff <id> <path> [--rev working\|head\|pr]` |
 | `GET` | `/api/reviews/:id/reading-order` | `joinery reading-order get <id>` |
 | `PUT` | `/api/reviews/:id/reading-order` | `joinery reading-order set <id> --file plan.json` |
-| `POST` | `/api/reviews/:id/reading-order/generate` | `joinery reading-order generate <id>` |
-| `GET` | `/api/reviews/:id/threads?status=` | `joinery threads <id> [--unresolved]` |
+| `POST` | `/api/reviews/:id/reading-order/generate` | `joinery reading-order generate <id> [--model <model>]` |
+| `GET` | `/api/reviews/:id/threads?status=` | `joinery threads <id> [--unresolved] [--markdown]` |
+| `POST` | `/api/reviews/:id/threads` | `joinery comment <id> <path> --line N [--end M] [--side old\|new] --body-file c.md` |
 | `GET` | `/api/threads/:id` | `joinery thread <id>` |
 | `POST` | `/api/threads/:id/replies` | `joinery reply <id> --body-file r.md` |
 | `POST` | `/api/threads/:id/resolve` | `joinery resolve <id>` |
 | `POST` | `/api/threads/:id/ask` | — ("Ask agent" in the UI) |
 | `GET` | `/api/comments/:id` | — (the agent's `react` ownership check) |
 | `POST` | `/api/comments/:id/reactions` | `joinery react <commentId> <kind> [--off] [--actor user\|agent]` |
-| `GET` | `/api/reviews/:id/feedback?format=markdown` | `joinery feedback <id> [--unresolved]` |
 | `POST` | `/api/reviews/:id/revision` | `joinery revision <id> <working\|head\|pr>` |
 | `POST` | `/api/reviews/:id/viewed` | `joinery viewed <id> <path>` |
 | `GET` | `/api/runs/:id` | `joinery run <id>` |
+| `POST` | `/api/runs/:id/cancel` | `joinery run <id> --cancel` |
 | `WS` | `/api/events` | — (per-review events; `subscribeHome` adds `reviews.changed` for Homebase) |
 
 `SKILL.md` ships alongside the CLI and documents the two workflows end to end:
@@ -1201,7 +1210,6 @@ window, a dock icon, and frees most of the rest.
 | `t` | toggle threads panel (overlays the reading order) |
 | `u` | unified / split (viewer-wide) |
 | `e` / `Shift+E` | expand hunk context / expand whole file |
-| `v` | mark file viewed |
 | `1` / `2` / `3` | revision: working / head / pr |
 | `g h` | go homebase |
 | `?` | shortcut help |
@@ -1221,8 +1229,8 @@ window, a dock icon, and frees most of the rest.
 - **P1** Reading order: agent generation via CLI, step navigation, per-file viewed checks.
 - **P2** Comments: gutter utility, inline annotations, markdown, threads panel,
   anchoring.
-- **P3** Real-time agent replies: unlimited concurrency, token-streamed work UI, replay.
-- **P4** Homebase, `Cmd+K`, full keymap, `joinery feedback` export.
+- **P3** Real-time agent replies: unlimited concurrency, live activity UI, replay.
+- **P4** Homebase, `Cmd+K`, full keymap, `joinery threads --markdown` export.
 - **P4.5** Accessibility pass: axe audit, keyboard-only run-through, screen-reader
   walkthrough of a full review.
 - **P5** *(deferred)* Windows and Linux support (§14).
@@ -1238,9 +1246,9 @@ window, a dock icon, and frees most of the rest.
    three revisions so they are comparable. Overridable per review.
 2. **Default revision** = `working` when the branch is attached on disk,
    otherwise `head`.
-3. **Regenerating a reading order supersedes** rather than replaces: the old
-   version is retained, and threads and file-viewed state are preserved.
-4. **`joinery feedback`** is the outward path that substitutes for posting to GitHub.
+3. **Regenerating a reading order replaces** the old one (one per review);
+   threads and file-viewed state are preserved.
+4. **`joinery threads --markdown`** is the outward path that substitutes for posting to GitHub.
 5. **No agent auto-triggering.** Agents run only on a button press or a CLI call —
    never automatically on review creation.
 6. **Diff style is viewer-wide only** (§6). No per-file override.

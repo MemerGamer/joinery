@@ -10,7 +10,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { NULL_BLOB, type FileContents, type FilePatch, type Revision } from '@joinery/core';
 import type { CatFile } from './catfile.ts';
-import { gitOrThrow, type GitCallOptions } from './run.ts';
+import { git, gitOrThrow, type GitCallOptions } from './run.ts';
 
 const decoder = new TextDecoder(); // lossy on invalid UTF-8, matching a best-effort text render
 
@@ -63,7 +63,19 @@ export async function getFilePatch(params: GetFilePatchParams): Promise<FilePatc
   args.push(entry.path);
 
   const result = await gitOrThrow(args, { cwd: params.cwd });
-  const patchText = entry.binary ? '' : decoder.decode(result.stdout);
+  let patchText = entry.binary ? '' : decoder.decode(result.stdout);
+
+  // An untracked file (working revision, never added) is invisible to
+  // `git diff <base>`, which only sees the index and tracked tree, so it comes
+  // back empty. `--no-index` against /dev/null renders it as the add it is.
+  // That mode exits 1 when the sides differ, so this uses the non-throwing runner.
+  if (params.revision === 'working' && !entry.binary && patchText === '' && entry.oldBlob === NULL_BLOB) {
+    const untracked = await git(
+      ['diff', '--no-index', '--no-ext-diff', '--no-color', '--src-prefix=a/', '--dst-prefix=b/', `-U${String(params.contextLines ?? 3)}`, '--', '/dev/null', entry.path],
+      { cwd: params.cwd },
+    );
+    if (untracked.exitCode === 1) patchText = decoder.decode(untracked.stdout);
+  }
 
   const oldModeMatch = /^old mode (\d+)/mu.exec(patchText);
   const newModeMatch = /^new mode (\d+)/mu.exec(patchText);

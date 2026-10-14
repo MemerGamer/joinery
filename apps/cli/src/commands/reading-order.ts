@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
+import { AGENT_MODELS, agentModelSchema } from '@joinery/core';
 import * as client from '../client.ts';
-import { UsageError } from '../args.ts';
+import { UsageError, flagString } from '../args.ts';
 import { printLine, printTable } from '../format.ts';
 import { PlanValidationError, parsePlan } from '../plan.ts';
 import type { Command } from './types.ts';
@@ -9,7 +10,7 @@ import { maybePrintJson, parseCommand, requireFlag, requirePositional, wantsHelp
 export const get: Command = {
   path: 'reading-order get',
   summary: 'Show the reading order',
-  usage: 'review reading-order get <id> [--json]',
+  usage: 'joinery reading-order get <id> [--json]',
   async run(argv) {
     const parsed = parseCommand(argv);
     if (wantsHelp(parsed)) return printLine(get.usage);
@@ -33,7 +34,7 @@ export const get: Command = {
 export const set: Command = {
   path: 'reading-order set',
   summary: 'Set the reading order from a plan file',
-  usage: 'review reading-order set <id> --file plan.json [--json]',
+  usage: 'joinery reading-order set <id> --file plan.json [--json]',
   async run(argv) {
     const parsed = parseCommand(argv, [{ name: 'file', type: 'string' }]);
     if (wantsHelp(parsed)) return printLine(set.usage);
@@ -68,19 +69,24 @@ export const set: Command = {
 
     const result = await client.setReadingOrder(id, plan);
     if (maybePrintJson(parsed, result)) return;
-    printLine(`reading order set: ${result.readingOrder.steps.length} steps (v${result.readingOrder.version})`);
+    printLine(`reading order set: ${result.readingOrder.steps.length} steps`);
   },
 };
 
 export const generate: Command = {
   path: 'reading-order generate',
   summary: 'Ask an agent to generate the reading order',
-  usage: 'review reading-order generate <id> [--json]',
+  usage: 'joinery reading-order generate <id> [--model <model>] [--json]',
   async run(argv) {
-    const parsed = parseCommand(argv);
+    const parsed = parseCommand(argv, [{ name: 'model', type: 'string' }]);
     if (wantsHelp(parsed)) return printLine(generate.usage);
     const id = requirePositional(parsed.positionals, 0, 'id');
-    const result = await client.generateReadingOrder(id);
+    const rawModel = flagString(parsed.flags, 'model');
+    const model = rawModel === undefined ? undefined : agentModelSchema.safeParse(rawModel);
+    if (model !== undefined && !model.success) {
+      throw new UsageError(`unknown model "${rawModel}"; one of: ${AGENT_MODELS.map((m) => m.id).join(', ')}`);
+    }
+    const result = await client.generateReadingOrder(id, model?.data);
     if (maybePrintJson(parsed, result)) return;
     printLine(`started run ${result.run.id} (${result.run.status})`);
   },

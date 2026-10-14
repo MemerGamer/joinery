@@ -48,9 +48,9 @@ describe('runUiState', () => {
     expect(state.phase === 'error' && state.message.length > 0).toBe(true);
   });
 
-  it('treats a cancelled run as an error too', () => {
-    const state = runUiState(run({ status: 'cancelled', error: 'stopped by user' }));
-    expect(state).toEqual({ phase: 'error', message: 'stopped by user' });
+  it('treats a cancelled run as idle, not a failure', () => {
+    const state = runUiState(run({ status: 'cancelled', error: null }));
+    expect(state).toEqual({ phase: 'idle' });
   });
 
   it('is done for a successful run', () => {

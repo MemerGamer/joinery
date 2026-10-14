@@ -4,6 +4,7 @@ import { revisionSchema } from './files.ts';
 export const repoSchema = z.object({
   id: z.string(),
   rootPath: z.string(),
+  remoteHost: z.string().nullable(),
   remoteOwner: z.string().nullable(),
   remoteName: z.string().nullable(),
   defaultBranch: z.string(),
@@ -55,13 +56,13 @@ export const reviewSummarySchema = z.object({
    * (head unresolvable) this falls back to distinct viewed paths.
    */
   viewedFiles: z.number().int().nonnegative(),
-  /** Null when no reading order has been generated yet. */
-  readingOrderVersion: z.number().int().nullable(),
+  /** False until a reading order has been generated. */
+  hasReadingOrder: z.boolean(),
   agentRunning: z.boolean(),
   /** Unix seconds of the newest thread, comment, viewed check, or reading order; null when untouched. */
   lastActivityAt: z.number().int().nullable(),
 
-  /** PR title when a PR is known, else the tip commit's subject. */
+  /** PR title when a PR is known, else the branch name (the tip commit's subject for a detached review). */
   title: z.string().nullable(),
   /** PR author login when a PR is known, else the tip commit's author name. */
   authorName: z.string().nullable(),
@@ -135,19 +136,56 @@ export const pullSchema = z.object({
 });
 export type Pull = z.infer<typeof pullSchema>;
 
+export const pullStateSchema = z.enum(['open', 'draft', 'merged', 'closed']);
+export type PullState = z.infer<typeof pullStateSchema>;
+
+/** One hit of a cross-repo PR search: any state, so no head/base (`createReview` resolves them from the number). */
+export const pullSearchResultSchema = z.object({
+  repoId: z.string(),
+  number: z.number().int().positive(),
+  title: z.string(),
+  state: pullStateSchema,
+  authorLogin: z.string().nullable(),
+  /** ISO 8601, as `gh` reports it. */
+  updatedAt: z.string(),
+  updatedAtUnix: z.number().int(),
+});
+export type PullSearchResult = z.infer<typeof pullSearchResultSchema>;
+
+/** One PR in full, for the review's summary card: what `gh pr view` adds to a `Pull`. */
+export const pullDetailSchema = z.object({
+  number: z.number().int().positive(),
+  title: z.string(),
+  /** The PR description, markdown; empty when there is none. */
+  body: z.string(),
+  state: pullStateSchema,
+  authorLogin: z.string().nullable(),
+  baseRefName: z.string(),
+  /** Roll-up of `statusCheckRollup`; null when the PR has no checks. */
+  ci: ciStatusSchema.nullable(),
+  additions: z.number().int().nonnegative().nullable(),
+  deletions: z.number().int().nonnegative().nullable(),
+  changedFiles: z.number().int().nonnegative().nullable(),
+});
+export type PullDetail = z.infer<typeof pullDetailSchema>;
+
 // --- reading order ---
 
 export const stepFileSchema = z.object({
   path: z.string(),
-  noteMd: z.string().nullable(),
+  note: z.string().nullable(),
 });
 export type StepFile = z.infer<typeof stepFileSchema>;
+
+export const stepAttentionSchema = z.enum(['focus', 'skim']);
+export type StepAttention = z.infer<typeof stepAttentionSchema>;
 
 export const stepSchema = z.object({
   id: z.string(),
   idx: z.number().int().nonnegative(),
   title: z.string(),
-  explanationMd: z.string(),
+  guidance: z.string(),
+  attention: stepAttentionSchema.nullable(),
   files: z.array(stepFileSchema),
 });
 export type Step = z.infer<typeof stepSchema>;
@@ -155,7 +193,6 @@ export type Step = z.infer<typeof stepSchema>;
 export const readingOrderSchema = z.object({
   id: z.string(),
   reviewId: z.string(),
-  version: z.number().int().positive(),
   agentRunId: z.string().nullable(),
   createdAt: z.number().int(),
   steps: z.array(stepSchema),
@@ -180,31 +217,39 @@ export const readingOrderPlanSchema = z.object({
         title: z
           .string()
           .min(1)
-          .describe('What this step changes, in sentence case and under 60 characters ("Add a route that lists folders").'),
-        explanation_md: z
+          .describe('What this group of files does for the change, in sentence case and under 60 characters ("Read path, where parity breaks").'),
+        guidance: z
           .string()
           .default('')
           .describe(
-            "Markdown, 2 to 4 short sentences. Start with what the step changes or makes possible, then say how the code does it. The step's position already shows the order, so every sentence is about the code.",
+            'Markdown, 1 to 2 sentences telling the reviewer what to notice in this step. A verdict is fine ("check the derivation\'s precedence first", "faithful port, skim for shape").',
+          ),
+        attention: stepAttentionSchema
+          .nullable()
+          .default(null)
+          .describe(
+            '"focus" marks risky logic, behaviour changes, or something you have a concern about. "skim" marks mechanical changes (renames, wiring, generated code, tests that mirror code). Null is a normal read.',
           ),
         files: z
           .array(
             z.object({
               path: z.string().min(1).describe('Exactly as given in the changed-file list.'),
-              note_md: z
+              note: z
                 .string()
                 .nullable()
                 .default(null)
-                .describe('What to look at in this file, in one markdown sentence. Null when the explanation already covers it.'),
+                .describe('Optional one-sentence markdown note on this file. Null when the guidance already covers it.'),
             }),
           )
           .min(1),
       }),
     )
     .min(1)
-    .describe('Ordered so each step comes after the steps it builds on.'),
+    .describe(
+      'Aim for about 3 to 7 steps, however many files changed. Put `focus` steps first, then order the rest so definitions come before their users and tests come last. Sequence the steps as the story of the change so understanding accumulates; do not sort alphabetically. Typical shapes: for a feature, storage, entry point, logic, callers, tests; for a refactor, the new abstraction first, then each call site.',
+    ),
 }).describe(
-  "A walkthrough of the change for a teammate who is about to review it. Write it the way you would explain it at their desk. Use plain words and short, whole sentences, one idea each. Make the code the actor (\"`listDirs` returns the folders\"). Name the concrete function, field, route, or number. Punctuate with periods and commas only.",
+  "A reviewer's guide to the change, not a neutral tour. Steps render top to bottom and files within a step render in listed order; that order is the reading order. Group files that are read together (a type and its users, a feature and its wiring, all the tests). A one-file step is only for a file that is a concern on its own. Each step's `guidance` says what to notice, and the best ones carry a small verdict (\"verified the correlation keys match\", \"check the blind spots first\"). Name the concrete function, field, route, or number.",
 );
 export type ReadingOrderPlan = z.infer<typeof readingOrderPlanSchema>;
 
@@ -239,7 +284,7 @@ export const commentSchema = z.object({
   id: z.string(),
   threadId: z.string(),
   author: z.enum(['user', 'agent']),
-  bodyMd: z.string(),
+  body: z.string(),
   agentRunId: z.string().nullable(),
   createdAt: z.number().int(),
   /** Empty when the comment has no reactions. */

@@ -388,7 +388,7 @@ export function Homebase(): React.JSX.Element {
                 )}
               </main>
 
-              {/* No queue, no pane: Currently reviewing takes the full width. The gh hint still shows. */}
+              {/* No queue, no pane: Currently reviewing takes the full width. The forge CLI hint still shows. */}
               {showQueue && (
                 // The absolute box takes the row's height without adding to it, so a long queue scrolls instead of stretching the row.
                 <div className="relative w-96 shrink-0">
@@ -406,7 +406,7 @@ export function Homebase(): React.JSX.Element {
                     ) : noPullsAvailable ? (
                       <div className="px-2 pt-1 pb-2">
                         <p className="rounded-lg border border-dashed border-chrome-border px-4 py-6 text-center text-xs text-chrome-fg-muted">
-                          Install and sign in to <code>gh</code> to see open pull requests here.
+                          Install and sign in to <code>gh</code> or <code>glab</code> to see open pull requests here.
                         </p>
                       </div>
                     ) : (
@@ -502,7 +502,7 @@ function ReviewCard({
   const author = personFrom(summary.authorName);
   const effort = effortOf(summary);
   const chips = reasons(summary);
-  const showReadingOrderAction = summary.readingOrderVersion === null || summary.agentRunning;
+  const showReadingOrderAction = !summary.hasReadingOrder || summary.agentRunning;
   return (
     // The whole card opens the review via an underlay button, so the one
     // real control inside it (generate a reading order) isn't a button

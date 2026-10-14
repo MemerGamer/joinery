@@ -1,15 +1,16 @@
 /**
- * `reading_order` + `step` + `step_file`. Regenerating writes a **new
- * version** rather than replacing: old versions are retained, so progress and
- * threads survive a regenerate.
+ * `reading_order` + `step` + `step_file`. A review has at most one reading
+ * order: writing a plan deletes the old one (steps and files cascade) and
+ * inserts the new one in the same transaction. Progress and threads hang off
+ * the review and file paths, not the reading order, so they survive.
  */
 import { readingOrder, step, stepFile } from '@joinery/core/db';
 import type { ReadingOrder, ReadingOrderPlan, Step } from '@joinery/core';
-import { desc, eq, inArray, max } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { readingOrderId, stepId } from '@joinery/core';
 import type { Db } from './client.ts';
 
-/** Write `plan` as a new version for `reviewId`. Never replaces an existing version. */
+/** Write `plan` as the reading order for `reviewId`, replacing any existing one. */
 export async function writeReadingOrderPlan(
   db: Db,
   reviewId: string,
@@ -17,16 +18,11 @@ export async function writeReadingOrderPlan(
   agentRunId: string | null = null,
 ): Promise<ReadingOrder> {
   return db.transaction((tx) => {
-    const maxVersionRows = tx
-      .select({ maxVersion: max(readingOrder.version) })
-      .from(readingOrder)
-      .where(eq(readingOrder.reviewId, reviewId))
-      .all();
-    const version = (maxVersionRows[0]?.maxVersion ?? 0) + 1;
+    tx.delete(readingOrder).where(eq(readingOrder.reviewId, reviewId)).run();
 
     const roRows = tx
       .insert(readingOrder)
-      .values({ id: readingOrderId(), reviewId, version, agentRunId })
+      .values({ id: readingOrderId(), reviewId, agentRunId })
       .returning()
       .all();
     const roRow = roRows[0];
@@ -41,13 +37,14 @@ export async function writeReadingOrderPlan(
           readingOrderId: roRow.id,
           idx: stepIdx,
           title: planStep.title,
-          explanationMd: planStep.explanation_md,
+          guidance: planStep.guidance,
+          attention: planStep.attention,
         })
         .run();
 
       planStep.files.forEach((f, fileIdx) => {
         tx.insert(stepFile)
-          .values({ stepId: sId, idx: fileIdx, path: f.path, noteMd: f.note_md })
+          .values({ stepId: sId, idx: fileIdx, path: f.path, note: f.note })
           .run();
       });
 
@@ -55,15 +52,15 @@ export async function writeReadingOrderPlan(
         id: sId,
         idx: stepIdx,
         title: planStep.title,
-        explanationMd: planStep.explanation_md,
-        files: planStep.files.map((f) => ({ path: f.path, noteMd: f.note_md })),
+        guidance: planStep.guidance,
+        attention: planStep.attention,
+        files: planStep.files.map((f) => ({ path: f.path, note: f.note })),
       });
     });
 
     return {
       id: roRow.id,
       reviewId: roRow.reviewId,
-      version: roRow.version,
       agentRunId: roRow.agentRunId,
       createdAt: roRow.createdAt,
       steps,
@@ -73,11 +70,11 @@ export async function writeReadingOrderPlan(
 }
 
 /**
- * Read the latest reading-order version for `reviewId`, with its steps and
+ * Read the reading order for `reviewId`, with its steps and
  * step files assembled, and `unassignedPaths` computed against `currentPaths`
  * — files present in the review but belonging to no step.
  */
-export async function getLatestReadingOrder(
+export async function getReadingOrder(
   db: Db,
   reviewId: string,
   currentPaths: readonly string[] = [],
@@ -86,7 +83,6 @@ export async function getLatestReadingOrder(
     .select()
     .from(readingOrder)
     .where(eq(readingOrder.reviewId, reviewId))
-    .orderBy(desc(readingOrder.version))
     .limit(1);
   const roRow = roRows[0];
   if (roRow === undefined) return null;
@@ -106,7 +102,7 @@ export async function getLatestReadingOrder(
   const filesByStep = new Map<string, Step['files']>();
   for (const row of stepFileRows) {
     const list = filesByStep.get(row.stepId) ?? [];
-    list.push({ path: row.path, noteMd: row.noteMd });
+    list.push({ path: row.path, note: row.note });
     filesByStep.set(row.stepId, list);
   }
 
@@ -114,7 +110,8 @@ export async function getLatestReadingOrder(
     id: row.id,
     idx: row.idx,
     title: row.title,
-    explanationMd: row.explanationMd,
+    guidance: row.guidance,
+    attention: row.attention === 'focus' || row.attention === 'skim' ? row.attention : null,
     files: filesByStep.get(row.id) ?? [],
   }));
 
@@ -124,7 +121,6 @@ export async function getLatestReadingOrder(
   return {
     id: roRow.id,
     reviewId: roRow.reviewId,
-    version: roRow.version,
     agentRunId: roRow.agentRunId,
     createdAt: roRow.createdAt,
     steps,

@@ -42,20 +42,20 @@ export type RemoteIdentity = {
 };
 
 /**
- * Parse `owner/name` out of an origin URL. Handles the common SSH and HTTPS
+ * Parse `owner/name` out of an origin URL; a GitLab nested group keeps its whole path as `owner` (`a/b/c` is owner `a/b`). Handles the common SSH and HTTPS
  * GitHub shapes; returns nulls for anything else rather than guessing.
  */
 export function parseRemoteIdentity(url: string): RemoteIdentity {
   const trimmed = url.trim().replace(/\.git$/u, '');
 
   // git@github.com:owner/name  or  ssh://git@github.com/owner/name
-  const sshMatch = /^(?:ssh:\/\/)?git@[^:/]+[:/]([^/]+)\/([^/]+)$/u.exec(trimmed);
+  const sshMatch = /^(?:ssh:\/\/)?git@[^:/]+[:/](.+)\/([^/]+)$/u.exec(trimmed);
   if (sshMatch !== null) {
     return { owner: sshMatch[1] ?? null, name: sshMatch[2] ?? null };
   }
 
   // https://github.com/owner/name
-  const httpsMatch = /^https?:\/\/[^/]+\/([^/]+)\/([^/]+)$/u.exec(trimmed);
+  const httpsMatch = /^https?:\/\/[^/]+\/(.+)\/([^/]+)$/u.exec(trimmed);
   if (httpsMatch !== null) {
     return { owner: httpsMatch[1] ?? null, name: httpsMatch[2] ?? null };
   }
@@ -70,6 +70,18 @@ export async function remoteIdentity(options: GitCallOptions): Promise<RemoteIde
   const url = new TextDecoder().decode(result.stdout).trim();
   if (url === '') return { owner: null, name: null };
   return parseRemoteIdentity(url);
+}
+
+/** Lowercased hostname of an origin URL (SSH or HTTPS); null for anything else. Picks the forge (`git/forge`). */
+export function parseRemoteHost(url: string): string | null {
+  const match = /^(?:ssh:\/\/git@|git@|https?:\/\/)([^:/]+)[:/]/u.exec(url.trim());
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+/** `git config --get remote.origin.url`, parsed into its host. Null if there's no origin. */
+export async function remoteHost(options: GitCallOptions): Promise<string | null> {
+  const result = await git(['config', '--get', 'remote.origin.url'], options);
+  return result.exitCode === 0 ? parseRemoteHost(new TextDecoder().decode(result.stdout)) : null;
 }
 
 /** `git merge-base <a> <b>`. Null if the revisions share no history. */
