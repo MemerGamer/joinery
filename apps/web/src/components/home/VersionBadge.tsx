@@ -1,11 +1,13 @@
 /**
- * Bottom-left version label with the update affordance beside it.
+ * Bottom-left island showing the current version, with an update segment
+ * (button, dev-mode notice or failure message) attached when relevant.
  *
  * Fetches `/api/version` once on mount. Clicking "Update to vX" asks the
  * server to run `joinery update`, which restarts the server; we then poll
  * until it answers with a different `current` and reload into the new build.
  */
 import type { VersionInfo } from '@joinery/core';
+import { ArrowUpCircle, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { callApi } from '../../lib/apiClient.ts';
 
@@ -78,18 +80,31 @@ export function VersionBadge() {
       .catch(() => setPhase('failed'));
   };
 
+  const segment = 'flex h-full items-center gap-1.5 border-l border-chrome-border px-3';
+  const updating = phase === 'updating';
+
   return (
-    <div className="absolute bottom-4 left-[3.25rem] z-20 flex h-9 items-center gap-2 text-micro text-chrome-fg-muted">
-      <span>v{info.current}</span>
+    <div className="home-island absolute bottom-4 left-[3.25rem] z-20 flex h-9 items-center text-micro text-chrome-fg-muted">
+      <span className="px-3">v{info.current}</span>
       {phase === 'failed' ? (
-        <span>Update failed — run joinery update</span>
+        <span className={`${segment} text-chrome-danger`}>Update failed — run joinery update</span>
       ) : info.updateAvailable && info.latest !== null ? (
         info.mode === 'installed' ? (
-          <button type="button" disabled={phase === 'updating'} onClick={startUpdate} className="chrome-btn disabled:opacity-60">
-            {phase === 'updating' ? 'Updating…' : `Update to v${info.latest}`}
+          <button
+            type="button"
+            disabled={updating}
+            onClick={startUpdate}
+            className={`${segment} bg-chrome-success-bg text-chrome-success transition-colors hover:bg-chrome-success/20 disabled:opacity-60`}
+          >
+            {updating ? (
+              <RefreshCw size={14} strokeWidth={1.75} className="animate-spin" aria-hidden />
+            ) : (
+              <ArrowUpCircle size={14} strokeWidth={1.75} aria-hidden />
+            )}
+            {updating ? 'Updating…' : `Update to v${info.latest}`}
           </button>
         ) : (
-          <span>v{info.latest} available</span>
+          <span className={`${segment} text-chrome-success`}>v{info.latest} available</span>
         )
       ) : null}
     </div>
