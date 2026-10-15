@@ -24,7 +24,7 @@ import { EXPLORE_ID } from '../lib/router.ts';
 import { useHomeData } from '../state/HomeData.tsx';
 import { FolderPicker } from './home/FolderPicker.tsx';
 import { Panel } from './home/Panel.tsx';
-import { Avatar, Chip, CiIcon, EffortMeter, Kbd, SectionHeading, type Tone } from './home/primitives.tsx';
+import { Avatar, Chip, CiIcon, EffortMeter, SectionHeading, type Tone } from './home/primitives.tsx';
 
 const BRANCH_DEBOUNCE_MS = 200;
 const BRANCH_LIMIT = 50;
@@ -344,7 +344,7 @@ export function ExploreSection(): React.JSX.Element {
                 <>
                   {/* The search field is the hero of this page: big, borderless
                       inside, one focus ring. Everything below filters as you type. */}
-                  <label className="home-card flex h-11 items-center gap-3 px-3.5 focus-within:border-chrome-accent focus-within:shadow-chrome">
+                  <label className="home-card flex h-11 items-center gap-3 px-3.5 shadow-none! focus-within:border-chrome-accent">
                     <Search size={16} strokeWidth={1.75} className="shrink-0 text-chrome-fg-subtle" aria-hidden />
                     <input
                       ref={searchInputRef}
@@ -358,9 +358,6 @@ export function ExploreSection(): React.JSX.Element {
                       aria-label="Search branches and pull requests"
                       className="h-full min-w-0 flex-1 bg-transparent text-body text-chrome-fg outline-hidden! placeholder:text-chrome-fg-subtle disabled:opacity-60"
                     />
-                    <span className="flex items-center gap-1 text-micro text-chrome-fg-subtle">
-                      <Kbd>↵</Kbd> open
-                    </span>
                   </label>
                   {displayError !== null && <p className="text-xs text-chrome-danger">{displayError}</p>}
                 </>
