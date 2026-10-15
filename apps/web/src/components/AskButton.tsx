@@ -55,24 +55,24 @@ export function AskButton({
   }, [open]);
 
   return (
-    <div ref={menuRef} className="relative flex h-[26px] items-stretch rounded-md bg-chrome-bg-hover text-xs font-medium text-chrome-fg-muted">
+    <div ref={menuRef} className="relative flex h-[26px] items-stretch rounded-md border bg-chrome-bg-hover text-xs font-medium text-chrome-fg-muted">
       <button
         type="button"
         onClick={onAsk}
         disabled={disabled}
         title={title.replace('{model}', label)}
-        className="rounded-l-md px-2.5 transition-colors hover:bg-chrome-bg-active hover:text-chrome-fg disabled:opacity-50 disabled:hover:bg-transparent"
+        className="rounded-l-[5px] px-2.5 transition-colors hover:bg-chrome-bg-active hover:text-chrome-fg disabled:opacity-50 disabled:hover:bg-transparent"
       >
         {actionLabel}
       </button>
-      <span className="my-1.5 w-px bg-chrome-border-strong" aria-hidden />
+      <span className={`my-1.5 w-px bg-chrome-border-strong ${disabled ? 'opacity-50' : ''}`} aria-hidden />
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Model: ${label}. Change model`}
-        className="flex items-center gap-1 whitespace-nowrap rounded-r-md pl-2 pr-1.5 transition-colors hover:bg-chrome-bg-active hover:text-chrome-fg"
+        className={`flex items-center gap-1 whitespace-nowrap rounded-r-[5px] pl-2 pr-1.5 transition-colors hover:bg-chrome-bg-active hover:text-chrome-fg ${disabled ? 'opacity-50' : ''}`}
       >
         {label}
         <ChevronDown size={12} strokeWidth={2} aria-hidden />
