@@ -5,7 +5,7 @@
  * open. Resolve/reopen and reply round-trip through the API and then ask the
  * parent to reload threads.
  */
-import { AlertTriangle, Bot, Check, ChevronDown, History, Loader2, MessageSquare, Trash2, User } from 'lucide-react';
+import { Bot, Check, ChevronDown, Loader2, MessageSquare, Trash2, User, X } from 'lucide-react';
 import { useState } from 'react';
 import type { Thread } from '@joinery/core';
 import { getAgentModel } from '../lib/agentModel.ts';
@@ -14,7 +14,7 @@ import { AskButton } from './AskButton.tsx';
 import { CommentComposer } from './CommentComposer.tsx';
 import { ConfirmDelete } from './ConfirmDelete.tsx';
 import { Markdown } from './Markdown.tsx';
-import { ReactionBar } from './ReactionBar.tsx';
+import { ReactionBar, ReactionPicker } from './ReactionBar.tsx';
 import { threadSummary } from '../lib/threadSummary.ts';
 import { useReview } from '../state/ReviewContext.tsx';
 
@@ -39,34 +39,8 @@ function formatTimestamp(createdAt: number): string {
   });
 }
 
-function Badge({
-  tone,
-  icon,
-  children,
-  onClick,
-}: {
-  tone: 'warning' | 'success';
-  icon: React.ReactNode;
-  children: React.ReactNode;
-  onClick?: () => void;
-}): React.JSX.Element {
-  const cls = `flex h-5 items-center gap-1 rounded-full px-2 text-micro font-medium ${
-    tone === 'warning' ? 'bg-chrome-warning-bg text-chrome-warning' : 'bg-chrome-success-bg text-chrome-success'
-  }`;
-  if (onClick !== undefined) {
-    return (
-      <button type="button" onClick={onClick} className={`${cls} hover:brightness-110`}>
-        {icon}
-        {children}
-      </button>
-    );
-  }
-  return (
-    <span className={cls}>
-      {icon}
-      {children}
-    </span>
-  );
+function Badge({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return <span className="flex h-5 items-center text-micro font-medium text-chrome-warning">{children}</span>;
 }
 
 export function ThreadArticle({
@@ -85,19 +59,13 @@ export function ThreadArticle({
   };
   const [replying, setReplying] = useState(false);
   // Resolved threads start collapsed; resolving/reopening re-syncs the
-  // default (same derive-from-props pattern as `collapsedOutdated` below),
+  // default (derived from props),
   // while a manual toggle in between is respected until the status changes.
   const [collapsed, setCollapsed] = useState(thread.status === 'resolved');
   const [prevStatus, setPrevStatus] = useState(thread.status);
   if (thread.status !== prevStatus) {
     setPrevStatus(thread.status);
     setCollapsed(thread.status === 'resolved');
-  }
-  const [collapsedOutdated, setCollapsedOutdated] = useState(thread.outdated);
-  const [prevOutdated, setPrevOutdated] = useState(thread.outdated);
-  if (thread.outdated !== prevOutdated) {
-    setPrevOutdated(thread.outdated);
-    setCollapsedOutdated(thread.outdated);
   }
 
   const resolve = async (resolved: boolean) => {
@@ -125,7 +93,7 @@ export function ThreadArticle({
   };
 
   const resolved = thread.status === 'resolved';
-  const hasBadges = thread.outdated || thread.changedSinceComment || resolved;
+  const hasBadges = thread.outdated || thread.changedSinceComment;
   const commentCount = thread.comments.length;
   const summary = threadSummary(thread.comments[0]?.body ?? '');
 
@@ -145,24 +113,22 @@ export function ThreadArticle({
         aria-current={active ? 'true' : undefined}
         onPointerDownCapture={markActive}
         onFocusCapture={markActive}
-        className={`w-full max-w-2xl rounded-[4px] font-sans ${active ? 'ring-1 ring-chrome-accent' : ''}`}
+        className="w-full max-w-2xl rounded-[4px] font-sans"
       >
         <button
           type="button"
           onClick={() => setCollapsed(false)}
           aria-expanded={false}
           title={commentCount === 1 ? '1 comment' : `${commentCount} comments`}
-          className={`flex h-[22px] w-full min-w-0 items-center gap-2 rounded-[4px] px-2 text-left text-xs transition-colors hover:bg-chrome-bg-hover ${
-            resolved ? 'text-chrome-fg-subtle' : 'text-chrome-fg-muted'
-          }`}
+          className="flex h-[22px] w-full min-w-0 items-center gap-2 rounded-[4px] px-2 text-left text-xs text-chrome-fg-muted transition-colors hover:bg-chrome-bg-hover"
         >
           <MessageSquare
             size={12}
             strokeWidth={1.75}
+            fill="currentColor"
             className={`shrink-0 ${resolved ? 'text-chrome-success' : 'text-chrome-accent'}`}
             aria-hidden
           />
-          {thread.outdated && <History size={11} strokeWidth={1.75} className="shrink-0 text-chrome-warning" aria-hidden />}
           <span className="min-w-0 flex-1 truncate">{summary}</span>
         </button>
       </article>
@@ -175,14 +141,16 @@ export function ThreadArticle({
       aria-current={active ? 'true' : undefined}
       onPointerDownCapture={markActive}
       onFocusCapture={markActive}
-      // The current thread (`r` target) swaps the hairline ring for an
-      // accent one — a ring is a box-shadow, so it never changes the
-      // annotation's measured height.
-      className={`my-1.5 flex w-full max-w-2xl flex-col rounded-lg bg-chrome-bg-raised font-sans text-chrome-fg shadow-chrome ring-1 ${
-        active ? 'ring-chrome-accent' : 'ring-chrome-fg/8'
-      } ${resolved ? 'opacity-80' : ''}`}
+      className="mx-1 my-1.5 flex w-[calc(100%-0.5rem)] max-w-2xl flex-col rounded-lg bg-chrome-bg-raised font-sans text-chrome-fg shadow-chrome ring-1 ring-chrome-fg/8"
     >
-      <div className={`flex items-center gap-1.5 pl-2 pr-3 pt-2 ${hasBadges ? 'pb-0.5' : '-mb-1.5'}`}>
+      <div
+        // Empty space in the header collapses the thread; buttons and the
+        // delete confirmation (rendered inside this row) keep their own clicks.
+        onClick={(e) => {
+          if ((e.target as HTMLElement).closest('button, [role="dialog"]') === null) setCollapsed(true);
+        }}
+        className={`flex cursor-pointer items-center gap-1.5 pl-2 pr-3 pt-2 ${hasBadges ? 'pb-0.5' : '-mb-1.5'}`}
+      >
         <button
           type="button"
           onClick={() => setCollapsed(true)}
@@ -196,34 +164,48 @@ export function ThreadArticle({
         {hasBadges && (
           <>
           {thread.outdated && (
-            <Badge
-              tone="warning"
-              icon={<History size={11} strokeWidth={1.75} aria-hidden />}
-              onClick={() => setCollapsedOutdated((v) => !v)}
-            >
-              Outdated · {collapsedOutdated ? 'show' : 'hide'} comments
+            <Badge>
+              Outdated
             </Badge>
           )}
           {thread.changedSinceComment && !thread.outdated && (
-            <Badge tone="warning" icon={<AlertTriangle size={11} strokeWidth={1.75} aria-hidden />}>
+            <Badge>
               Changed since you commented
-            </Badge>
-          )}
-          {resolved && (
-            <Badge tone="success" icon={<Check size={11} strokeWidth={2} aria-hidden />}>
-              Resolved
             </Badge>
           )}
           </>
         )}
+        <div className="ml-auto flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => void resolve(!resolved)}
+            aria-pressed={resolved}
+            aria-label={resolved ? 'Reopen thread' : 'Resolve thread'}
+            title={resolved ? 'Reopen thread' : 'Resolve thread'}
+            className={`chrome-icon-btn h-6 gap-1 text-xs font-medium ${
+              resolved ? 'w-auto px-1.5 text-chrome-success! hover:text-chrome-success!' : 'w-6 text-chrome-fg-subtle'
+            }`}
+          >
+            <Check size={14} strokeWidth={resolved ? 2.5 : 1.75} aria-hidden />
+            {resolved && 'Resolved'}
+          </button>
+          <ConfirmDelete
+            onConfirm={deleteThread}
+            prompt="Delete this thread and all its comments?"
+            triggerLabel="Delete thread"
+            triggerClassName="chrome-icon-btn size-6 text-chrome-fg-subtle hover:text-chrome-danger"
+          >
+            <X size={14} strokeWidth={1.75} aria-hidden />
+          </ConfirmDelete>
+        </div>
       </div>
 
-      {thread.outdated && collapsedOutdated ? (
+      {thread.outdated && (
         <pre className="mx-3 mb-1 mt-2 overflow-x-auto rounded-md bg-chrome-bg-sunken p-2 font-mono text-xs leading-relaxed text-chrome-fg-subtle">
           {thread.anchorContext}
         </pre>
-      ) : (
-        <ul className="flex flex-col gap-1 py-1">
+      )}
+      <ul className="flex flex-col gap-1 py-1">
           {thread.comments.map((comment) => {
             const agent = comment.author === 'agent';
             return (
@@ -242,7 +224,8 @@ export function ThreadArticle({
                     <time className="text-chrome-fg-subtle" dateTime={new Date(toMs(comment.createdAt)).toISOString()}>
                       {formatTimestamp(comment.createdAt)}
                     </time>
-                    <div className="-my-1 ml-auto opacity-0 transition-opacity focus-within:opacity-100 group-hover/comment:opacity-100 has-[[aria-expanded=true]]:opacity-100">
+                    <div className="-my-1 ml-auto flex items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover/comment:opacity-100 has-[[aria-expanded=true]]:opacity-100 has-[[data-popup-open]]:opacity-100">
+                      <ReactionPicker comment={comment} />
                       <ConfirmDelete
                         onConfirm={() => deleteComment(comment.id)}
                         prompt={commentCount === 1 ? 'Delete this comment and its thread?' : 'Delete this comment?'}
@@ -287,7 +270,6 @@ export function ThreadArticle({
             </li>
           )}
         </ul>
-      )}
 
       <div className="px-3 pb-2.5 pt-1">
         {replying ? (
@@ -302,21 +284,11 @@ export function ThreadArticle({
             <button type="button" onClick={() => setReplying(true)} className="chrome-btn">
               Reply
             </button>
-            <button type="button" onClick={() => void resolve(!resolved)} className="chrome-btn">
-              {resolved ? 'Reopen' : 'Resolve'}
-            </button>
             <AskButton
               onAsk={() => void askAgent(thread.id)}
               disabled={runLive}
               title="Ask {model} to reply, without composing a new comment"
             />
-            <ConfirmDelete
-              onConfirm={deleteThread}
-              prompt="Delete this thread and all its comments?"
-              triggerClassName="chrome-btn hover:text-chrome-danger"
-            >
-              Delete
-            </ConfirmDelete>
           </div>
         )}
       </div>
