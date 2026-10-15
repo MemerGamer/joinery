@@ -577,7 +577,7 @@ function PullRow({
           <span className="flex min-w-0 items-center gap-1.5">
             <span className="truncate text-body font-medium text-chrome-fg">{p.title}</span>
             {p.isDraft && <Chip>draft</Chip>}
-            {p.reviewRequested && <Chip tone="warning">review requested</Chip>}
+            {p.reviewRequested && <Chip tone="accent">Review requested</Chip>}
             {p.reviewStatus === 'draft' && <Chip>opened</Chip>}
             {p.reviewStatus === 'archived' && <Chip>archived</Chip>}
           </span>

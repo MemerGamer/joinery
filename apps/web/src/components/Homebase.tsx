@@ -677,7 +677,7 @@ function QueueRow({
   const author = personFrom(p.authorLogin);
   const flags: React.ReactNode[] = [];
   if (p.isDraft) flags.push(<Chip key="draft">draft</Chip>);
-  if (p.reviewRequested) flags.push(<Chip key="req" tone="warning">review requested</Chip>);
+  if (p.reviewRequested) flags.push(<Chip key="req" tone="accent">Review requested</Chip>);
   if (p.reviewStatus === 'draft') flags.push(<Chip key="opened">opened</Chip>);
   if (p.reviewStatus === 'archived') flags.push(<Chip key="archived">archived</Chip>);
   return (
