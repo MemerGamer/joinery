@@ -177,7 +177,8 @@ export async function buildReviewSummaries(
       return {
         ...base,
         title: pull?.title ?? review.branch ?? gitStats?.subject ?? null,
-        authorName: pull?.authorLogin ?? gitStats?.authorName ?? null,
+        // The git name first, so a PR and a local branch by the same person get the same avatar.
+        authorName: gitStats?.authorName ?? pull?.authorLogin ?? null,
         filesTotal: gitStats === null ? null : Object.keys(gitStats.blobByPath).length,
         additions: gitStats === null ? null : gitStats.additions,
         deletions: gitStats === null ? null : gitStats.deletions,

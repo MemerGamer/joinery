@@ -310,7 +310,7 @@ export function Homebase(): React.JSX.Element {
             )}
 
             {/* Both columns share one height: the row's, set by the reviews (with a floor); the queue scrolls inside it. */}
-            {/* Without the queue pane the cards would stretch across the whole column, so the row narrows to roughly the width they have beside it; Explore keeps the full width. */}
+            {/* Without the queue pane the cards would stretch across the whole column, so the row narrows to roughly the width they have beside it, and Explore narrows with it. */}
             <div className={`flex min-h-72 w-full items-stretch gap-3 ${showQueue ? '' : 'mx-auto max-w-4xl'}`}>
               <main className="flex min-w-0 flex-1 flex-col gap-3">
                 {showSkeleton ? (
@@ -330,61 +330,53 @@ export function Homebase(): React.JSX.Element {
                     </div>
                   </Panel>
                 ) : (
-                  <>
-                    <Panel
-                      icon={<GitPullRequest aria-hidden />}
-                      title="Currently reviewing"
-                      count={list.length}
-                      className="flex-1"
-                      bodyClassName="px-2 pb-2"
-                      actions={
-                        // Ordering one (or no) review changes nothing, so the tabs only show when there's something to reorder.
-                        list.length > 1 ? (
-                          <div role="tablist" aria-label="Order" className="flex gap-1">
-                            <OrderTab label="Lightest first" selected={order === 'effort'} onSelect={() => setOrder('effort')} />
-                            <OrderTab label="Recent" selected={order === 'recent'} onSelect={() => setOrder('recent')} />
-                          </div>
-                        ) : undefined
-                      }
-                    >
-                      {reviewing.length === 0 ? (
-                        <p className="rounded-lg border border-dashed border-chrome-border px-4 py-6 text-center text-xs text-chrome-fg-muted">
-                          Nothing in review — pick something up from the queue
-                        </p>
-                      ) : (
-                        <ul className="flex flex-col gap-2">
-                          {list.map((r) => (
-                            <ReviewCard key={r.review.id} review={r} you={youName} onGenerateReadingOrder={generateReadingOrder} />
-                          ))}
-                        </ul>
-                      )}
-                    </Panel>
-
+                  <Panel
+                    icon={<GitPullRequest aria-hidden />}
+                    title="Currently reviewing"
+                    count={list.length}
+                    className="flex-1"
+                    bodyClassName="px-0 pb-0"
+                    actions={
+                      // Ordering one (or no) review changes nothing, so the tabs only show when there's something to reorder.
+                      list.length > 1 ? (
+                        <div role="tablist" aria-label="Order" className="flex gap-1">
+                          <OrderTab label="Lightest first" selected={order === 'effort'} onSelect={() => setOrder('effort')} />
+                          <OrderTab label="Recent" selected={order === 'recent'} onSelect={() => setOrder('recent')} />
+                        </div>
+                      ) : undefined
+                    }
+                  >
+                    {/* One table: in-progress rows, then the cleared ones under their own subheader. */}
+                    {reviewing.length === 0 ? (
+                      <p className="mx-2 mb-2 rounded-lg border border-dashed border-chrome-border px-4 py-6 text-center text-xs text-chrome-fg-muted">
+                        Nothing in review — pick something up from the queue
+                      </p>
+                    ) : (
+                      <ul className="divide-y divide-chrome-border border-t border-chrome-border">
+                        {list.map((r) => (
+                          <ReviewCard key={r.review.id} review={r} you={youName} onGenerateReadingOrder={generateReadingOrder} />
+                        ))}
+                      </ul>
+                    )}
                     {done.length > 0 && (
-                      <Panel
-                        icon={<Check aria-hidden />}
-                        title={
-                          <>
-                            Cleared <span className="font-normal text-chrome-fg-subtle">· all files viewed, nothing open</span>
-                          </>
-                        }
-                        count={done.length}
-                        bodyClassName="px-0 pb-0"
-                        actions={
-                          <button type="button" onClick={handleArchiveAll} className="chrome-btn bg-transparent">
+                      <>
+                        <div className="flex h-8 items-center gap-2 border-t border-chrome-border bg-chrome-bg-hover/40 pl-4 pr-1.5">
+                          <Check size={12} strokeWidth={2} className="text-chrome-fg-subtle" aria-hidden />
+                          <h3 className="text-micro font-medium text-chrome-fg-muted">Cleared</h3>
+                          <span className="text-micro tabular-nums text-chrome-fg-subtle">{done.length}</span>
+                          <button type="button" onClick={handleArchiveAll} className="chrome-btn ml-auto h-6 bg-transparent px-1.5">
                             <Archive size={13} strokeWidth={1.75} aria-hidden />
                             Archive all
                           </button>
-                        }
-                      >
+                        </div>
                         <ul className="divide-y divide-chrome-border border-t border-chrome-border">
                           {done.map((r) => (
                             <DoneRow key={r.review.id} review={r} onArchive={archiveReview} />
                           ))}
                         </ul>
-                      </Panel>
+                      </>
                     )}
-                  </>
+                  </Panel>
                 )}
               </main>
 
@@ -437,7 +429,7 @@ export function Homebase(): React.JSX.Element {
           {!showSkeleton && (
             // A chapter break, not just a gap: what's in hand above, everything else below.
             // The column's own gap-6 (24px) counts toward the space above.
-            <div style={{ paddingTop: exploreGap - EXPLORE_GAP_MIN }}>
+            <div className={`w-full ${showQueue ? '' : 'mx-auto max-w-4xl'}`} style={{ paddingTop: exploreGap - EXPLORE_GAP_MIN }}>
               <ExploreSection />
             </div>
           )}
@@ -500,6 +492,7 @@ function ReviewCard({
   const { review, summary, repo } = hr;
   const title = reviewTitle(review, summary);
   const author = personFrom(summary.authorName);
+  const authorLabel = firstName(author, you);
   const effort = effortOf(summary);
   const chips = reasons(summary);
   const showReadingOrderAction = !summary.hasReadingOrder || summary.agentRunning;
@@ -507,9 +500,9 @@ function ReviewCard({
     // The whole card opens the review via an underlay button, so the one
     // real control inside it (generate a reading order) isn't a button
     // nested in a button. Content ignores the pointer except that control.
-    <li className="home-card home-card-hover group relative">
-      <button type="button" onClick={() => goReview(review.id)} aria-label={`Open ${title}`} className="absolute inset-0 rounded-[inherit]" />
-      <div className="pointer-events-none relative flex items-stretch gap-4 p-4">
+    <li className="group relative transition-colors hover:bg-chrome-bg-hover">
+      <button type="button" onClick={() => goReview(review.id)} aria-label={`Open ${title}`} className="absolute inset-0" />
+      <div className="pointer-events-none relative flex items-stretch gap-4 px-4 py-3">
         <Avatar person={author} size={32} />
 
         <span className="flex min-w-0 flex-1 flex-col gap-2.5">
@@ -527,7 +520,8 @@ function ReviewCard({
               <CiIcon ci={summary.ci} size={12} />
             </span>
             <span className="truncate text-micro text-chrome-fg-subtle">
-              {repoDisplayName(repo)} · {review.baseRef} ← {review.branch ?? 'detached'} · {firstName(author, you)}
+              {repoDisplayName(repo)} · {review.baseRef} ← {review.branch ?? 'detached'}
+              {authorLabel !== 'you' && ` · ${authorLabel}`}
             </span>
           </span>
 
@@ -590,9 +584,9 @@ function DoneRow({ review: hr, onArchive }: { review: HomeReview; onArchive: (id
   const author = personFrom(summary.authorName);
   return (
     <li className="group flex items-center transition-colors hover:bg-chrome-bg-hover">
-      <button type="button" onClick={() => goReview(review.id)} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-2.5 text-left">
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-chrome-success-bg text-chrome-success">
-          <Check size={14} strokeWidth={2.25} aria-hidden />
+      <button type="button" onClick={() => goReview(review.id)} className="flex min-w-0 flex-1 items-center gap-4 px-4 py-2.5 text-left">
+        <span className="flex w-8 shrink-0 justify-center">
+          <Avatar person={author} size={24} />
         </span>
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="flex min-w-0 items-center gap-1.5">
@@ -604,7 +598,6 @@ function DoneRow({ review: hr, onArchive }: { review: HomeReview; onArchive: (id
             {relativeTime(summary.lastActivityAt ?? summary.headCommittedAt ?? review.createdAt)}
           </span>
         </span>
-        <Avatar person={author} size={20} />
       </button>
       <button
         type="button"
