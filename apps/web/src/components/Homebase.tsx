@@ -31,17 +31,19 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { effortOf } from '../lib/effort.ts';
 import { useGlobalKeymap } from '../lib/keymap.ts';
 import { backdropProps, coverGlow, coverPainting, paintingUrl, useBackdrop } from '../lib/covers.ts';
+import { useHeroTones } from '../lib/heroTone.ts';
 import { firstName, personFrom } from '../lib/people.ts';
 import { relativeTime } from '../lib/relativeTime.ts';
 import { goReview } from '../lib/router.ts';
 import { useHomeData, type HomeReview } from '../state/HomeData.tsx';
+import { useTheme } from '../state/ThemeContext.tsx';
 import { CommandPalette } from './CommandPalette.tsx';
 import { BackdropPicker } from './home/BackdropPicker.tsx';
 import { GlowScene } from './home/GlowScene.tsx';
 import { Panel } from './home/Panel.tsx';
 import { Avatar, Chip, CiIcon, DiffStat, EffortMeter, ProgressBar, type Tone } from './home/primitives.tsx';
 import { ExploreSection } from './Explore.tsx';
-import { VersionBadge } from './home/VersionBadge.tsx';
+import { UpdateButton, useVersion, VersionText } from './home/VersionBadge.tsx';
 import { FolderPicker } from './home/FolderPicker.tsx';
 
 type Order = 'effort' | 'recent';
@@ -68,6 +70,19 @@ const EXPLORE_PEEK = 48;
  */
 const SKELETON_DELAY_MS = 300;
 const HERO_MASK = 'linear-gradient(to bottom, black 0%, black 55%, transparent 100%)';
+/**
+ * Light mode's version. Fading a (usually dark) painting into a light page
+ * passes through grey, and over the dark mode's long, even fade that reads
+ * as a milky haze across half the hero. So the painting holds longer, then
+ * drops away on an eased curve: the grey band stays narrow and low.
+ */
+const HERO_MASK_LIGHT =
+  'linear-gradient(to bottom, black 0%, black 62%, rgba(0,0,0,0.78) 71%, rgba(0,0,0,0.45) 80%, rgba(0,0,0,0.18) 89%, rgba(0,0,0,0.05) 95%, transparent 100%)';
+/** The page-colour wash over the hero's lower part, per mode; light mode's is short, for the same reason. */
+const HERO_WASH = {
+  dark: 'linear-gradient(to bottom, transparent 0%, transparent 40%, color-mix(in srgb, var(--chrome-bg-sunken) 55%, transparent) 75%, var(--chrome-bg-sunken) 100%)',
+  light: 'linear-gradient(to bottom, transparent 0%, transparent 80%, var(--chrome-bg-sunken) 100%)',
+} as const;
 /** Glows the text in the page colour so it reads over the painting. */
 const GLOW_BG = '0 0 18px var(--chrome-bg-sunken), 0 0 6px var(--chrome-bg-sunken)';
 
@@ -114,6 +129,8 @@ export function Homebase(): React.JSX.Element {
   }, [ready]);
   const [order, setOrder] = useState<Order>('effort');
   const [onlyRequested, setOnlyRequested] = useOnlyRequested();
+  const version = useVersion();
+  const { chromeMode } = useTheme();
   const [openingKeys, setOpeningKeys] = useState<ReadonlySet<string>>(new Set());
   const [backdrop, setBackdrop] = useBackdrop();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -134,6 +151,17 @@ export function Homebase(): React.JSX.Element {
       setPaletteOpen(true);
     },
   });
+
+  // The sticky top bar only gets its backdrop once the page has moved under it.
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (scroller === null) return;
+    const onScroll = () => setScrolled(scroller.scrollTop > 8);
+    onScroll();
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    return () => scroller.removeEventListener('scroll', onScroll);
+  }, []);
 
   // When the panels end inside the first screen, pull Explore up just enough
   // that its header shows at the fold — a cue that the page scrolls. Past
@@ -160,6 +188,13 @@ export function Homebase(): React.JSX.Element {
   const painting = coverPainting(backdrop);
   const glow = coverGlow(backdrop);
   const hasHero = painting !== null || glow !== null;
+  // What's behind the wordmark: the hero's corner at the top, the page once the bar's backdrop has faded in.
+  const heroTones = useHeroTones(painting, glow);
+  const heroMask = chromeMode === 'light' ? HERO_MASK_LIGHT : HERO_MASK;
+  const overHero = hasHero && !scrolled;
+  const behindLogo = overHero ? (heroTones.left ?? chromeMode) : chromeMode;
+  // The buttons only need recolouring over the hero; elsewhere the chrome colours already fit.
+  const behindButtons = overHero ? (heroTones.right ?? undefined) : undefined;
 
   const youName = me?.name ?? me?.login ?? null;
 
@@ -224,23 +259,38 @@ export function Homebase(): React.JSX.Element {
 
   return (
     <div className="home-shell h-full" {...backdropProps(backdrop)}>
-      {/* Bottom-left corner: the Joinery mark — Homebase is the only place it appears. */}
-      <img src="/joinery.svg" alt="Joinery" className="pointer-events-none absolute bottom-4 left-4 z-20 size-9 select-none" />
-      <VersionBadge />
-      {/* Bottom-right corner: the backdrop switcher, then refresh. */}
-      <div className="absolute right-4 bottom-4 z-20 flex items-end gap-2">
-        <BackdropPicker value={backdrop} onChange={setBackdrop} />
-        <button
-          type="button"
-          aria-label="Refresh"
-          title="Refresh"
-          onClick={() => void refresh({ force: true })}
-          className="home-island flex size-9 items-center justify-center text-chrome-fg-muted transition-colors hover:text-chrome-fg"
-        >
-          <RefreshCw size={16} strokeWidth={1.75} className={refreshing || loading ? 'animate-spin' : ''} aria-hidden />
-        </button>
-      </div>
       <div ref={scrollRef} className="relative h-full overflow-y-auto">
+        {/* Sticky top bar. Zero-height so it takes no room in the flow; its
+            contents hang below it. Over the hero it's bare; once the page
+            scrolls under it, a backdrop fades in so the panels pass behind
+            a solid edge rather than under floating buttons. */}
+        <div className="sticky top-0 z-30 h-0">
+          <div
+            className={`pointer-events-none absolute inset-x-0 top-0 h-32 transition-opacity duration-300 ${scrolled ? 'opacity-100' : 'opacity-0'}`}
+            style={{ background: TOPBAR_FADE }}
+            aria-hidden
+          />
+          {/* Left: the Joinery wordmark — Homebase is the only place it appears. The -dark file is the one drawn for dark backgrounds. */}
+          <img
+            src={behindLogo === 'dark' ? '/joinery-wordmark-squircle-dark.svg' : '/joinery-wordmark-squircle-light.svg'}
+            alt="Joinery"
+            className="pointer-events-none absolute top-[19px] left-4 h-[30px] w-auto select-none"
+          />
+          {/* Right: an update (when there is one), the backdrop switcher, then refresh. */}
+          <div className="home-topbar-right absolute top-4 right-4 flex h-9 items-center gap-1" data-tone={behindButtons}>
+            <UpdateButton {...version} />
+            <BackdropPicker value={backdrop} onChange={setBackdrop} />
+            <button
+              type="button"
+              aria-label="Refresh"
+              title="Refresh"
+              onClick={() => void refresh({ force: true })}
+              className="chrome-icon-btn"
+            >
+              <RefreshCw size={16} strokeWidth={1.75} className={refreshing || loading ? 'animate-spin' : ''} aria-hidden />
+            </button>
+          </div>
+        </div>
         {/* Hero band: the painting (or a glow's gradient) dissolves into the page over its lower ~45%. */}
         {hasHero && (
           <div className="pointer-events-none absolute inset-x-0 top-0 overflow-hidden" style={{ height: HERO_HEIGHT }} aria-hidden>
@@ -249,17 +299,14 @@ export function Homebase(): React.JSX.Element {
                 src={paintingUrl(painting, 'full')}
                 alt=""
                 className="absolute inset-0 size-full object-cover"
-                style={{ objectPosition: '50% 35%', maskImage: HERO_MASK, WebkitMaskImage: HERO_MASK }}
+                style={{ objectPosition: '50% 35%', maskImage: heroMask, WebkitMaskImage: heroMask }}
               />
             ) : (
-              glow !== null && backdrop.kind === 'glow' && <GlowScene glow={glow} shape={backdrop.shape} mask={HERO_MASK} />
+              glow !== null && backdrop.kind === 'glow' && <GlowScene glow={glow} shape={backdrop.shape} mask={heroMask} />
             )}
             <div
               className="absolute inset-0"
-              style={{
-                background:
-                  'linear-gradient(to bottom, transparent 0%, transparent 40%, color-mix(in srgb, var(--chrome-bg-sunken) 55%, transparent) 75%, var(--chrome-bg-sunken) 100%)',
-              }}
+              style={{ background: HERO_WASH[chromeMode] }}
             />
             {/* Dither: a fine dot grid over the painting, for a pixel-art feel. Masked like the painting so it
                 dissolves with it — on light themes an unmasked grid greys the fade-out and ends in a hard edge —
@@ -269,16 +316,10 @@ export function Homebase(): React.JSX.Element {
               style={{
                 backgroundImage: 'radial-gradient(light-dark(rgba(0,0,0,0.3), rgba(0,0,0,0.55)) 0.8px, transparent 1px)',
                 backgroundSize: '4px 4px',
-                maskImage: HERO_MASK,
-                WebkitMaskImage: HERO_MASK,
+                maskImage: heroMask,
+                WebkitMaskImage: heroMask,
               }}
             />
-            {/* Public domain, but still someone's work. */}
-            {painting !== null && (
-              <span className="absolute top-4 left-4 rounded-md bg-chrome-bg/70 px-1.5 py-0.5 text-micro text-chrome-fg-muted backdrop-blur">
-                {painting.name} · {painting.artist}
-              </span>
-            )}
           </div>
         )}
 
@@ -455,6 +496,11 @@ export function Homebase(): React.JSX.Element {
               <ExploreSection />
             </div>
           )}
+
+          {/* The page's foot: just the version; updating lives top-right. */}
+          <div className="flex justify-center pt-4">
+            <VersionText info={version.info} />
+          </div>
         </div>
       </div>
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} initialMode={paletteMode} />
@@ -472,6 +518,20 @@ function SkeletonBlocks({ height = 96 }: { height?: number }): React.JSX.Element
     </>
   );
 }
+
+/** The sticky top bar's backdrop: a see-through veil behind the buttons, then an eased fade so there's no visible edge. */
+const TOPBAR_FADE = `linear-gradient(to bottom, ${[
+  [0.7, 0],
+  [0.66, 22],
+  [0.55, 40],
+  [0.38, 56],
+  [0.22, 70],
+  [0.1, 84],
+  [0.03, 93],
+  [0, 100],
+]
+  .map(([a, at]) => `color-mix(in srgb, var(--chrome-bg-sunken) ${String((a ?? 0) * 100)}%, transparent) ${String(at)}%`)
+  .join(', ')})`;
 
 const ONLY_REQUESTED_KEY = 'joinery.queue.only-requested';
 

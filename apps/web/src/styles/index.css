@@ -628,3 +628,40 @@ button:focus-visible,
     opacity: 0;
   }
 }
+
+/*
+ * Homebase's top-bar buttons over the hero (Homebase.tsx sets `data-tone`
+ * from the painting or gradient behind them; see lib/heroTone.ts). The
+ * chrome colours follow light/dark mode, not the picture, so a dark
+ * painting in light mode needs light buttons and the other way round.
+ * Only the bar's own buttons: the backdrop panel's controls sit on its
+ * own surface and keep the chrome colours.
+ */
+.home-topbar-right[data-tone='dark'] > .chrome-icon-btn,
+.home-topbar-right[data-tone='dark'] > * > .chrome-icon-btn {
+  color: rgb(255 255 255 / 0.72);
+  &:hover {
+    color: #fff;
+    background: rgb(255 255 255 / 0.12);
+  }
+}
+.home-topbar-right[data-tone='light'] > .chrome-icon-btn,
+.home-topbar-right[data-tone='light'] > * > .chrome-icon-btn {
+  color: rgb(0 0 0 / 0.6);
+  &:hover {
+    color: #000;
+    background: rgb(0 0 0 / 0.07);
+  }
+}
+.home-topbar-right[data-tone='dark'] > .home-update {
+  color: #7ee2a8;
+  &:hover {
+    background: rgb(126 226 168 / 0.16);
+  }
+}
+.home-topbar-right[data-tone='light'] > .home-update {
+  color: #157a3e;
+  &:hover {
+    background: rgb(21 122 62 / 0.1);
+  }
+}

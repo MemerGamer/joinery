@@ -1,7 +1,8 @@
 /**
- * The bottom-right backdrop switcher: a single quiet button that opens a
+ * The top-right backdrop switcher: a single quiet button that opens a
  * small panel with three tabs — solid, gradient, image — and the choices
- * under each. Homebase places it in its bottom-right corner, left of refresh.
+ * under each. Homebase places it in its top-right corner, left of refresh;
+ * the panel drops down below the button.
  */
 import { Check, Palette, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -41,9 +42,9 @@ export function BackdropPicker({ value, onChange }: { value: Backdrop; onChange:
   }, [open]);
 
   return (
-    <div ref={ref} className="relative flex flex-col items-end gap-2">
+    <div ref={ref} className="relative">
       {open && (
-        <div className="home-island flex w-72 flex-col gap-3 p-3" role="dialog" aria-label="Backdrop">
+        <div className="home-island absolute top-full right-0 z-30 mt-2 flex w-72 flex-col gap-3 p-3" role="dialog" aria-label="Backdrop">
           <div className="flex items-center gap-1">
             <div role="tablist" aria-label="Backdrop kind" className="flex gap-1">
               {TABS.map((t) => (
@@ -169,7 +170,7 @@ export function BackdropPicker({ value, onChange }: { value: Backdrop; onChange:
         aria-expanded={open}
         aria-label="Change backdrop"
         title="Change backdrop"
-        className="home-island flex size-9 items-center justify-center text-chrome-fg-muted transition-colors hover:text-chrome-fg"
+        className="chrome-icon-btn"
       >
         <Palette size={16} strokeWidth={1.75} aria-hidden />
       </button>
