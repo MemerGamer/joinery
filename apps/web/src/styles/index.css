@@ -222,6 +222,12 @@ body {
   border-radius: var(--chrome-radius-sm);
 }
 
+/* Clicked buttons keep :focus-visible in some webviews; don't leave a lingering ring on them. */
+button:focus-visible,
+[role='button']:focus-visible {
+  outline: none;
+}
+
 /*
  * Tailwind v4's Preflight dropped the v3 default of `button { cursor:
  * pointer }` in favour of matching native browser behaviour, where a
