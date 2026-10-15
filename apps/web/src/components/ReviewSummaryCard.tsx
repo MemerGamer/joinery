@@ -1,16 +1,29 @@
 /**
  * The card above the first file (`renderCodeViewHeader`): what the review
- * header doesn't already say — title, PR facts, CI, size, thread counts, and
- * the PR description behind a disclosure. A branch with no PR (or no `gh`)
+ * header doesn't already say — title, PR facts, CI, size, and the PR
+ * description behind a disclosure. A branch with no PR (or no `gh`)
  * shows the stats only.
  */
-import type { PullDetail, PullState } from '@joinery/core';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import type { CiStatus, PullDetail, PullState } from '@joinery/core';
+import { ArrowUpRight, ChevronDown, ChevronRight } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { callApi } from '../lib/apiClient.ts';
 import { useReview } from '../state/ReviewContext.tsx';
 import { Chip, CiIcon, DiffStat, type Tone } from './home/primitives.tsx';
 import { Markdown } from './Markdown.tsx';
+
+const CI_TONE: Record<CiStatus, Tone> = {
+  passing: 'success',
+  failing: 'danger',
+  pending: 'warning',
+};
+
+const STATE_LABEL: Record<PullState, string> = {
+  open: 'Open',
+  draft: 'Draft',
+  merged: 'Merged',
+  closed: 'Closed',
+};
 
 const STATE_TONE: Record<PullState, Tone> = {
   open: 'success',
@@ -44,7 +57,7 @@ function useReviewPull(reviewId: string | undefined, refreshKey: unknown): PullD
 }
 
 export function ReviewSummaryCard(): React.JSX.Element | null {
-  const { review, fileList, threads } = useReview();
+  const { review, fileList } = useReview();
   const pull = useReviewPull(review?.id, fileList);
   const [descriptionOpen, setDescriptionOpen] = useState(false);
 
@@ -60,8 +73,6 @@ export function ReviewSummaryCard(): React.JSX.Element | null {
 
   if (review === null) return null;
 
-  const open = threads.filter((t) => t.status === 'open').length;
-  const resolved = threads.length - open;
   const title = pull?.title ?? review.branch ?? review.pinnedSha?.slice(0, 7) ?? 'Review';
   const hasDescription = pull !== null && pull.body.trim() !== '';
 
@@ -69,33 +80,49 @@ export function ReviewSummaryCard(): React.JSX.Element | null {
   // width, 10px radius, the island ring, and the 8px seam below.
   return (
     <section className="mb-2 rounded-[10px] bg-chrome-bg-raised font-sans outline outline-1 -outline-offset-1 outline-[var(--chrome-island-ring,var(--chrome-border))]">
-      <div className="flex flex-col gap-2 px-4 py-3">
-        <div className="flex items-baseline gap-2">
+      <div className="flex flex-col gap-1.5 px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2">
           <h2 className="min-w-0 truncate text-[15px] font-semibold text-chrome-fg">{title}</h2>
-          {pull !== null && <span className="shrink-0 text-body tabular-nums text-chrome-fg-subtle">#{pull.number}</span>}
+          {pull !== null &&
+            (pull.url !== null ? (
+              <a
+                href={pull.url}
+                target="_blank"
+                rel="noreferrer"
+                title="Open pull request in a new window"
+                className="group inline-flex shrink-0 items-center gap-0.5 text-body tabular-nums text-chrome-fg-subtle hover:text-chrome-fg hover:underline"
+              >
+                #{pull.number}
+                <ArrowUpRight size={12} strokeWidth={1.5} aria-hidden className="opacity-0 group-hover:opacity-100" />
+              </a>
+            ) : (
+              <span className="shrink-0 text-body tabular-nums text-chrome-fg-subtle">#{pull.number}</span>
+            ))}
+          {pull !== null && (
+            <span className="ml-auto inline-flex shrink-0 items-center gap-1.5">
+              <Chip tone={STATE_TONE[pull.state]}>{STATE_LABEL[pull.state]}</Chip>
+              {pull.ci !== null && (
+                <Chip tone={CI_TONE[pull.ci]} icon={<CiIcon ci={pull.ci} size={11} />}>
+                  {pull.ci === 'pending' ? 'CI running' : `CI ${pull.ci}`}
+                </Chip>
+              )}
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-chrome-fg-muted">
           {pull !== null && (
             <>
-              <Chip tone={STATE_TONE[pull.state]}>{pull.state}</Chip>
-              {pull.authorLogin !== null && <span>{pull.authorLogin}</span>}
               <span>
+                {pull.authorLogin !== null && <span className="text-chrome-fg">{pull.authorLogin} </span>}
                 into <span className="font-mono">{pull.baseRefName}</span>
               </span>
-              {pull.ci !== null && (
-                <span className="inline-flex items-center gap-1">
-                  <CiIcon ci={pull.ci} />
-                  {pull.ci === 'pending' ? 'CI running' : `CI ${pull.ci}`}
-                </span>
-              )}
             </>
           )}
-          <DiffStat additions={totals.additions} deletions={totals.deletions} />
-          <span className="tabular-nums">
-            {fileList.length} {fileList.length === 1 ? 'file' : 'files'}
-          </span>
-          <span className="tabular-nums">
-            {open} open · {resolved} resolved
+          <span className="ml-auto inline-flex items-center gap-3">
+            <span className="tabular-nums">
+              {fileList.length} {fileList.length === 1 ? 'file' : 'files'}
+            </span>
+            <DiffStat additions={totals.additions} deletions={totals.deletions} />
           </span>
         </div>
       </div>

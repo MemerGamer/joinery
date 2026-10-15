@@ -3,10 +3,8 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   Columns2,
-  GitMerge,
   Loader2,
   MessageSquare,
-  MessageSquareOff,
   Play,
   Rows2,
   Search,
@@ -15,7 +13,6 @@ import { useState } from 'react';
 import { ApiError } from '../lib/apiClient.ts';
 import { goHomebase } from '../lib/router.ts';
 import { useReview } from '../state/ReviewContext.tsx';
-import { Chip } from './home/primitives.tsx';
 import { RevisionPicker } from './RevisionPicker.tsx';
 
 /**
@@ -109,9 +106,11 @@ export function Header({ onOpenPalette }: { onOpenPalette: () => void }): React.
     setDiffStyle,
     collapseAllFiles,
     expandAllFiles,
-    commentsVisible,
-    toggleComments,
+    setRightPanelOpen,
+    threadsPanelOpen,
+    setThreadsPanelOpen,
   } = useReview();
+  const threadsShown = rightPanelOpen && threadsPanelOpen;
 
   const repoName = repo?.rootPath.split('/').filter(Boolean).at(-1);
 
@@ -135,15 +134,6 @@ export function Header({ onOpenPalette }: { onOpenPalette: () => void }): React.
         <span className="truncate font-medium text-chrome-fg">
           {review?.branch ?? review?.pinnedSha?.slice(0, 10) ?? '…'}
         </span>
-        {reviewState?.merged === true && review !== null && (
-          <Chip
-            tone="accent"
-            icon={<GitMerge size={11} strokeWidth={2} aria-hidden />}
-            title={`The branch is gone and its commits are in ${review.baseRef}`}
-          >
-            Merged into {review.baseRef}
-          </Chip>
-        )}
       </div>
 
       {/* Nothing left to start on once the branch has landed. */}
@@ -201,19 +191,23 @@ export function Header({ onOpenPalette }: { onOpenPalette: () => void }): React.
             <Rows2 size={15} strokeWidth={1.75} aria-hidden />
           )}
         </button>
+        {/* Threads live in the right pane, so opening them opens that too. */}
         <button
           type="button"
-          aria-label={commentsVisible ? 'Hide comments' : 'Show comments'}
-          title={commentsVisible ? 'Hide comments (Shift+C)' : 'Show comments (Shift+C)'}
-          aria-pressed={commentsVisible}
-          onClick={toggleComments}
-          className={`chrome-icon-btn ${commentsVisible ? '' : 'text-chrome-fg-subtle'}`}
+          aria-label={threadsShown ? 'Close threads' : 'Open threads'}
+          title={threadsShown ? 'Close threads (T)' : 'Open threads (T)'}
+          aria-expanded={threadsShown}
+          onClick={() => {
+            if (threadsShown) {
+              setThreadsPanelOpen(false);
+            } else {
+              setRightPanelOpen(true);
+              setThreadsPanelOpen(true);
+            }
+          }}
+          className="chrome-icon-btn"
         >
-          {commentsVisible ? (
-            <MessageSquare size={15} strokeWidth={1.75} aria-hidden />
-          ) : (
-            <MessageSquareOff size={15} strokeWidth={1.75} aria-hidden />
-          )}
+          <MessageSquare size={15} strokeWidth={1.75} aria-hidden />
         </button>
       </div>
 
@@ -224,9 +218,9 @@ export function Header({ onOpenPalette }: { onOpenPalette: () => void }): React.
           type="button"
           aria-label="Toggle file tree"
           title="Toggle file tree"
-          aria-pressed={leftPanelOpen}
+          aria-expanded={leftPanelOpen}
           onClick={toggleLeftPanel}
-          className={`chrome-icon-btn ${leftPanelOpen ? '' : 'text-chrome-fg-subtle'}`}
+          className="chrome-icon-btn"
         >
           <PanelToggleIcon side="left" filled={leftPanelOpen} />
         </button>
@@ -234,9 +228,9 @@ export function Header({ onOpenPalette }: { onOpenPalette: () => void }): React.
           type="button"
           aria-label="Toggle reading order"
           title="Toggle reading order"
-          aria-pressed={rightPanelOpen}
+          aria-expanded={rightPanelOpen}
           onClick={toggleRightPanel}
-          className={`chrome-icon-btn ${rightPanelOpen ? '' : 'text-chrome-fg-subtle'}`}
+          className="chrome-icon-btn"
         >
           <PanelToggleIcon side="right" filled={rightPanelOpen} />
         </button>

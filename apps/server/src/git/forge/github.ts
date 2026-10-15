@@ -288,6 +288,7 @@ const pullViewSchema = z.object({
   additions: z.number().int().nonnegative().optional(),
   deletions: z.number().int().nonnegative().optional(),
   changedFiles: z.number().int().nonnegative().optional(),
+  url: z.string().optional(),
 });
 
 /**
@@ -302,7 +303,7 @@ async function viewPull(prNumber: number, options: ForgeOptions): Promise<PullDe
       'view',
       String(prNumber),
       '--json',
-      'number,title,body,state,isDraft,author,baseRefName,statusCheckRollup,additions,deletions,changedFiles',
+      'number,title,body,state,isDraft,author,baseRefName,statusCheckRollup,additions,deletions,changedFiles,url',
     ],
     options.cwd,
   );
@@ -322,6 +323,7 @@ async function viewPull(prNumber: number, options: ForgeOptions): Promise<PullDe
       additions: p.additions ?? null,
       deletions: p.deletions ?? null,
       changedFiles: p.changedFiles ?? null,
+      url: p.url ?? null,
     };
   } catch {
     return null;

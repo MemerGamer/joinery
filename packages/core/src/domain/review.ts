@@ -166,6 +166,8 @@ export const pullDetailSchema = z.object({
   additions: z.number().int().nonnegative().nullable(),
   deletions: z.number().int().nonnegative().nullable(),
   changedFiles: z.number().int().nonnegative().nullable(),
+  /** The PR's page on the forge; null when the forge didn't report one. */
+  url: z.string().nullable(),
 });
 export type PullDetail = z.infer<typeof pullDetailSchema>;
 

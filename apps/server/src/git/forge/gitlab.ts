@@ -215,6 +215,7 @@ const pullViewSchema = z.object({
   head_pipeline: pipelineSchema,
   // A string, and "1000+" past the cap.
   changes_count: z.string().nullable().default(null),
+  web_url: z.string().optional(),
 });
 
 /** One MR in full. GitLab reports no line counts, so only `changedFiles` is filled. */
@@ -236,6 +237,7 @@ async function viewPull(prNumber: number, options: ForgeOptions): Promise<PullDe
     additions: null,
     deletions: null,
     changedFiles: Number.isFinite(changed) ? changed : null,
+    url: p.web_url ?? null,
   };
 }
 

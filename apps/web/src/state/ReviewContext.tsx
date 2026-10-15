@@ -106,6 +106,29 @@ function persistCollapseOverrides(reviewId: string, overrides: ReadonlyMap<strin
   }
 }
 
+/**
+ * A side panel's open/closed state, shared by every review and persisted in
+ * localStorage per side (next to its width, see `useResizableWidth`).
+ */
+function usePersistedPanelOpen(side: 'left' | 'right'): [boolean, React.Dispatch<React.SetStateAction<boolean>>] {
+  const storageKey = `joinery.panel-open.${side}`;
+  const [open, setOpen] = useState(() => {
+    try {
+      return window.localStorage.getItem(storageKey) !== 'false';
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(storageKey, String(open));
+    } catch {
+      // Best-effort only — private/locked-down storage just won't persist.
+    }
+  }, [open, storageKey]);
+  return [open, setOpen];
+}
+
 export interface ViewportAnchor {
   path: string;
   side: 'old' | 'new';
@@ -351,8 +374,8 @@ export function ReviewProvider({
   });
 
   const [diffStyle, setDiffStyle] = useState<DiffStyle>('split');
-  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
-  const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  const [leftPanelOpen, setLeftPanelOpen] = usePersistedPanelOpen('left');
+  const [rightPanelOpen, setRightPanelOpen] = usePersistedPanelOpen('right');
   const [threadsPanelOpen, setThreadsPanelOpen] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [currentStepId, setCurrentStepId] = useState<string | null>(null);
