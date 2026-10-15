@@ -1,0 +1,13 @@
+import type { Repo } from '@joinery/core';
+
+/**
+ * A PR's page on the forge, from the repo's parsed remote. GitLab hosts get
+ * merge-request paths; anything else is treated as GitHub. Null when the
+ * repo has no recognised remote.
+ */
+export function pullUrl(repo: Repo, number: number): string | null {
+  const { remoteHost: host, remoteOwner: owner, remoteName: name } = repo;
+  if (host === null || owner === null || name === null) return null;
+  const base = `https://${host}/${owner}/${name}`;
+  return host.includes('gitlab') ? `${base}/-/merge_requests/${String(number)}` : `${base}/pull/${String(number)}`;
+}

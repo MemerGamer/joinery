@@ -51,14 +51,6 @@ export function personFrom(name: string | null | undefined): Person {
   return AGENT_NAME_RE.test(trimmed) ? { ...base, agent: true } : base;
 }
 
-/** First word of the person's name, or "you" when it's the local user. */
-export function firstName(p: Person, you: string | null): string {
-  if (you !== null && you.trim().length > 0 && p.name.toLowerCase() === you.trim().toLowerCase()) {
-    return 'you';
-  }
-  return p.name.split(/\s+/)[0] ?? p.name;
-}
-
 /** Whether `name` refers to the local user, by either their display name or login. */
 export function isYou(name: string | null, me: Me | null): boolean {
   if (name === null || me === null) return false;

@@ -18,7 +18,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Branch, Pull, PullSearchResult, PullState, Repo, ReviewStatus } from '@joinery/core';
 import { ApiError, callApi } from '../lib/apiClient.ts';
 import { effortOf } from '../lib/effort.ts';
-import { firstName, personFrom, type Person } from '../lib/people.ts';
+import { personFrom, type Person } from '../lib/people.ts';
 import { relativeTime } from '../lib/relativeTime.ts';
 import { EXPLORE_ID } from '../lib/router.ts';
 import { useHomeData } from '../state/HomeData.tsx';
@@ -72,8 +72,7 @@ function repoLabel(r: Repo): string {
 }
 
 export function ExploreSection(): React.JSX.Element {
-  const { repos, pullsByRepo, pullsAvailable, me, loading, error, openPull, openPullNumber, openBranch } = useHomeData();
-  const you = me?.name ?? me?.login ?? null;
+  const { repos, pullsByRepo, pullsAvailable, loading, error, openPull, openPullNumber, openBranch } = useHomeData();
 
   const [repoId, setRepoIdState] = useState<string>(ALL_REPOS);
   const [q, setQ] = useState('');
@@ -353,7 +352,7 @@ export function ExploreSection(): React.JSX.Element {
                       value={q}
                       onChange={(e) => setQ(e.target.value)}
                       onKeyDown={handleNavKey}
-                      placeholder={`Search ${all ? 'all repositories' : repo !== undefined ? repoLabel(repo) : 'this repo'} — a branch, a PR title, or #number`}
+                      placeholder={`Search a branch, a PR title, or #number ${all ? 'across all repos' : `in ${repo !== undefined ? repoLabel(repo) : 'this repo'}`}`}
                       spellCheck={false}
                       autoComplete="off"
                       aria-label="Search branches and pull requests"
@@ -402,7 +401,7 @@ export function ExploreSection(): React.JSX.Element {
               ) : (
                 <div className="-mx-4 flex min-h-0 flex-1 flex-col gap-7 overflow-y-auto px-4 pb-6">
                   <section className="flex flex-col gap-2">
-                    <SectionHeading title="Pull requests" count={pulls.length} hint="open, not started" />
+                    <SectionHeading title="Pull requests" count={pulls.length} />
                     {loading ? (
                       <Empty>Loading…</Empty>
                     ) : pullsUnavailable ? (
@@ -419,7 +418,6 @@ export function ExploreSection(): React.JSX.Element {
                               key={key}
                               pull={p}
                               repoName={repoNameOf(id)}
-                              you={you}
                               highlighted={idx === highlighted}
                               busy={busyKey === key}
                               registerRef={(el) => setRowRef(key, el)}
@@ -433,7 +431,7 @@ export function ExploreSection(): React.JSX.Element {
 
                   {searchable && (found.length > 0 || searching || !searchState.available) && (
                     <section className="flex flex-col gap-2">
-                      <SectionHeading title="More pull requests" count={found.length} hint="any state, from your code host" />
+                      <SectionHeading title="More pull requests" count={found.length} />
                       {found.length === 0 ? (
                         <Empty>{searching ? 'Searching…' : 'Install and sign in to `gh` or `glab` to search pull requests.'}</Empty>
                       ) : (
@@ -451,7 +449,6 @@ export function ExploreSection(): React.JSX.Element {
                                 key={key}
                                 found={f}
                                 repoName={repoNameOf(f.repoId)}
-                                you={you}
                                 highlighted={idx === highlighted}
                                 busy={busyKey === key}
                                 registerRef={(el) => setRowRef(key, el)}
@@ -465,7 +462,7 @@ export function ExploreSection(): React.JSX.Element {
                   )}
 
                   <section className="flex flex-col gap-2">
-                    <SectionHeading title="Branches" count={branches.length} hint="local and remote, newest first" />
+                    <SectionHeading title="Branches" count={branches.length} />
                     {loading || (branchesStale && branches.length === 0) ? (
                       <Empty>Loading…</Empty>
                     ) : branches.length === 0 ? (
@@ -485,7 +482,6 @@ export function ExploreSection(): React.JSX.Element {
                               key={key}
                               branch={b}
                               repoName={repoNameOf(id)}
-                              you={you}
                               isDefault={b.name === repoById.get(id)?.defaultBranch}
                               highlighted={idx === highlighted}
                               busy={busyKey === key}
@@ -547,7 +543,6 @@ function Empty({ children }: { children: React.ReactNode }): React.JSX.Element {
 function PullRow({
   pull: p,
   repoName,
-  you,
   highlighted,
   busy,
   registerRef,
@@ -555,7 +550,6 @@ function PullRow({
 }: {
   pull: Pull;
   repoName: string | undefined;
-  you: string | null;
   highlighted: boolean;
   busy: boolean;
   registerRef: (el: HTMLLIElement | null) => void;
@@ -584,7 +578,7 @@ function PullRow({
           <span className="flex items-center gap-1.5 text-micro text-chrome-fg-subtle">
             <CiIcon ci={p.ci} size={11} />
             <span className="truncate">
-              {repoName !== undefined && `${repoName} `}#{p.number} · {p.headRefName} → {p.baseRefName} · {firstName(author, you)}
+              {repoName !== undefined && `${repoName} `}#{p.number} · {p.headRefName} → {p.baseRefName}
             </span>
           </span>
         </span>
@@ -600,7 +594,6 @@ function PullRow({
 function FoundRow({
   found: f,
   repoName,
-  you,
   highlighted,
   busy,
   registerRef,
@@ -608,7 +601,6 @@ function FoundRow({
 }: {
   found: PullSearchResult;
   repoName: string | undefined;
-  you: string | null;
   highlighted: boolean;
   busy: boolean;
   registerRef: (el: HTMLLIElement | null) => void;
@@ -631,7 +623,7 @@ function FoundRow({
             <Chip tone={STATE_TONE[f.state]}>{f.state}</Chip>
           </span>
           <span className="truncate text-micro text-chrome-fg-subtle">
-            {repoName !== undefined && `${repoName} `}#{f.number} · {firstName(author, you)}
+            {repoName !== undefined && `${repoName} `}#{f.number}
           </span>
         </span>
         <span className="shrink-0 pt-0.5 text-micro tabular-nums text-chrome-fg-subtle">{relativeTime(f.updatedAtUnix)}</span>
@@ -643,7 +635,6 @@ function FoundRow({
 function BranchRow({
   branch: b,
   repoName,
-  you,
   isDefault,
   highlighted,
   busy,
@@ -652,7 +643,6 @@ function BranchRow({
 }: {
   branch: Branch;
   repoName: string | undefined;
-  you: string | null;
   isDefault: boolean;
   highlighted: boolean;
   busy: boolean;
@@ -681,7 +671,7 @@ function BranchRow({
             <GitBranch size={11} strokeWidth={2} className="shrink-0" aria-hidden />
             <span className="truncate">
               {repoName !== undefined && `${repoName} · `}
-              {b.subject ?? ''} · {firstName(author, you)}
+              {b.subject ?? ''}
             </span>
           </span>
         </span>

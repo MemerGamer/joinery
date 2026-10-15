@@ -23,7 +23,7 @@ import {
   Clock,
   GitPullRequest,
   Loader2,
-  MessageSquare,
+  ChevronDown,
   RefreshCw,
   Waypoints,
 } from 'lucide-react';
@@ -32,7 +32,8 @@ import { effortOf } from '../lib/effort.ts';
 import { useGlobalKeymap } from '../lib/keymap.ts';
 import { backdropProps, coverGlow, coverPainting, paintingUrl, useBackdrop } from '../lib/covers.ts';
 import { useHeroTones } from '../lib/heroTone.ts';
-import { firstName, personFrom } from '../lib/people.ts';
+import { personFrom } from '../lib/people.ts';
+import { pullUrl } from '../lib/pullUrl.ts';
 import { relativeTime } from '../lib/relativeTime.ts';
 import { goReview } from '../lib/router.ts';
 import { useHomeData, type HomeReview } from '../state/HomeData.tsx';
@@ -41,7 +42,7 @@ import { CommandPalette } from './CommandPalette.tsx';
 import { BackdropPicker } from './home/BackdropPicker.tsx';
 import { GlowScene } from './home/GlowScene.tsx';
 import { Panel } from './home/Panel.tsx';
-import { Avatar, Chip, CiIcon, DiffStat, EffortMeter, ProgressBar, type Tone } from './home/primitives.tsx';
+import { Avatar, Chip, CiIcon, DiffStat, EffortMeter, ProgressBar } from './home/primitives.tsx';
 import { ExploreSection } from './Explore.tsx';
 import { UpdateButton, useVersion, VersionText } from './home/VersionBadge.tsx';
 import { FolderPicker } from './home/FolderPicker.tsx';
@@ -398,7 +399,12 @@ export function Homebase(): React.JSX.Element {
                     ) : (
                       <ul className="divide-y divide-chrome-border border-t border-chrome-border">
                         {list.map((r) => (
-                          <ReviewCard key={r.review.id} review={r} you={youName} onGenerateReadingOrder={generateReadingOrder} />
+                          <ReviewCard
+                            key={r.review.id}
+                            review={r}
+                            onGenerateReadingOrder={generateReadingOrder}
+                            onArchive={archiveReview}
+                          />
                         ))}
                       </ul>
                     )}
@@ -475,7 +481,6 @@ export function Homebase(): React.JSX.Element {
                               repoName={repo !== undefined ? repoDisplayName(repo) : repoId}
                               repoId={repoId}
                               pull={pull}
-                              you={youName}
                               opening={openingKeys.has(key)}
                               onOpen={handleOpenPull}
                             />
@@ -570,99 +575,78 @@ function OrderTab({ label, selected, onSelect }: { label: string; selected: bool
   );
 }
 
-/** The "what's waiting in here" chips for a review card. CI, commits and steps are not chips: CI is the icon by the title, the rest is noise. */
-function reasons(summary: ReviewSummary): { tone: Tone; icon: React.ReactNode; text: string }[] {
-  const out: { tone: Tone; icon: React.ReactNode; text: string }[] = [];
-  const i = { size: 11, strokeWidth: 2, 'aria-hidden': true } as const;
-  if (summary.openThreads > 0)
-    out.push({
-      tone: 'neutral',
-      icon: <MessageSquare {...i} />,
-      text: `${String(summary.openThreads)} open ${summary.openThreads === 1 ? 'thread' : 'threads'}`,
-    });
-  return out;
-}
-
 function ReviewCard({
   review: hr,
-  you,
   onGenerateReadingOrder,
+  onArchive,
 }: {
   review: HomeReview;
-  you: string | null;
   onGenerateReadingOrder: (id: string) => Promise<void>;
+  onArchive: (id: string) => Promise<void>;
 }): React.JSX.Element {
   const { review, summary, repo } = hr;
   const title = reviewTitle(review, summary);
   const author = personFrom(summary.authorName);
-  const authorLabel = firstName(author, you);
   const effort = effortOf(summary);
-  const chips = reasons(summary);
-  const showReadingOrderAction = !summary.hasReadingOrder || summary.agentRunning;
+  const prHref = review.prNumber === null ? null : pullUrl(repo, review.prNumber);
   return (
-    // The whole card opens the review via an underlay button, so the one
-    // real control inside it (generate a reading order) isn't a button
-    // nested in a button. Content ignores the pointer except that control.
+    // The whole card opens the review via an underlay button, so the real
+    // controls inside it (the PR link, the options menu) aren't nested in a
+    // button. Content ignores the pointer except those controls.
     <li className="group relative transition-colors hover:bg-chrome-bg-hover">
       <button type="button" onClick={() => goReview(review.id)} aria-label={`Open ${title}`} className="absolute inset-0" />
       <div className="pointer-events-none relative flex items-stretch gap-4 px-4 py-3">
         <Avatar person={author} size={32} />
 
-        <span className="flex min-w-0 flex-1 flex-col gap-2.5">
-          <span className="flex flex-col gap-0.5">
-            <span className="flex min-w-0 items-center gap-1.5">
-              <span className="truncate text-body font-medium text-chrome-fg">{title}</span>
-              {review.status === 'orphaned' && <Chip>branch gone</Chip>}
-              {review.prNumber !== null && (
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          {/* After the title: PR number, CI, then state (draft / branch gone). */}
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-body font-medium text-chrome-fg">{title}</span>
+            {review.prNumber !== null &&
+              (prHref !== null ? (
+                <a
+                  href={prHref}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Open pull request in a new tab"
+                  className="pointer-events-auto flex shrink-0 items-center gap-0.5 text-micro tabular-nums text-chrome-fg-subtle hover:text-chrome-fg hover:underline"
+                >
+                  <GitPullRequest size={11} strokeWidth={2} aria-hidden />
+                  {review.prNumber}
+                </a>
+              ) : (
                 <span className="flex shrink-0 items-center gap-0.5 text-micro tabular-nums text-chrome-fg-subtle">
                   <GitPullRequest size={11} strokeWidth={2} aria-hidden />
                   {review.prNumber}
                 </span>
-              )}
-              {summary.draft && <Chip>draft</Chip>}
-              <CiIcon ci={summary.ci} size={12} />
-            </span>
-            <span className="truncate text-micro text-chrome-fg-subtle">
-              {repoDisplayName(repo)} · {review.baseRef} ← {review.branch ?? 'detached'}
-              {authorLabel !== 'you' && ` · ${authorLabel}`}
+              ))}
+            <CiIcon ci={summary.ci} size={12} />
+            {summary.draft && <Chip>draft</Chip>}
+            {review.status === 'orphaned' && <Chip>branch gone</Chip>}
+          </span>
+          {/* Repo, then base ← branch: set apart by space rather than a dot. */}
+          <span className="flex min-w-0 items-center gap-3 text-micro text-chrome-fg-subtle">
+            <span className="shrink-0">{repoDisplayName(repo)}</span>
+            <span className="truncate">
+              {review.baseRef} ← {review.branch ?? 'detached'}
             </span>
           </span>
-
-          {(chips.length > 0 || showReadingOrderAction) && (
-            <span className="flex flex-wrap items-center gap-1.5">
-              {chips.map((c) => (
-                <Chip key={c.text} tone={c.tone} icon={c.icon}>
-                  {c.text}
-                </Chip>
-              ))}
-              {showReadingOrderAction &&
-                (summary.agentRunning ? (
-                  <span
-                    role="status"
-                    className="inline-flex h-5 items-center gap-1 rounded-md bg-chrome-accent-soft px-1.5 text-micro font-medium whitespace-nowrap text-chrome-accent"
-                  >
-                    <Loader2 size={11} strokeWidth={2} className="animate-spin" aria-hidden />
-                    Generating reading order…
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => void onGenerateReadingOrder(review.id)}
-                    // Grey until hovered: it repeats on most cards, so in accent it would shout.
-                    className="pointer-events-auto inline-flex h-5 items-center gap-1 rounded-md bg-chrome-bg-hover px-1.5 text-micro font-medium whitespace-nowrap text-chrome-fg-muted! transition-colors hover:bg-chrome-accent-soft hover:text-chrome-accent!"
-                  >
-                    <Waypoints size={11} strokeWidth={2} aria-hidden />
-                    Generate reading order
-                  </button>
-                ))}
-            </span>
-          )}
         </span>
 
         {/* Right column, three aligned lines: time to review, progress, diff size · files viewed. */}
         <span className="flex w-48 shrink-0 flex-col justify-between gap-1.5 text-micro">
-          <span className="flex justify-end">
+          <span className="flex items-center justify-end">
             <EffortMeter level={effort.level} label={effort.label} minutes={effort.minutes} />
+            {/* Options, after the time: zero-width until the row is hovered (or it's focused / open),
+                then it slides open and pushes the time left; it slides back on the way out. */}
+            <span className="-my-0.5 flex w-0 shrink-0 justify-end overflow-hidden opacity-0 transition-[width,opacity] duration-150 group-hover:w-[26px] group-hover:opacity-100 focus-within:w-[26px] focus-within:opacity-100 has-[[aria-expanded=true]]:w-[26px] has-[[aria-expanded=true]]:opacity-100">
+              <ReviewOptions
+                generating={summary.agentRunning}
+                hasReadingOrder={summary.hasReadingOrder}
+                onGenerateReadingOrder={() => void onGenerateReadingOrder(review.id)}
+                onArchive={() => void onArchive(review.id)}
+              />
+            </span>
           </span>
           {summary.filesTotal !== null && <ProgressBar value={summary.viewedFiles} total={summary.filesTotal} />}
           <span className="flex items-end justify-between leading-none">
@@ -676,8 +660,115 @@ function ReviewCard({
             </span>
           </span>
         </span>
+
       </div>
     </li>
+  );
+}
+
+/**
+ * The chevron menu at a review row's top right: (re)generate the reading order,
+ * or archive. Drawn `fixed` from the button's position so the panel's
+ * `overflow-hidden` can't clip it on the last row; scrolling closes it.
+ */
+function ReviewOptions({
+  generating,
+  hasReadingOrder,
+  onGenerateReadingOrder,
+  onArchive,
+}: {
+  generating: boolean;
+  hasReadingOrder: boolean;
+  onGenerateReadingOrder: () => void;
+  onArchive: () => void;
+}): React.JSX.Element {
+  const [at, setAt] = useState<{ top: number; right: number } | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const open = at !== null;
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setAt(null);
+    const onPointerDown = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (!menuRef.current?.contains(t) && !buttonRef.current?.contains(t)) close();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [open]);
+
+  const toggle = () => {
+    if (open) return setAt(null);
+    const r = buttonRef.current?.getBoundingClientRect();
+    if (r !== undefined) setAt({ top: r.bottom + 4, right: window.innerWidth - r.right });
+  };
+
+  const item = 'flex h-7 w-full items-center gap-2 rounded px-2 text-left text-xs text-chrome-fg hover:bg-chrome-bg-hover disabled:text-chrome-fg-muted disabled:hover:bg-transparent';
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={toggle}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Review options"
+        title="Options"
+        className="chrome-icon-btn pointer-events-auto size-5! rounded-[5px]!"
+      >
+        <ChevronDown size={13} strokeWidth={2} aria-hidden />
+      </button>
+      {at !== null && (
+        <div
+          ref={menuRef}
+          role="menu"
+          className="pointer-events-auto fixed z-50 min-w-48 overflow-hidden rounded-md bg-chrome-bg-raised p-1 shadow-chrome ring-1 ring-chrome-fg/10"
+          style={{ top: at.top, right: at.right }}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            disabled={generating}
+            onClick={() => {
+              onGenerateReadingOrder();
+              setAt(null);
+            }}
+            className={item}
+          >
+            {generating ? (
+              <Loader2 size={13} strokeWidth={1.75} className="animate-spin text-chrome-accent" aria-hidden />
+            ) : (
+              <Waypoints size={13} strokeWidth={1.75} aria-hidden />
+            )}
+            {generating ? 'Generating reading order…' : hasReadingOrder ? 'Regenerate reading order' : 'Generate reading order'}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onArchive();
+              setAt(null);
+            }}
+            className={item}
+          >
+            <Archive size={13} strokeWidth={1.75} aria-hidden />
+            Archive
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -722,14 +813,12 @@ function QueueRow({
   repoId,
   repoName,
   pull: p,
-  you,
   opening,
   onOpen,
 }: {
   repoId: string;
   repoName: string;
   pull: Pull;
-  you: string | null;
   opening: boolean;
   onOpen: (repoId: string, pull: Pull) => void;
 }): React.JSX.Element {
@@ -758,7 +847,7 @@ function QueueRow({
           <span className="flex items-center gap-1.5 text-micro text-chrome-fg-subtle">
             <CiIcon ci={p.ci} size={11} />
             <span className="truncate">
-              {repoName} #{p.number} · {firstName(author, you)}
+              {repoName} #{p.number}
             </span>
           </span>
           {flags.length > 0 && <span className="flex items-center gap-1">{flags}</span>}
