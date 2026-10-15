@@ -113,6 +113,7 @@ export function Homebase(): React.JSX.Element {
     return () => clearTimeout(timer);
   }, [ready]);
   const [order, setOrder] = useState<Order>('effort');
+  const [onlyRequested, setOnlyRequested] = useOnlyRequested();
   const [openingKeys, setOpeningKeys] = useState<ReadonlySet<string>>(new Set());
   const [backdrop, setBackdrop] = useBackdrop();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -188,6 +189,8 @@ export function Homebase(): React.JSX.Element {
         ),
     [pullsByRepo],
   );
+
+  const shownQueue = onlyRequested ? queue.filter((q) => q.pull.reviewRequested) : queue;
 
   const handleOpenPull = (repoId: string, pull: Pull) => {
     const key = `${repoId}:${String(pull.number)}`;
@@ -387,7 +390,20 @@ export function Homebase(): React.JSX.Element {
                   <Panel
                     icon={<Clock aria-hidden />}
                     title="Up for review"
-                    count={queue.length}
+                    count={shownQueue.length}
+                    actions={
+                      <button
+                        type="button"
+                        aria-pressed={onlyRequested}
+                        onClick={() => setOnlyRequested((v) => !v)}
+                        title="Show only PRs where you're a requested reviewer"
+                        className={`flex h-6 items-center rounded-md px-2.5 text-xs font-medium transition-colors ${
+                          onlyRequested ? 'bg-chrome-bg-active text-chrome-fg' : 'text-chrome-fg-muted hover:bg-chrome-bg-hover hover:text-chrome-fg'
+                        }`}
+                      >
+                        Only requested
+                      </button>
+                    }
                     className="absolute! inset-0"
                     bodyClassName="flex flex-col px-0 pb-0"
                   >
@@ -401,9 +417,15 @@ export function Homebase(): React.JSX.Element {
                           Install and sign in to <code>gh</code> or <code>glab</code> to see open pull requests here.
                         </p>
                       </div>
+                    ) : shownQueue.length === 0 ? (
+                      <div className="px-2 pt-1 pb-2">
+                        <p className="rounded-lg border border-dashed border-chrome-border px-4 py-6 text-center text-xs text-chrome-fg-muted">
+                          Nobody's asked for your review right now
+                        </p>
+                      </div>
                     ) : (
                       <ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pt-1 pb-2">
-                        {queue.map(({ repoId, pull }) => {
+                        {shownQueue.map(({ repoId, pull }) => {
                           const key = `${repoId}:${String(pull.number)}`;
                           const repo = repos.find((r) => r.id === repoId);
                           return (
@@ -449,6 +471,27 @@ function SkeletonBlocks({ height = 96 }: { height?: number }): React.JSX.Element
       ))}
     </>
   );
+}
+
+const ONLY_REQUESTED_KEY = 'joinery.queue.only-requested';
+
+/** The queue's "Only requested" filter, remembered across visits. */
+function useOnlyRequested(): [boolean, React.Dispatch<React.SetStateAction<boolean>>] {
+  const [on, setOn] = useState(() => {
+    try {
+      return window.localStorage.getItem(ONLY_REQUESTED_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(ONLY_REQUESTED_KEY, String(on));
+    } catch {
+      // Best-effort only — private/locked-down storage just won't persist.
+    }
+  }, [on]);
+  return [on, setOn];
 }
 
 function OrderTab({ label, selected, onSelect }: { label: string; selected: boolean; onSelect: () => void }): React.JSX.Element {
