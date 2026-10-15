@@ -556,18 +556,18 @@ function ReviewCard({
           )}
         </span>
 
-        {/* Right column, three aligned lines: diff size, progress, effort · files viewed. */}
+        {/* Right column, three aligned lines: time to review, progress, diff size · files viewed. */}
         <span className="flex w-48 shrink-0 flex-col justify-between gap-1.5 text-micro">
           <span className="flex justify-end">
-            {summary.filesTotal === null ? (
-              <span className="text-chrome-fg-subtle">—</span>
-            ) : (
-              <DiffStat additions={summary.additions ?? 0} deletions={summary.deletions ?? 0} />
-            )}
+            <EffortMeter level={effort.level} label={effort.label} minutes={effort.minutes} />
           </span>
           {summary.filesTotal !== null && <ProgressBar value={summary.viewedFiles} total={summary.filesTotal} />}
           <span className="flex items-end justify-between leading-none">
-            <EffortMeter level={effort.level} label={effort.label} minutes={effort.minutes} />
+            {summary.filesTotal === null ? (
+              <span className="text-chrome-fg-subtle">—</span>
+            ) : (
+              <DiffStat additions={summary.additions ?? 0} deletions={summary.deletions ?? 0} blocks={false} />
+            )}
             <span className="tabular-nums whitespace-nowrap text-chrome-fg-subtle">
               <span className="font-medium text-chrome-fg-muted">{summary.viewedFiles}</span> of {summary.filesTotal ?? '—'} files
             </span>

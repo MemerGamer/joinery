@@ -72,7 +72,16 @@ export function ProgressBar({ value, total }: { value: number; total: number }):
 }
 
 /** GitHub-style "+412 −88" with a tiny five-block bar. */
-export function DiffStat({ additions, deletions }: { additions: number; deletions: number }): React.JSX.Element {
+export function DiffStat({
+  additions,
+  deletions,
+  blocks: showBlocks = true,
+}: {
+  additions: number;
+  deletions: number;
+  /** The five-square add/delete ratio after the counts. */
+  blocks?: boolean;
+}): React.JSX.Element {
   const total = additions + deletions;
   const blocks = 5;
   const add = total === 0 ? 0 : Math.round((additions / total) * blocks);
@@ -80,14 +89,16 @@ export function DiffStat({ additions, deletions }: { additions: number; deletion
     <span className="inline-flex items-center gap-1.5 text-micro tabular-nums whitespace-nowrap" title={`${String(additions)} additions, ${String(deletions)} deletions`}>
       <span className="text-chrome-success">+{additions.toLocaleString()}</span>
       <span className="text-chrome-danger">−{deletions.toLocaleString()}</span>
-      <span className="inline-flex gap-px" aria-hidden>
-        {Array.from({ length: blocks }, (_, i) => (
-          <span
-            key={i}
-            className={`size-1.5 rounded-[1px] ${i < add ? 'bg-chrome-success' : i < blocks && total > 0 ? 'bg-chrome-danger' : 'bg-chrome-bg-active'}`}
-          />
-        ))}
-      </span>
+      {showBlocks && (
+        <span className="inline-flex gap-px" aria-hidden>
+          {Array.from({ length: blocks }, (_, i) => (
+            <span
+              key={i}
+              className={`size-1.5 rounded-[1px] ${i < add ? 'bg-chrome-success' : i < blocks && total > 0 ? 'bg-chrome-danger' : 'bg-chrome-bg-active'}`}
+            />
+          ))}
+        </span>
+      )}
     </span>
   );
 }
