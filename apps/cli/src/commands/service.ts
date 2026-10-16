@@ -97,6 +97,14 @@ async function install(): Promise<void> {
   printLine(`service installed (${SERVICE_LABEL}); logs: ${logFile}`);
 }
 
+/** Kill and relaunch the running job so it picks up new permissions. False if not installed. */
+export async function restartService(): Promise<boolean> {
+  if (!(await isLoaded()).loaded) return false;
+  const res = await launchctl(['kickstart', '-k', serviceTarget()]);
+  if (res.code !== 0) throw new Error(`launchctl kickstart failed: ${res.out.trim()}`);
+  return true;
+}
+
 async function uninstall(): Promise<void> {
   if ((await isLoaded()).loaded) await launchctl(['bootout', serviceTarget()]);
   await rm(plistPath(), { force: true });

@@ -95,6 +95,7 @@ The port is saved to `~/.joinery/data/.port`, and the server and CLI both read i
 ```sh
 joinery open      # open the web UI
 joinery update    # update to the latest release and restart
+joinery permissions  # grant Full Disk Access so macOS stops asking per folder
 ```
 
 To uninstall:

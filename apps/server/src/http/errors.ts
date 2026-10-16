@@ -62,7 +62,7 @@ export function pathError(err: unknown, path: string): HttpError {
     return badRequest(
       `permission denied: ${path}`,
       process.platform === 'darwin'
-        ? 'macOS is blocking access to this folder. Allow joinery in System Settings → Privacy & Security → Files and Folders (or Full Disk Access), then restart joinery.'
+        ? 'macOS is blocking access to this folder. Run `joinery permissions` to grant Full Disk Access once for every folder.'
         : undefined,
     );
   }

@@ -11,6 +11,7 @@ import * as serveCmd from './commands/serve.ts';
 import * as updateCmd from './commands/update.ts';
 import * as serviceCmd from './commands/service.ts';
 import * as openCmd from './commands/open.ts';
+import * as permissionsCmd from './commands/permissions.ts';
 import type { Command } from './commands/types.ts';
 import { runtimeLayout } from '@joinery/server/runtime';
 
@@ -42,6 +43,7 @@ const leaves: Readonly<Record<string, Command>> = {
   update: updateCmd.update,
   service: serviceCmd.service,
   open: openCmd.open,
+  permissions: permissionsCmd.permissions,
 };
 
 function allCommands(): Command[] {
