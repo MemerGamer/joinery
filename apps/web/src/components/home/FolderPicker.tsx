@@ -5,7 +5,7 @@
  * directory at a time (via `listDirs`), the input filters it, ↵ goes into a
  * folder, ⌘↵ ticks a repo. Ticks survive navigation, so repos from different
  * places can be added in one go, and a "master folder" is bulk-added with
- * "Select all".
+ * "Select all". Repos that are already registered show up ticked and locked.
  */
 import { Command } from 'cmdk';
 import { Check, CornerLeftUp, Folder, FolderGit2, FolderOpen, Plus } from 'lucide-react';
@@ -38,7 +38,9 @@ function baseName(path: string): string {
 }
 
 export function FolderPicker({ onAdded, onCancel }: Props): React.JSX.Element {
-  const { listDirs, addRepos } = useHomeData();
+  const { listDirs, addRepos, repos: registered } = useHomeData();
+  // Both sides are realpaths: `rootPath` is canonicalized at registration, listings under a realpath'd dir.
+  const addedPaths = new Set(registered.map((r) => r.rootPath));
   const [listing, setListing] = useState<ListDirsResult | null>(null);
   const [query, setQuery] = useState('');
   const [highlighted, setHighlighted] = useState('');
@@ -59,7 +61,7 @@ export function FolderPicker({ onAdded, onCancel }: Props): React.JSX.Element {
       const next = await listDirs(path);
       setListing(next);
       setQuery('');
-      setHighlighted(next.isRepo ? ADD_CURRENT : (next.entries[0]?.name ?? ''));
+      setHighlighted(next.isRepo && !addedPaths.has(next.path) ? ADD_CURRENT : (next.entries[0]?.name ?? ''));
     } catch (err) {
       setError(err instanceof ApiError ? { message: err.message, hint: err.hint } : { message: 'Failed to list folder.' });
     } finally {
@@ -97,11 +99,12 @@ export function FolderPicker({ onAdded, onCancel }: Props): React.JSX.Element {
 
   const repos = listing?.entries.filter((e) => e.isRepo) ?? [];
   const folders = listing?.entries.filter((e) => !e.isRepo) ?? [];
-  const allReposSelected = repos.length > 0 && repos.every((e) => selected.has(e.path));
+  const selectableRepos = repos.filter((e) => !addedPaths.has(e.path));
+  const allReposSelected = selectableRepos.length > 0 && selectableRepos.every((e) => selected.has(e.path));
   const setAllRepos = (on: boolean): void =>
     setSelected((prev) => {
       const next = new Set(prev);
-      for (const e of repos) {
+      for (const e of selectableRepos) {
         if (on) next.add(e.path);
         else next.delete(e.path);
       }
@@ -124,27 +127,31 @@ export function FolderPicker({ onAdded, onCancel }: Props): React.JSX.Element {
     } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       const entry = repos.find((r) => r.name === highlighted);
-      if (entry !== undefined) toggle(entry.path);
-      else if (selected.size > 0 && !busy) void add([...selected]);
+      if (entry !== undefined) {
+        if (!addedPaths.has(entry.path)) toggle(entry.path);
+      } else if (selected.size > 0 && !busy) void add([...selected]);
     }
   }
 
   const repoItem = (entry: ListDirsResult['entries'][number]): React.JSX.Element => {
-    const ticked = selected.has(entry.path);
+    const added = addedPaths.has(entry.path);
+    const ticked = added || selected.has(entry.path);
     return (
       <Command.Item key={entry.path} value={entry.name} onSelect={() => void go(entry.path)} className={ITEM_CLASS}>
         <button
           type="button"
           role="checkbox"
           aria-checked={ticked}
-          aria-label={`Select ${entry.name}`}
+          aria-label={added ? `${entry.name} is already added` : `Select ${entry.name}`}
+          title={added ? 'Already added' : undefined}
+          disabled={added}
           // Keep focus in the input, and don't let the row's own click navigate.
           onMouseDown={(e) => e.preventDefault()}
           onClick={(e) => {
             e.stopPropagation();
             toggle(entry.path);
           }}
-          className={`flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors ${
+          className={`flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors disabled:opacity-50 ${
             ticked
               ? 'border-chrome-accent bg-chrome-accent [&_svg]:text-chrome-accent-fg!'
               : 'border-chrome-border-strong hover:border-chrome-fg-subtle'
@@ -248,18 +255,27 @@ export function FolderPicker({ onAdded, onCancel }: Props): React.JSX.Element {
 
               {listing.isRepo && (
                 <Group heading="This folder">
-                  <Command.Item
-                    value={ADD_CURRENT}
-                    keywords={['add', baseName(listing.path)]}
-                    disabled={busy}
-                    onSelect={() => void add([listing.path])}
-                    className={ITEM_CLASS}
-                  >
-                    <Plus size={14} strokeWidth={1.5} aria-hidden />
-                    <span className="truncate">
-                      Add <span className="font-medium">{baseName(listing.path)}</span>
-                    </span>
-                  </Command.Item>
+                  {addedPaths.has(listing.path) ? (
+                    <Command.Item value={ADD_CURRENT} disabled className={ITEM_CLASS}>
+                      <Check size={14} strokeWidth={1.5} aria-hidden />
+                      <span className="truncate text-chrome-fg-muted">
+                        <span className="font-medium">{baseName(listing.path)}</span> is already added
+                      </span>
+                    </Command.Item>
+                  ) : (
+                    <Command.Item
+                      value={ADD_CURRENT}
+                      keywords={['add', baseName(listing.path)]}
+                      disabled={busy}
+                      onSelect={() => void add([listing.path])}
+                      className={ITEM_CLASS}
+                    >
+                      <Plus size={14} strokeWidth={1.5} aria-hidden />
+                      <span className="truncate">
+                        Add <span className="font-medium">{baseName(listing.path)}</span>
+                      </span>
+                    </Command.Item>
+                  )}
                 </Group>
               )}
 
@@ -267,14 +283,16 @@ export function FolderPicker({ onAdded, onCancel }: Props): React.JSX.Element {
                 <Group
                   heading={`Repositories · ${String(repos.length)}`}
                   action={
-                    <button
-                      type="button"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => setAllRepos(!allReposSelected)}
-                      className="font-normal hover:text-chrome-fg"
-                    >
-                      {allReposSelected ? 'Select none' : 'Select all'}
-                    </button>
+                    selectableRepos.length > 0 && (
+                      <button
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => setAllRepos(!allReposSelected)}
+                        className="font-normal hover:text-chrome-fg"
+                      >
+                        {allReposSelected ? 'Select none' : 'Select all'}
+                      </button>
+                    )
                   }
                 >
                   {repos.map(repoItem)}
