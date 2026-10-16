@@ -1214,7 +1214,16 @@ export function ReviewProvider({
     setThreadsPanelOpen,
     toggleLeftPanel: () => setLeftPanelOpen((v) => !v),
     toggleRightPanel: () => setRightPanelOpen((v) => !v),
-    toggleThreadsPanel: () => setThreadsPanelOpen((v) => !v),
+    // Like the header button: when the right panel is closed, open it
+    // on the threads view instead of toggling the hidden flag.
+    toggleThreadsPanel: () => {
+      if (rightPanelOpen && threadsPanelOpen) {
+        setThreadsPanelOpen(false);
+      } else {
+        setRightPanelOpen(true);
+        setThreadsPanelOpen(true);
+      }
+    },
     commentsVisible,
     toggleComments: () => setCommentsVisible((v) => !v),
     selectedPath,
