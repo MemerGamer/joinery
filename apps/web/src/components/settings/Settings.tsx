@@ -648,7 +648,7 @@ function UsageTree({
       title: 'Agent worktrees',
       detail: `${String(usage.worktrees.count)} ${usage.worktrees.count === 1 ? 'checkout' : 'checkouts'} for agent runs · rebuilt when needed`,
       bytes: usage.worktrees.bytes,
-      color: 'bg-chrome-success',
+      color: 'bg-chrome-fg-muted',
       nested: false,
       action: (
         <ConfirmDelete
