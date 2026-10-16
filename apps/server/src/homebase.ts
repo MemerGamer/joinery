@@ -74,12 +74,28 @@ const meCache = createStoredCache<Me>({
     (next.login === null && previous.login !== null) || (next.name === null && previous.name !== null),
 });
 
-/** `me` for `GET /api/me`, from the first registered repo (or the server's cwd). */
+/**
+ * `me` for `GET /api/me`. Repos can sit on different forges, so the login comes
+ * from the first distinct `kind@host` (in registration order) that resolves
+ * one; the git name comes from the first repo's clone (or the server's cwd).
+ */
 export async function getMeCached(deps: HomebaseDeps): Promise<Me> {
   const repos = await listRepos(deps.db);
   const first = repos[0];
   const cwd = first?.rootPath ?? null;
-  return meCache.get(deps, 'me', () => getMe(cwd, forgeFor(first), first?.remoteHost ?? null));
+  return meCache.get(deps, 'me', async () => {
+    let me = await getMe(cwd, forgeFor(first), first?.remoteHost ?? null);
+    const seen = new Set([`${forgeFor(first).kind}@${first?.remoteHost ?? ''}`]);
+    for (const repo of repos) {
+      if (me.login !== null) break;
+      const forge = forgeFor(repo);
+      const key = `${forge.kind}@${repo.remoteHost ?? ''}`;
+      if (forge.kind === 'none' || seen.has(key)) continue;
+      seen.add(key);
+      me = await getMe(repo.rootPath, forge, repo.remoteHost);
+    }
+    return me;
+  });
 }
 
 /** Reviews are independent I/O (git spawns, `gh` calls) — cap concurrency rather than fire a hundred at once. */

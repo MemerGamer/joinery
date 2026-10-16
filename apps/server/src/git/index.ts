@@ -42,6 +42,7 @@ export {
 export { buildFileList, type BuildFileListParams } from './filelist.ts';
 
 export {
+  detectForge,
   forgeFor,
   type Forge,
   type ForgeOptions,

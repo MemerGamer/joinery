@@ -41,6 +41,7 @@ describe('client error mapping', () => {
             id: 'r1',
             rootPath: '/tmp/repo',
             remoteHost: null,
+            forge: null,
             remoteOwner: null,
             remoteName: null,
             defaultBranch: 'main',

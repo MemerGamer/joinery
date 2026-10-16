@@ -17,6 +17,7 @@ import { Cloud, FolderGit2, GitBranch, HardDrive, Layers, Plus, Search, Sparkles
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Branch, Pull, PullSearchResult, PullState, Repo, ReviewStatus } from '@joinery/core';
 import { ApiError, callApi } from '../lib/apiClient.ts';
+import { firstForgeNotice, forgeNoticeLine, forgeNoticeText, type ForgeNotice } from '../lib/forgeNotice.ts';
 import { effortOf } from '../lib/effort.ts';
 import { personFrom, type Person } from '../lib/people.ts';
 import { relativeTime } from '../lib/relativeTime.ts';
@@ -72,7 +73,7 @@ function repoLabel(r: Repo): string {
 }
 
 export function ExploreSection(): React.JSX.Element {
-  const { repos, pullsByRepo, pullsAvailable, loading, error, openPull, openPullNumber, openBranch } = useHomeData();
+  const { repos, pullsByRepo, pullsAvailable, pullsNotice, loading, error, openPull, openPullNumber, openBranch } = useHomeData();
 
   const [repoId, setRepoIdState] = useState<string>(ALL_REPOS);
   const [q, setQ] = useState('');
@@ -92,10 +93,11 @@ export function ExploreSection(): React.JSX.Element {
     branches: [],
     truncated: false,
   });
-  const [searchState, setSearchState] = useState<{ key: string; pulls: PullSearchResult[]; available: boolean }>({
+  const [searchState, setSearchState] = useState<{ key: string; pulls: PullSearchResult[]; available: boolean; notice: ForgeNotice | null }>({
     key: '',
     pulls: [],
     available: true,
+    notice: null,
   });
   const branchReqIdRef = useRef(0);
   const branchAbortRef = useRef<AbortController | null>(null);
@@ -186,7 +188,7 @@ export function ExploreSection(): React.JSX.Element {
   const searching = searchable && searchState.key !== fetchKey;
   useEffect(() => {
     if (!searchable) {
-      setSearchState((prev) => (prev.pulls.length === 0 && prev.key === '' ? prev : { key: '', pulls: [], available: true }));
+      setSearchState((prev) => (prev.pulls.length === 0 && prev.key === '' ? prev : { key: '', pulls: [], available: true, notice: null }));
       return;
     }
     const controller = new AbortController();
@@ -197,10 +199,19 @@ export function ExploreSection(): React.JSX.Element {
             query: { q: needle, repos: scopeIds.join(',') },
             signal: controller.signal,
           });
-          setSearchState({ key: fetchKey, pulls: res.pulls, available: res.available });
+          const { unavailableReason, unavailableHost } = res;
+          const notice: ForgeNotice | null =
+            unavailableReason === undefined
+              ? null
+              : {
+                  reason: unavailableReason,
+                  host: unavailableHost ?? null,
+                  forge: repos.find((r) => r.remoteHost === unavailableHost)?.forge ?? null,
+                };
+          setSearchState({ key: fetchKey, pulls: res.pulls, available: res.available, notice });
         } catch {
           // Aborted by a newer query, or the search failed; either way the local matches stand.
-          if (!controller.signal.aborted) setSearchState({ key: fetchKey, pulls: [], available: true });
+          if (!controller.signal.aborted) setSearchState({ key: fetchKey, pulls: [], available: true, notice: null });
         }
       })();
     }, SEARCH_DEBOUNCE_MS);
@@ -315,6 +326,8 @@ export function ExploreSection(): React.JSX.Element {
   }, []);
 
   const pullsUnavailable = scopeIds.length > 0 && scopeIds.every((id) => pullsAvailable.get(id) === false);
+  const pullsNoticeText = pullsUnavailable ? firstForgeNotice(scopeIds.map((id) => pullsNotice.get(id)), 'list') : null;
+  const partialNoticeText = pullsUnavailable ? null : forgeNoticeLine(scopeIds.map((id) => pullsNotice.get(id)), 'list');
   const repoNameOf = (id: string): string | undefined => {
     if (!all) return undefined;
     const r = repoById.get(id);
@@ -402,7 +415,7 @@ export function ExploreSection(): React.JSX.Element {
                     {loading ? (
                       <Empty>Loading…</Empty>
                     ) : pullsUnavailable ? (
-                      <Empty>Install and sign in to `gh` or `glab` to list pull requests.</Empty>
+                      <Empty>{pullsNoticeText ?? 'Install and sign in to `gh` or `glab` to list pull requests.'}</Empty>
                     ) : pulls.length === 0 ? (
                       <Empty>{needle === '' ? "Nothing open that you aren't already reviewing." : `No pull requests match "${q.trim()}".`}</Empty>
                     ) : (
@@ -424,13 +437,14 @@ export function ExploreSection(): React.JSX.Element {
                         })}
                       </ul>
                     )}
+                    {!loading && partialNoticeText !== null && <p className="px-0.5 text-xs text-chrome-fg-muted">{partialNoticeText}</p>}
                   </section>
 
                   {searchable && (found.length > 0 || searching || !searchState.available) && (
                     <section className="flex flex-col gap-2">
                       <SectionHeading title="More pull requests" count={found.length} />
                       {found.length === 0 ? (
-                        <Empty>{searching ? 'Searching…' : 'Install and sign in to `gh` or `glab` to search pull requests.'}</Empty>
+                        <Empty>{searching ? 'Searching…' : forgeNoticeText(searchState.notice, 'search') ?? 'Install and sign in to `gh` or `glab` to search pull requests.'}</Empty>
                       ) : (
                         <ul
                           role="listbox"

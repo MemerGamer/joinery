@@ -5,7 +5,7 @@
  * never a thrown error — callers never wrap these in a try/catch to stay up.
  * Pick an implementation with `forgeFor(repo)`.
  */
-import type { Pull, PullDetail, PullState } from '@joinery/core';
+import type { ForgeUnavailableReason, Pull, PullDetail, PullState } from '@joinery/core';
 
 export type ForgeOptions = { cwd: string };
 
@@ -21,7 +21,14 @@ export type ListOpenPullsResult = {
    */
   available: boolean;
   pulls: PullSummary[];
+  /** Why `available` is false, when known; the UI picks its note from it. */
+  unavailableReason?: ForgeUnavailableReason;
+  /** The origin host `unavailableReason` refers to. */
+  unavailableHost?: string | null;
 };
+
+/** What `searchPulls` returns: `ListOpenPullsResult`'s availability fields around search hits. */
+export type SearchPullsResult = Omit<ListOpenPullsResult, 'pulls'> & { pulls: PullSearchHit[] };
 
 export type ResolvedPr = {
   headRefName: string;
@@ -63,7 +70,7 @@ export interface Forge {
   searchPulls(
     query: string,
     repos: readonly { slug: string; cwd: string }[],
-  ): Promise<{ available: boolean; pulls: PullSearchHit[] }>;
+  ): Promise<SearchPullsResult>;
   /** A pull number's real head/base branch names. */
   resolvePr(prNumber: number, options: ForgeOptions): Promise<ResolvedPr | null>;
   /** Merge commit and head of a *merged* pull; `null` if not merged or on any failure. */

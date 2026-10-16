@@ -1,10 +1,28 @@
 import { z } from 'zod';
 import { revisionSchema } from './files.ts';
 
+export const forgeKindSchema = z.enum(['github', 'gitlab', 'none']);
+export type ForgeKind = z.infer<typeof forgeKindSchema>;
+
+/**
+ * Why a forge couldn't be asked: its CLI isn't installed, has no local login
+ * for the host, is logged in but the host can't be reached (VPN, DNS,
+ * timeout), or the repo's remote isn't a supported host at all.
+ */
+export const forgeUnavailableReasonSchema = z.enum([
+  'missing-cli',
+  'not-authenticated',
+  'unreachable',
+  'unsupported-host',
+]);
+export type ForgeUnavailableReason = z.infer<typeof forgeUnavailableReasonSchema>;
+
 export const repoSchema = z.object({
   id: z.string(),
   rootPath: z.string(),
   remoteHost: z.string().nullable(),
+  /** Detected at registration (or lazily for older rows); null means undetected, so callers fall back to the host name. */
+  forge: forgeKindSchema.nullable(),
   remoteOwner: z.string().nullable(),
   remoteName: z.string().nullable(),
   defaultBranch: z.string(),

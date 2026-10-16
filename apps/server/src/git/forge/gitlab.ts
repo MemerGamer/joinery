@@ -10,6 +10,7 @@
  */
 import { z } from 'zod';
 import type { CiStatus, PullDetail, PullState } from '@joinery/core';
+import { cliUnavailable, runCli, unavailableFields } from './cli.ts';
 import type {
   Forge,
   ForgeOptions,
@@ -18,37 +19,12 @@ import type {
   PullSearchHit,
   PullSummary,
   ResolvedPr,
+  SearchPullsResult,
 } from './types.ts';
 
-/** A `glab` call is a network round trip; one that hangs must not hold its caller (or its cache key) forever. */
-const GLAB_TIMEOUT_MS = 30_000;
-
-/**
- * Run `glab`, returning stdout on exit 0 and `null` on anything else — not
- * installed, unauthenticated, a non-GitLab remote, rate limited, or killed
- * after `GLAB_TIMEOUT_MS`. stderr is drained so a chatty failure can't fill
- * its pipe and stall the process.
- */
-async function runGlab(args: readonly string[], cwd: string): Promise<string | null> {
-  let proc;
-  try {
-    proc = Bun.spawn(['glab', ...args], {
-      cwd,
-      env: { ...process.env, NO_PROMPT: '1' },
-      stdin: 'ignore',
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: GLAB_TIMEOUT_MS,
-    });
-  } catch {
-    return null;
-  }
-  const [stdout, , exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  return exitCode === 0 ? stdout : null;
+/** Run `glab` (see `runCli`): stdout on exit 0, `null` on anything else, including a host known to lack `glab`. */
+function runGlab(args: readonly string[], cwd: string): Promise<string | null> {
+  return runCli('glab', args, cwd);
 }
 
 /** `glab api` GET of a path under the current clone's project (`projects/:fullpath/…`). */
@@ -133,46 +109,87 @@ const pullListItemSchema = z.object({
 // GitLab's list endpoint caps pages at 100; one page is enough for a review queue.
 const OPEN_PULLS_LIMIT = 100;
 
+/** The slice of `merge_requests/:iid` the list endpoint lacks: the pipeline and the file count. */
+const pullDetailSchema = z.object({
+  head_pipeline: pipelineSchema,
+  // A string, and "1000+" past the cap.
+  changes_count: z.string().nullable().default(null),
+});
+
+/** Parse GitLab's `changes_count` ("12", "1000+"); `null` when absent. */
+function changedFilesOf(count: string | null): number | null {
+  const n = Number.parseInt(count ?? '', 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Detail calls per list refresh run this many at a time. */
+const DETAIL_CONCURRENCY = 4;
+
+/** `fn` over `items` with at most `limit` in flight, preserving order. */
+async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  async function worker(): Promise<void> {
+    for (;;) {
+      const index = cursor++;
+      if (index >= items.length) return;
+      results[index] = await fn(items[index] as T);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 /**
  * Open, same-project MRs. The list endpoint carries no line counts and
- * usually no pipeline, so `additions`/`deletions`/`changedFiles` are `null` and
- * `ci` is only set when GitLab happens to include `head_pipeline`.
+ * usually no pipeline, so each MR gets one `merge_requests/:iid` detail call
+ * (bounded concurrency) for `ci` and `changedFiles`; a failed detail call
+ * leaves those as the list gave them. `additions`/`deletions` stay `null` —
+ * they would cost a paginated diff fetch per MR.
  */
 async function listOpenPulls(options: ForgeOptions & { login: string | null }): Promise<ListOpenPullsResult> {
   const stdout = await runProjectApi(
     `merge_requests?state=opened&order_by=updated_at&per_page=${String(OPEN_PULLS_LIMIT)}`,
     options.cwd,
   );
-  if (stdout === null) return { available: false, pulls: [] };
+  if (stdout === null) {
+    return { available: false, pulls: [], ...unavailableFields(await cliUnavailable('glab', options.cwd)) };
+  }
 
   const parsed = z.array(pullListItemSchema).safeParse(parseJson(stdout));
   if (!parsed.success) return { available: true, pulls: [] };
 
   const { login } = options;
-  const pulls: PullSummary[] = parsed.data
+  const items = parsed.data
     // MRs from forks have a different source project; out of scope, as for GitHub.
-    .filter((p) => p.source_project_id === undefined || p.source_project_id === p.target_project_id)
-    .map((p) => {
-      // Login not known yet: any requested reviewer counts, as on GitHub.
-      const reviewers = p.reviewers.flatMap((r) => (r === null ? [] : [r.username]));
-      return {
-        number: p.iid,
-        title: p.title,
-        headRefName: p.source_branch,
-        baseRefName: p.target_branch,
-        authorLogin: p.author?.username ?? null,
-        updatedAt: p.updated_at,
-        updatedAtUnix: unixOf(p.updated_at),
-        isDraft: p.draft,
-        additions: null,
-        deletions: null,
-        changedFiles: null,
-        ci: deriveCiStatus(p.head_pipeline?.status),
-        reviewRequested: login === null ? reviewers.length > 0 : reviewers.includes(login),
-        reviewId: null,
-        reviewStatus: null,
-      };
-    });
+    .filter((p) => p.source_project_id === undefined || p.source_project_id === p.target_project_id);
+  const details = await mapLimit(items, DETAIL_CONCURRENCY, async (p) => {
+    const detail = await runProjectApi(`merge_requests/${String(p.iid)}`, options.cwd);
+    const d = detail === null ? null : pullDetailSchema.safeParse(parseJson(detail));
+    return d?.success === true ? d.data : null;
+  });
+  const pulls: PullSummary[] = items.map((p, i) => {
+    // Login not known yet: any requested reviewer counts, as on GitHub.
+    const reviewers = p.reviewers.flatMap((r) => (r === null ? [] : [r.username]));
+    const detail = details[i] ?? null;
+    return {
+      number: p.iid,
+      title: p.title,
+      headRefName: p.source_branch,
+      baseRefName: p.target_branch,
+      authorLogin: p.author?.username ?? null,
+      updatedAt: p.updated_at,
+      updatedAtUnix: unixOf(p.updated_at),
+      isDraft: p.draft,
+      additions: null,
+      deletions: null,
+      changedFiles: detail === null ? null : changedFilesOf(detail.changes_count),
+      ci: deriveCiStatus((detail?.head_pipeline ?? p.head_pipeline)?.status),
+      reviewRequested: login === null ? reviewers.length > 0 : reviewers.includes(login),
+      reviewId: null,
+      reviewStatus: null,
+    };
+  });
   return { available: true, pulls };
 }
 
@@ -218,14 +235,57 @@ const pullViewSchema = z.object({
   web_url: z.string().optional(),
 });
 
-/** One MR in full. GitLab reports no line counts, so only `changedFiles` is filled. */
+const diffsPageSchema = z.array(
+  z.object({
+    diff: z.string().default(''),
+    collapsed: z.boolean().default(false),
+    too_large: z.boolean().default(false),
+  }),
+);
+const DIFFS_PER_PAGE = 100;
+/** Past this many pages (500 files) the totals would be partial, so they're left unknown. */
+const DIFFS_MAX_PAGES = 5;
+
+/**
+ * Added/removed line totals from `merge_requests/:iid/diffs`. GitLab's per-file
+ * `diff` text starts at the first hunk (no `---`/`+++` headers), so every
+ * `+`/`-` line is a real change. `null` when any page fails, the page cap is
+ * hit, or any file came back `collapsed`/`too_large` (its `diff` is empty, so the
+ * total would silently undercount) — a missing size must never fail the whole `viewPull`.
+ */
+async function diffLineCounts(prNumber: number, cwd: string): Promise<{ additions: number; deletions: number } | null> {
+  let additions = 0;
+  let deletions = 0;
+  for (let page = 1; page <= DIFFS_MAX_PAGES; page++) {
+    const stdout = await runProjectApi(
+      `merge_requests/${String(prNumber)}/diffs?per_page=${String(DIFFS_PER_PAGE)}&page=${String(page)}`,
+      cwd,
+    );
+    if (stdout === null) return null;
+    const parsed = diffsPageSchema.safeParse(parseJson(stdout));
+    if (!parsed.success) return null;
+    for (const file of parsed.data) {
+      if (file.too_large || file.collapsed) return null;
+      for (const line of file.diff.split('\n')) {
+        if (line.startsWith('+')) additions++;
+        else if (line.startsWith('-')) deletions++;
+      }
+    }
+    if (parsed.data.length < DIFFS_PER_PAGE) return { additions, deletions };
+  }
+  return null;
+}
+
+/** One MR in full; line counts come from a separate diffs fetch and stay `null` if it fails. */
 async function viewPull(prNumber: number, options: ForgeOptions): Promise<PullDetail | null> {
-  const stdout = await runProjectApi(`merge_requests/${String(prNumber)}`, options.cwd);
+  const [stdout, counts] = await Promise.all([
+    runProjectApi(`merge_requests/${String(prNumber)}`, options.cwd),
+    diffLineCounts(prNumber, options.cwd),
+  ]);
   if (stdout === null) return null;
   const parsed = pullViewSchema.safeParse(parseJson(stdout));
   if (!parsed.success) return null;
   const p = parsed.data;
-  const changed = Number.parseInt(p.changes_count ?? '', 10);
   return {
     number: p.iid,
     title: p.title,
@@ -234,9 +294,9 @@ async function viewPull(prNumber: number, options: ForgeOptions): Promise<PullDe
     authorLogin: p.author?.username ?? null,
     baseRefName: p.target_branch,
     ci: deriveCiStatus(p.head_pipeline?.status),
-    additions: null,
-    deletions: null,
-    changedFiles: Number.isFinite(changed) ? changed : null,
+    additions: counts?.additions ?? null,
+    deletions: counts?.deletions ?? null,
+    changedFiles: changedFilesOf(p.changes_count),
     url: p.web_url ?? null,
   };
 }
@@ -275,7 +335,7 @@ const SEARCH_LIMIT = 50;
 async function searchPulls(
   query: string,
   repos: readonly { slug: string; cwd: string }[],
-): Promise<{ available: boolean; pulls: PullSearchHit[] }> {
+): Promise<SearchPullsResult> {
   const first = repos[0];
   if (first === undefined) return { available: true, pulls: [] };
 
@@ -298,7 +358,8 @@ async function searchPulls(
   pulls.sort((a, b) => b.updatedAtUnix - a.updatedAtUnix);
   // Every project failing is "not found" when `glab` works, "unavailable" when it doesn't.
   if (pulls.length === 0 && outputs.every((o) => o === null)) {
-    return { available: (await runGlab(['auth', 'status'], first.cwd)) !== null, pulls };
+    const unavailable = await cliUnavailable('glab', first.cwd);
+    return { available: unavailable === null, pulls, ...unavailableFields(unavailable) };
   }
   return { available: true, pulls: pulls.slice(0, SEARCH_LIMIT) };
 }

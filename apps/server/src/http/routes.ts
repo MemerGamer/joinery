@@ -75,6 +75,7 @@ import type { StoredCacheDeps } from '../storedCache.ts';
 import {
   canonicalizePath,
   defaultBranch as gitDefaultBranch,
+  detectForge,
   forgeFor,
   getFileContents,
   getFilePatch,
@@ -175,9 +176,11 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     const identity = await remoteIdentity({ cwd: rootPath });
     const branch = (await gitDefaultBranch({ cwd: rootPath })) ?? 'main';
 
+    const host = await remoteHost({ cwd: rootPath });
     const repo = await upsertRepo(deps.db, {
       rootPath,
-      remoteHost: await remoteHost({ cwd: rootPath }),
+      remoteHost: host,
+      forge: host === null ? null : await detectForge(host, rootPath),
       remoteOwner: identity.owner,
       remoteName: identity.name,
       defaultBranch: branch,
@@ -240,7 +243,12 @@ export function buildRoutes(deps: RoutesDeps): Hono {
         return { ...pull, reviewId: existing?.id ?? null, reviewStatus: existing?.status ?? null };
       }),
     );
-    return c.json({ available: result.available, pulls });
+    return c.json({
+      available: result.available,
+      pulls,
+      unavailableReason: result.unavailableReason,
+      unavailableHost: result.unavailableHost,
+    });
   });
 
   app.get('/api/pulls/search', async (c) => {
@@ -256,7 +264,12 @@ export function buildRoutes(deps: RoutesDeps): Hono {
       const repoId = idBySlug.get(slug);
       return repoId === undefined ? [] : [{ repoId, ...hit }];
     });
-    return c.json({ available: result.available, pulls });
+    return c.json({
+      available: result.available,
+      pulls,
+      unavailableReason: result.unavailableReason,
+      unavailableHost: result.unavailableHost,
+    });
   });
 
   // --- reviews ---

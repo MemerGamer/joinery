@@ -16,6 +16,7 @@
  *
  * Everything here comes from `useHomeData()`.
  */
+import { firstForgeNotice, forgeNoticeLine } from '../lib/forgeNotice.ts';
 import type { Pull, Repo, Review, ReviewSummary } from '@joinery/core';
 import {
   Archive,
@@ -110,6 +111,7 @@ export function Homebase(): React.JSX.Element {
     reviews,
     pullsByRepo,
     pullsAvailable,
+    pullsNotice,
     me,
     loading,
     refreshing,
@@ -256,6 +258,9 @@ export function Homebase(): React.JSX.Element {
   const showNoRepos = !showSkeleton && repos.length === 0;
   const topPad = hasHero ? `calc(${HERO_HEIGHT} - 84px)` : '2.5rem';
   const noPullsAvailable = repos.length > 0 && repos.every((r) => pullsAvailable.get(r.id) === false);
+  const noPullsNotice = noPullsAvailable ? firstForgeNotice(repos.map((r) => pullsNotice.get(r.id)), 'list') : null;
+  // Some repos answered, others couldn't be asked: show what there is, plus a quiet note.
+  const partialNotice = noPullsAvailable ? null : forgeNoticeLine(repos.map((r) => pullsNotice.get(r.id)), 'list');
   const showQueue = showSkeleton || noPullsAvailable || queue.length > 0;
 
   return (
@@ -461,7 +466,11 @@ export function Homebase(): React.JSX.Element {
                     ) : noPullsAvailable ? (
                       <div className="px-2 pt-1 pb-2">
                         <p className="rounded-lg border border-dashed border-chrome-border px-4 py-6 text-center text-xs text-chrome-fg-muted">
-                          Install and sign in to <code>gh</code> or <code>glab</code> to see open pull requests here.
+                          {noPullsNotice ?? (
+                            <>
+                              Install and sign in to <code>gh</code> or <code>glab</code> to see open pull requests here.
+                            </>
+                          )}
                         </p>
                       </div>
                     ) : shownQueue.length === 0 ? (
@@ -487,6 +496,9 @@ export function Homebase(): React.JSX.Element {
                           );
                         })}
                       </ul>
+                    )}
+                    {!showSkeleton && partialNotice !== null && (
+                      <p className="px-4 pb-3 text-xs text-chrome-fg-muted">{partialNotice}</p>
                     )}
                   </Panel>
                 </div>

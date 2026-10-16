@@ -18,6 +18,8 @@ export const repo = sqliteTable(
     id: text('id').primaryKey(),
     rootPath: text('root_path').notNull(),
     remoteHost: text('remote_host'),
+    /** Detected forge for `remote_host`; null until detected (legacy rows). */
+    forge: text('forge', { enum: ['github', 'gitlab', 'none'] }),
     remoteOwner: text('remote_owner'),
     remoteName: text('remote_name'),
     defaultBranch: text('default_branch').notNull(),

@@ -5,9 +5,9 @@
  * answers aren't kept, so a CLI login takes effect on the next keystroke.
  */
 import type { Repo } from '@joinery/core';
-import { forgeFor, type Forge, type PullSearchHit } from './git/forge/index.ts';
+import { forgeFor, type Forge, type SearchPullsResult } from './git/forge/index.ts';
 
-export type PullSearchResult = { available: boolean; pulls: PullSearchHit[] };
+export type PullSearchResult = SearchPullsResult;
 
 const FRESH_MS = 60_000;
 const MAX_ENTRIES = 100;
@@ -51,5 +51,13 @@ async function searchForges(query: string, repos: readonly Repo[]): Promise<Pull
   }
   const results = await Promise.all([...byForge].map(([forge, group]) => forge.searchPulls(query, group)));
   if (results.length === 0) return { available: true, pulls: [] };
-  return { available: results.some((r) => r.available), pulls: results.flatMap((r) => r.pulls) };
+  const pulls = results.flatMap((r) => r.pulls);
+  if (results.some((r) => r.available)) return { available: true, pulls };
+  // Nothing could be asked: report the first forge's reason.
+  const reason = results[0]?.unavailableReason;
+  return {
+    available: false,
+    pulls,
+    ...(reason === undefined ? {} : { unavailableReason: reason, unavailableHost: results[0]?.unavailableHost ?? null }),
+  };
 }

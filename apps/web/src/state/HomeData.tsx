@@ -9,6 +9,7 @@
 import type { Branch, Me, Pull, Repo, ResponseOf, Review, ReviewSummary } from '@joinery/core';
 import { useEffect, useSyncExternalStore } from 'react';
 import { ApiError, callApi } from '../lib/apiClient.ts';
+import type { ForgeNotice } from '../lib/forgeNotice.ts';
 import { goReview } from '../lib/router.ts';
 import { eventsClient } from '../lib/wsClient.ts';
 
@@ -31,6 +32,8 @@ export interface HomeSnapshot {
   pullsByRepo: ReadonlyMap<string, Pull[]>;
   /** Repo id → whether the forge CLI was available for that repo's pull list. */
   pullsAvailable: ReadonlyMap<string, boolean>;
+  /** Repo id → why its pull list is unavailable, when the server said. */
+  pullsNotice: ReadonlyMap<string, ForgeNotice>;
   me: Me | null;
   /** True while the first load is in flight (no data yet). */
   loading: boolean;
@@ -106,6 +109,7 @@ let snapshot: HomeSnapshot = {
   drafts: [],
   pullsByRepo: new Map(),
   pullsAvailable: new Map(),
+  pullsNotice: new Map(),
   me: null,
   // True from the start: the first `useHomeData()` mount kicks off a load
   // almost immediately, and there is no data to show in the meantime either
@@ -154,9 +158,13 @@ async function doLoad(force: boolean): Promise<void> {
         res.repos.map(async (repo) => {
           try {
             const pulls = await callApi('listPulls', { params: [repo.id], query: refreshQuery });
-            return { repoId: repo.id, available: pulls.available, pulls: pulls.pulls };
+            const notice: ForgeNotice | null =
+              pulls.unavailableReason === undefined
+                ? null
+                : { reason: pulls.unavailableReason, host: pulls.unavailableHost ?? null, forge: repo.forge };
+            return { repoId: repo.id, available: pulls.available, pulls: pulls.pulls, notice };
           } catch {
-            return { repoId: repo.id, available: false, pulls: [] as Pull[] };
+            return { repoId: repo.id, available: false, pulls: [] as Pull[], notice: null };
           }
         }),
       ),
@@ -185,9 +193,11 @@ async function doLoad(force: boolean): Promise<void> {
 
     const pullsByRepo = new Map<string, Pull[]>();
     const pullsAvailable = new Map<string, boolean>();
+    const pullsNotice = new Map<string, ForgeNotice>();
     for (const r of pullsResults) {
       pullsByRepo.set(r.repoId, r.pulls);
       pullsAvailable.set(r.repoId, r.available);
+      if (r.notice !== null) pullsNotice.set(r.repoId, r.notice);
     }
 
     setSnapshot({
@@ -196,6 +206,7 @@ async function doLoad(force: boolean): Promise<void> {
       drafts,
       pullsByRepo,
       pullsAvailable,
+      pullsNotice,
       me: meRes,
       loading: false,
       refreshing: false,

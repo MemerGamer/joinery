@@ -14,6 +14,7 @@ import { fileListSchema, revisionSchema, reviewStateSchema } from './domain/file
 import {
   agentRunSchema,
   branchSchema,
+  forgeUnavailableReasonSchema,
   meSchema,
   pullDetailSchema,
   pullSchema,
@@ -252,7 +253,12 @@ export const api = {
     path: (repoId: string) => `/api/repos/${encodeURIComponent(repoId)}/pulls`,
     body: undefined,
     query: listPullsQuerySchema,
-    response: z.object({ available: z.boolean(), pulls: z.array(pullSchema) }),
+    response: z.object({
+      available: z.boolean(),
+      pulls: z.array(pullSchema),
+      unavailableReason: forgeUnavailableReasonSchema.optional(),
+      unavailableHost: z.string().nullable().optional(),
+    }),
   }),
   /** Search PRs of any state across repos via `gh`; `available` is false when `gh` can't be asked. */
   searchPulls: def({
@@ -260,7 +266,12 @@ export const api = {
     path: () => '/api/pulls/search',
     body: undefined,
     query: searchPullsQuerySchema,
-    response: z.object({ available: z.boolean(), pulls: z.array(pullSearchResultSchema) }),
+    response: z.object({
+      available: z.boolean(),
+      pulls: z.array(pullSearchResultSchema),
+      unavailableReason: forgeUnavailableReasonSchema.optional(),
+      unavailableHost: z.string().nullable().optional(),
+    }),
   }),
   me: def({
     method: 'GET',

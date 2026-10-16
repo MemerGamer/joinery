@@ -64,7 +64,7 @@ retry_hint="re-run with --port <number>, e.g.
 [ "$(uname -m)" = "arm64" ] || die "Joinery only supports Apple Silicon (arm64) for now."
 
 command -v git >/dev/null 2>&1 || warn "git not found on PATH (install Xcode command line tools: xcode-select --install)"
-command -v gh >/dev/null 2>&1 || warn "gh not found on PATH (brew install gh && gh auth login)"
+command -v gh >/dev/null 2>&1 || command -v glab >/dev/null 2>&1 || warn "neither gh nor glab found on PATH (GitHub: brew install gh && gh auth login; GitLab: brew install glab && glab auth login)"
 command -v claude >/dev/null 2>&1 || warn "claude not found on PATH (install Claude Code and log in)"
 
 if [ -n "$requested_port" ]; then

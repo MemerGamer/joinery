@@ -6,6 +6,7 @@
  */
 import { z } from 'zod';
 import type { CiStatus, PullDetail } from '@joinery/core';
+import { cliUnavailable, runCli, unavailableFields } from './cli.ts';
 import type {
   Forge,
   ForgeOptions,
@@ -13,37 +14,12 @@ import type {
   MergedPrCommits,
   PullSearchHit,
   ResolvedPr,
+  SearchPullsResult,
 } from './types.ts';
 
-/** A `gh` call is a network round trip; one that hangs must not hold its caller (or its cache key) forever. */
-const GH_TIMEOUT_MS = 30_000;
-
-/**
- * Run `gh`, returning stdout on exit 0 and `null` on anything else — not
- * installed, unauthenticated, a non-GitHub remote, rate limited, or killed
- * after `GH_TIMEOUT_MS`. stderr is drained so a chatty failure can't fill
- * its pipe and stall the process.
- */
-async function runGh(args: readonly string[], cwd: string): Promise<string | null> {
-  let proc;
-  try {
-    proc = Bun.spawn(['gh', ...args], {
-      cwd,
-      env: { ...process.env, GH_PROMPT_DISABLED: '1' },
-      stdin: 'ignore',
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: GH_TIMEOUT_MS,
-    });
-  } catch {
-    return null;
-  }
-  const [stdout, , exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  return exitCode === 0 ? stdout : null;
+/** Run `gh` (see `runCli`): stdout on exit 0, `null` on anything else, including a host known to lack `gh`. */
+function runGh(args: readonly string[], cwd: string): Promise<string | null> {
+  return runCli('gh', args, cwd);
 }
 
 const prForBranchSchema = z.object({ number: z.number().int().positive(), state: z.string() });
@@ -187,7 +163,9 @@ async function listOpenPulls(options: ForgeOptions & { login: string | null }): 
     ],
     options.cwd,
   );
-  if (stdout === null) return { available: false, pulls: [] };
+  if (stdout === null) {
+    return { available: false, pulls: [], ...unavailableFields(await cliUnavailable('gh', options.cwd)) };
+  }
 
   let raw: unknown;
   try {
@@ -372,7 +350,7 @@ const SEARCH_FIELDS = 'number,title,state,author,updatedAt,isDraft';
 async function searchPulls(
   query: string,
   repos: readonly { slug: string; cwd: string }[],
-): Promise<{ available: boolean; pulls: PullSearchHit[] }> {
+): Promise<SearchPullsResult> {
   const first = repos[0];
   if (first === undefined) return { available: true, pulls: [] };
 
@@ -396,7 +374,8 @@ async function searchPulls(
     });
     // Every repo failing is "not found" when `gh` works, "unavailable" when it doesn't.
     if (pulls.length === 0 && outputs.every((o) => o === null)) {
-      return { available: (await runGh(['auth', 'status'], first.cwd)) !== null, pulls };
+      const unavailable = await cliUnavailable('gh', first.cwd);
+      return { available: unavailable === null, pulls, ...unavailableFields(unavailable) };
     }
     return { available: true, pulls };
   }
@@ -415,7 +394,9 @@ async function searchPulls(
     ],
     first.cwd,
   );
-  if (stdout === null) return { available: false, pulls: [] };
+  if (stdout === null) {
+    return { available: false, pulls: [], ...unavailableFields(await cliUnavailable('gh', first.cwd)) };
+  }
   try {
     const raw: unknown = JSON.parse(stdout);
     if (!Array.isArray(raw)) return { available: true, pulls: [] };

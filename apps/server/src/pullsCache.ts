@@ -13,7 +13,7 @@ export type PullsCacheDeps = StoredCacheDeps;
 
 const cache = createStoredCache<ListOpenPullsResult>({
   namespace: 'pulls',
-  version: 1,
+  version: 2,
   staleAfterMs: 60_000,
   keepPrevious: (next, previous) => !next.available && previous.available,
 });
