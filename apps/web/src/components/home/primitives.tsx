@@ -105,9 +105,9 @@ export function DiffStat({
 
 export function CiIcon({ ci, size = 13 }: { ci: Ci; size?: number }): React.JSX.Element | null {
   if (ci === null) return null;
-  if (ci === 'passing') return <CircleCheck size={size} strokeWidth={2} className="text-chrome-success" aria-label="CI passing" />;
-  if (ci === 'failing') return <CircleX size={size} strokeWidth={2} className="text-chrome-danger" aria-label="CI failing" />;
-  return <CircleDashed size={size} strokeWidth={2} className="animate-[spin_3s_linear_infinite] text-chrome-warning" aria-label="CI running" />;
+  if (ci === 'passing') return <CircleCheck size={size} strokeWidth={2} className="shrink-0 text-chrome-success" aria-label="CI passing" />;
+  if (ci === 'failing') return <CircleX size={size} strokeWidth={2} className="shrink-0 text-chrome-danger" aria-label="CI failing" />;
+  return <CircleDashed size={size} strokeWidth={2} className="shrink-0 animate-[spin_3s_linear_infinite] text-chrome-warning" aria-label="CI running" />;
 }
 
 export function SectionHeading({
