@@ -9,7 +9,7 @@
  */
 import { Command } from 'cmdk';
 import { Check, CornerLeftUp, Folder, FolderGit2, FolderOpen, Plus } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Repo } from '@joinery/core';
 import { ApiError } from '../../lib/apiClient.ts';
 import { useHomeData, type AddReposResult, type ListDirsResult } from '../../state/HomeData.tsx';
@@ -47,6 +47,7 @@ export function FolderPicker({ onAdded, onCancel }: Props): React.JSX.Element {
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<AddReposResult | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // A query that starts like a path is a "go to" (↵), not a filter.
   const isPathQuery = query.startsWith('/') || query.startsWith('~');
@@ -186,6 +187,7 @@ export function FolderPicker({ onAdded, onCancel }: Props): React.JSX.Element {
             Add repo
           </span>
           <Command.Input
+            ref={inputRef}
             autoFocus
             value={query}
             onValueChange={setQuery}
@@ -227,6 +229,11 @@ export function FolderPicker({ onAdded, onCancel }: Props): React.JSX.Element {
         )}
 
         <Command.List
+          // Scrollable containers take focus on click in Chromium, which would strand
+          // the keyboard (⌫, ↵, filtering) outside the input; hand it straight back.
+          onFocus={(e) => {
+            if (e.target === e.currentTarget) inputRef.current?.focus();
+          }}
           className={`min-h-0 flex-1 overflow-y-auto border-t border-chrome-border px-1.5 pt-1 pb-1.5 transition-opacity ${
             loading && listing !== null ? 'opacity-50' : ''
           }`}
