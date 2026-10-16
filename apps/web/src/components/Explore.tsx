@@ -515,16 +515,19 @@ export function ExploreSection(): React.JSX.Element {
                   )}
 
                   <section className="flex flex-col gap-2">
-                    <SectionHeading
-                      title="Branches"
-                      count={branches.length}
-                      action={
-                        <div className="flex items-center gap-0.5">
-                          <BranchFilterMenu filters={branchFilters} onChange={setBranchFilters} />
-                          <BranchSortMenu sort={branchSort} onChange={setBranchSort} />
-                        </div>
-                      }
-                    />
+                    {/* Pinned while the list scrolls under it; the panel's own background keeps rows from showing through. */}
+                    <div className="sticky top-0 z-10 -mx-4 bg-chrome-bg px-4 py-1.5">
+                      <SectionHeading
+                        title="Branches"
+                        count={branches.length}
+                        action={
+                          <div className="flex items-center gap-0.5">
+                            <BranchFilterMenu filters={branchFilters} onChange={setBranchFilters} />
+                            <BranchSortMenu sort={branchSort} onChange={setBranchSort} />
+                          </div>
+                        }
+                      />
+                    </div>
                     {loading || (branchesStale && branches.length === 0) ? (
                       <Empty>Loading…</Empty>
                     ) : branches.length === 0 ? (
