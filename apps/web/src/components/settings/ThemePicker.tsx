@@ -2,9 +2,10 @@
  * A theme picker for the settings page's Appearance columns: a button
  * showing the current theme that opens a searchable list (Base UI's
  * Combobox, with its input inside the popup), colorblind-safe themes in
- * their own group first. Moving the highlight through the list reports the
- * highlighted theme via `onPreview`, so the column's sample can follow it
- * the way ⌘K's `#` mode previews; closing without a pick reports null.
+ * their own group first. Hovering or arrowing through the list reports the
+ * highlighted theme via `onPreview` (null when nothing is highlighted), so
+ * the caller can preview it the way ⌘K's `#` mode does; `onClose` follows
+ * every close, after `onChange` when there was a pick.
  */
 import { Combobox } from '@base-ui-components/react/combobox';
 import { Check, ChevronDown, Search } from 'lucide-react';
@@ -23,14 +24,16 @@ export function ThemePicker({
   value,
   onChange,
   onPreview,
+  onClose,
 }: {
   id: string;
   options: readonly ThemeOption[];
   /** The selected theme's name. */
   value: string;
   onChange: (name: string) => void;
-  /** The highlighted theme while the list is open, null once it closes. */
+  /** The highlighted theme while the list is open, null when nothing is. */
   onPreview: (name: string | null) => void;
+  onClose: () => void;
 }): React.JSX.Element {
   const groups = useMemo<ThemeGroup[]>(
     () =>
@@ -54,7 +57,7 @@ export function ThemePicker({
       isItemEqualToValue={(a: ThemeOption, b: ThemeOption) => a.name === b.name}
       onItemHighlighted={(o) => onPreview(o?.name ?? null)}
       onOpenChange={(open) => {
-        if (!open) onPreview(null);
+        if (!open) onClose();
       }}
     >
       <Combobox.Trigger
