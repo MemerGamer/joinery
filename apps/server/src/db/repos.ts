@@ -117,3 +117,8 @@ export async function getRepoByPath(db: Db, rootPath: string): Promise<Repo | nu
   const row = rows[0];
   return row === undefined ? null : withForge(db, toRepo(row));
 }
+
+/** Delete a repo row; its reviews and agent worktree rows cascade. Disk and git cleanup is the caller's. */
+export async function deleteRepo(db: Db, id: string): Promise<void> {
+  await db.delete(repo).where(eq(repo.id, id));
+}

@@ -80,7 +80,7 @@ export {
   detectInProgressOperation,
   pinReviewRef,
   pinReviewBaseRef,
-  unpinReviewRef,
+  unpinReviewRefs,
   type RemoteIdentity,
   type Divergence,
 } from './repo.ts';

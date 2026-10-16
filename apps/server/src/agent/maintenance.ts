@@ -78,7 +78,8 @@ export function startWorktreeSweep(db: Db, options: WorktreeSweepOptions = {}): 
   return () => clearInterval(timer);
 }
 
-async function removeAgentWorktree(db: Db, worktree: AgentWorktree): Promise<void> {
+/** Remove one cached worktree: from disk, from git's registry, and from `agent_worktree`. */
+export async function removeAgentWorktree(db: Db, worktree: AgentWorktree): Promise<void> {
   const registry = await registryEntry(db, worktree);
   if (registry !== null) {
     await scopedRemoveWorktree({

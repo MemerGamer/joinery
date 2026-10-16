@@ -152,7 +152,7 @@ export const listReviewsQuerySchema = z.object({
   refresh: z.enum(['true', 'false']).optional(),
 });
 export const versionQuerySchema = z.object({
-  /** `'true'` forces a fresh GitHub release check instead of the 6-hour cache. */
+  /** `'true'` forces a fresh GitHub release check instead of the 10-minute cache. */
   refresh: z.enum(['true', 'false']).optional(),
 });
 export const versionInfoSchema = z.object({
@@ -165,6 +165,51 @@ export const versionInfoSchema = z.object({
   updating: z.boolean(),
 });
 export type VersionInfo = z.infer<typeof versionInfoSchema>;
+/**
+ * The settings page's health check. `claude` is the executable thread
+ * replies run (`bundled` in a source checkout, where the Agent SDK uses its
+ * own). `clis` says whether `gh`/`glab` are on PATH; `hosts` is one row per
+ * forge host the registered repos point at, with why its CLI can't be asked
+ * (`reason`), or null when it can.
+ */
+export const integrationsSchema = z.object({
+  claude: z.object({ path: z.string().nullable(), bundled: z.boolean() }),
+  clis: z.array(z.object({ cli: z.enum(['gh', 'glab']), path: z.string().nullable() })),
+  hosts: z.array(
+    z.object({
+      host: z.string(),
+      forge: z.enum(['github', 'gitlab']),
+      cli: z.enum(['gh', 'glab']),
+      repos: z.number().int().nonnegative(),
+      reason: forgeUnavailableReasonSchema.exclude(['unsupported-host']).nullable(),
+    }),
+  ),
+});
+export type Integrations = z.infer<typeof integrationsSchema>;
+/**
+ * macOS Full Disk Access for the installed server binary. `granted` is null
+ * where it doesn't apply: off macOS, or in a source checkout, where the
+ * grant belongs to whatever terminal started the server.
+ */
+export const fullDiskAccessSchema = z.object({
+  applies: z.boolean(),
+  granted: z.boolean().nullable(),
+  /** The binary to add to the list; null unless installed. */
+  binary: z.string().nullable(),
+  /** The server runs as the LaunchAgent, so it can restart itself to pick up a new grant. */
+  canRestart: z.boolean(),
+});
+export type FullDiskAccess = z.infer<typeof fullDiskAccessSchema>;
+export const dataUsageSchema = z.object({
+  /** The data directory. */
+  root: z.string(),
+  databaseBytes: z.number().int().nonnegative(),
+  /** Checkouts made for agent runs; rebuilt on the next run that needs one. */
+  worktrees: z.object({ count: z.number().int().nonnegative(), bytes: z.number().int().nonnegative() }),
+  /** Last known PR lists, PR details, review stats and your forge user; refetched on demand. */
+  cachedAnswers: z.object({ count: z.number().int().nonnegative(), bytes: z.number().int().nonnegative() }),
+});
+export type DataUsage = z.infer<typeof dataUsageSchema>;
 export const listPullsQuerySchema = z.object({
   /** `'true'` bypasses the server's short-lived `gh` cache. */
   refresh: z.enum(['true', 'false']).optional(),
@@ -234,6 +279,63 @@ export const api = {
     body: addRepoBodySchema,
     query: undefined,
     response: z.object({ repo: repoSchema }),
+  }),
+  /**
+   * Unregister a repo: its reviews (threads, reading orders, viewed checks
+   * included) are deleted, its agent worktrees removed, and the refs Joinery
+   * wrote under `refs/review/` dropped. The clone itself is left alone.
+   */
+  deleteRepo: def({
+    method: 'DELETE',
+    path: (id: string) => `/api/repos/${encodeURIComponent(id)}`,
+    body: undefined,
+    query: undefined,
+    response: noContent,
+  }),
+  integrations: def({
+    method: 'GET',
+    path: () => '/api/settings/integrations',
+    body: undefined,
+    query: undefined,
+    response: integrationsSchema,
+  }),
+  fullDiskAccess: def({
+    method: 'GET',
+    path: () => '/api/settings/full-disk-access',
+    body: undefined,
+    query: undefined,
+    response: fullDiskAccessSchema,
+  }),
+  /** Open System Settings at Full Disk Access and reveal the binary in Finder (installed builds on macOS). */
+  openFullDiskAccess: def({
+    method: 'POST',
+    path: () => '/api/settings/full-disk-access/open',
+    body: undefined,
+    query: undefined,
+    response: noContent,
+  }),
+  /** Restart the LaunchAgent, e.g. so a new Full Disk Access grant applies. The server answers, then goes away. */
+  restartServer: def({
+    method: 'POST',
+    path: () => '/api/settings/restart',
+    body: undefined,
+    query: undefined,
+    response: z.object({ started: z.literal(true) }),
+  }),
+  dataUsage: def({
+    method: 'GET',
+    path: () => '/api/settings/data',
+    body: undefined,
+    query: undefined,
+    response: dataUsageSchema,
+  }),
+  /** Remove the agent worktrees and the cached answers. Refused while an agent run is going. */
+  clearCaches: def({
+    method: 'POST',
+    path: () => '/api/settings/clear-caches',
+    body: undefined,
+    query: undefined,
+    response: z.object({ worktreesRemoved: z.number().int(), cachedAnswersRemoved: z.number().int() }),
   }),
   listDirs: def({
     method: 'GET',
@@ -322,6 +424,14 @@ export const api = {
     body: undefined,
     query: undefined,
     response: reviewDetailSchema,
+  }),
+  /** Delete a review for good: threads, comments, reading order, viewed checks, and its `refs/review/` refs. */
+  deleteReview: def({
+    method: 'DELETE',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}`,
+    body: undefined,
+    query: undefined,
+    response: noContent,
   }),
   getFiles: def({
     method: 'GET',

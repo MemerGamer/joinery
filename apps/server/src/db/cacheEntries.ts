@@ -4,7 +4,7 @@
  * shape and freshness.
  */
 import { cacheEntry } from '@joinery/core/db';
-import { eq, lt } from 'drizzle-orm';
+import { eq, lt, sql } from 'drizzle-orm';
 import type { Db } from './client.ts';
 
 export type CacheEntry = {
@@ -28,5 +28,19 @@ export async function putCacheEntry(db: Db, key: string, entry: CacheEntry): Pro
 /** Deletes rows last written before `cutoff` (epoch ms); returns how many. */
 export async function pruneCacheEntries(db: Db, cutoff: number): Promise<number> {
   const rows = await db.delete(cacheEntry).where(lt(cacheEntry.fetchedAt, cutoff)).returning({ key: cacheEntry.key });
+  return rows.length;
+}
+
+/** How many rows there are and how many bytes of JSON they hold. */
+export async function cacheEntryStats(db: Db): Promise<{ count: number; bytes: number }> {
+  const rows = await db
+    .select({ count: sql<number>`count(*)`, bytes: sql<number>`coalesce(sum(length(${cacheEntry.value})), 0)` })
+    .from(cacheEntry);
+  return { count: Number(rows[0]?.count ?? 0), bytes: Number(rows[0]?.bytes ?? 0) };
+}
+
+/** Deletes every row; returns how many. Each key costs one blocking load the next time it's asked for. */
+export async function clearCacheEntries(db: Db): Promise<number> {
+  const rows = await db.delete(cacheEntry).returning({ key: cacheEntry.key });
   return rows.length;
 }

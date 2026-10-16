@@ -68,7 +68,8 @@ function isClaimed(status: ReviewStatus | null): boolean {
   return status === 'open' || status === 'orphaned';
 }
 
-function repoLabel(r: Repo): string {
+/** A repo's short name: its remote's, else its folder's. */
+export function repoLabel(r: Repo): string {
   if (r.remoteName !== null) return r.remoteName;
   const trimmed = r.rootPath.replace(/\/+$/, '');
   const segments = trimmed.split('/');

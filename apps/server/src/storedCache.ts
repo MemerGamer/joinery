@@ -37,7 +37,7 @@ export type StoredCacheOptions<T> = {
 
 export type StoredCache<T> = {
   get(deps: StoredCacheDeps, key: string, load: () => Promise<T>, options?: { refresh?: boolean }): Promise<T>;
-  /** For tests/debugging: forget every in-memory and in-flight entry (stored rows stay). */
+  /** Forget every in-memory and in-flight entry (stored rows stay). */
   clear(): void;
 };
 
@@ -66,6 +66,14 @@ function limiter(max: number): <R>(task: () => Promise<R>) => Promise<R> {
       else active -= 1;
     }
   };
+}
+
+/** Every cache made by `createStoredCache`, so the settings page's "Clear caches" can reach them all. */
+const allCaches = new Set<StoredCache<unknown>>();
+
+/** Forget every cache's in-memory entries, for when their stored rows have just been deleted. */
+export function clearAllStoredCaches(): void {
+  for (const cache of allCaches) cache.clear();
 }
 
 export function createStoredCache<T>(options: StoredCacheOptions<T>): StoredCache<T> {
@@ -121,7 +129,7 @@ export function createStoredCache<T>(options: StoredCacheOptions<T>): StoredCach
     return promise;
   }
 
-  return {
+  const cache: StoredCache<T> = {
     async get(deps, key, load, getOptions) {
       if (getOptions?.refresh === true) return fetchValue(deps, key, load);
 
@@ -137,6 +145,8 @@ export function createStoredCache<T>(options: StoredCacheOptions<T>): StoredCach
       inFlight.clear();
     },
   };
+  allCaches.add(cache as StoredCache<unknown>);
+  return cache;
 }
 
 /**

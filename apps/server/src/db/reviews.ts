@@ -152,3 +152,12 @@ export async function touchOpened(db: Db, id: string): Promise<Review> {
 export async function adoptBranch(db: Db, id: string, branch: string): Promise<Review> {
   return update(db, id, { branch, pinnedSha: null });
 }
+
+/**
+ * Delete a review row. Its threads, comments, reactions, reading order,
+ * viewed checks and agent runs go with it (`ON DELETE CASCADE`). Git refs,
+ * engines and live runs are the caller's to clean up first.
+ */
+export async function deleteReview(db: Db, id: string): Promise<void> {
+  await db.delete(review).where(eq(review.id, id));
+}

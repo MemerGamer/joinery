@@ -66,6 +66,7 @@ import {
   PanelRight,
   Rows2,
   Search,
+  Settings,
   Sun,
   Moon,
   Waypoints,
@@ -73,7 +74,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { setAgentModel, useAgentModel } from '../lib/agentModel.ts';
 import { callApi } from '../lib/apiClient.ts';
-import { goReview } from '../lib/router.ts';
+import { goReview, goSettings } from '../lib/router.ts';
 import { runUiState } from '../lib/runState.ts';
 import { listThemeOptions, type ThemeOption } from '../lib/themes.ts';
 import { threadSummary } from '../lib/threadSummary.ts';
@@ -391,6 +392,17 @@ export function CommandPalette({
           )}
         </Command.Item>
       ))}
+      <Command.Item
+        value="open settings preferences"
+        onSelect={() => {
+          goSettings();
+          close();
+        }}
+        className={ITEM_CLASS}
+      >
+        <Settings size={14} strokeWidth={1.5} aria-hidden />
+        Open settings
+      </Command.Item>
       <Command.Item value={MODEL_COMMAND_VALUE} onSelect={openModelPage} className={ITEM_CLASS}>
         <Bot size={14} strokeWidth={1.5} aria-hidden />
         Change model…

@@ -183,7 +183,13 @@ export async function pinReviewBaseRef(reviewId: string, sha: string, options: G
   await gitOrThrow(['update-ref', `refs/review/base/${reviewId}`, sha], options);
 }
 
-/** Delete a review's ref pin, e.g. on review archive. */
-export async function unpinReviewRef(reviewId: string, options: GitCallOptions): Promise<void> {
-  await gitOrThrow(['update-ref', '-d', `refs/review/${reviewId}`], options);
+/**
+ * Delete every ref Joinery keeps for a review — the head pin, the base pin
+ * and the fetched PR ref — when the review itself is deleted. Best-effort:
+ * a ref that was never written, or a repo that's gone, is not an error.
+ */
+export async function unpinReviewRefs(reviewId: string, options: GitCallOptions): Promise<void> {
+  for (const ref of [`refs/review/${reviewId}`, `refs/review/base/${reviewId}`, `refs/review/pr/${reviewId}`]) {
+    await git(['update-ref', '-d', ref], options).catch(() => undefined);
+  }
 }

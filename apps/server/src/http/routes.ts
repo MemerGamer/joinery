@@ -32,6 +32,8 @@ import {
 } from '@joinery/core';
 import { z } from 'zod';
 import { getVersionInfo, startUpdate } from '../updates.ts';
+import { deleteRepoFully, deleteReviewFully } from '../cleanup.ts';
+import { clearCaches, getDataUsage, getFullDiskAccess, getIntegrations, openFullDiskAccess, restartServer } from '../settings.ts';
 import {
   appendReply,
   createReview,
@@ -186,6 +188,41 @@ export function buildRoutes(deps: RoutesDeps): Hono {
       defaultBranch: branch,
     });
     return c.json({ repo }, 201);
+  });
+
+  app.delete('/api/repos/:id', async (c) => {
+    const id = c.req.param('id');
+    if ((await getRepoById(deps.db, id)) === null) throw notFound(`repo ${id} not found`);
+    await deleteRepoFully(deps, id);
+    return c.json({ ok: true as const });
+  });
+
+  // --- settings page ---
+
+  app.get('/api/settings/integrations', async (c) => {
+    return c.json(await getIntegrations(deps.db));
+  });
+
+  app.get('/api/settings/full-disk-access', async (c) => {
+    return c.json(await getFullDiskAccess());
+  });
+
+  app.post('/api/settings/full-disk-access/open', async (c) => {
+    await openFullDiskAccess();
+    return c.json({ ok: true as const });
+  });
+
+  app.post('/api/settings/restart', (c) => {
+    restartServer();
+    return c.json({ started: true as const }, 202);
+  });
+
+  app.get('/api/settings/data', async (c) => {
+    return c.json(await getDataUsage(deps.db));
+  });
+
+  app.post('/api/settings/clear-caches', async (c) => {
+    return c.json(await clearCaches(deps.db));
   });
 
   // Server-side folder browsing for the add-repo picker.
@@ -350,6 +387,12 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     // against the *previous* `last_opened_at`, not the one it just set.
     await touchOpened(deps.db, id);
     return c.json({ review, repo, state, readingOrderRun });
+  });
+
+  app.delete('/api/reviews/:id', async (c) => {
+    const review = await requireReview(deps, c.req.param('id'));
+    await deleteReviewFully(deps, review);
+    return c.json({ ok: true as const });
   });
 
   app.get('/api/reviews/:id/pull', async (c) => {

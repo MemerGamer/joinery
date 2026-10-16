@@ -50,8 +50,6 @@ history behind them live in git (`git log -p -- IMPROVEMENTS.md`).
   (`--trees-bg`/`--trees-fg`/...), not the app's `--chrome-*` ones. They
   look close today. If the file tree ever looks slightly off in one theme,
   wire the `--trees-*-override` variables to `--chrome-*`.
-- **Homebase cover paintings load from Wikimedia at runtime**
-  (`lib/covers.ts`). They aren't vendored into `public/`.
 
 ## Server / git
 

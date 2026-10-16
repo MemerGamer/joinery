@@ -11,6 +11,7 @@ export function ConfirmDelete({
   children,
   triggerClassName,
   triggerLabel,
+  confirmLabel = 'Delete',
 }: {
   onConfirm: () => Promise<void>;
   /** The question shown above the buttons, e.g. "Delete this thread?". */
@@ -20,6 +21,8 @@ export function ConfirmDelete({
   triggerClassName: string;
   /** Accessible name / tooltip for an icon-only trigger. */
   triggerLabel?: string;
+  /** The confirming button's text. */
+  confirmLabel?: string;
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -75,7 +78,7 @@ export function ConfirmDelete({
         <div
           role="dialog"
           aria-label={prompt}
-          className="absolute right-0 top-full z-20 mt-1 flex flex-col gap-1.5 whitespace-nowrap rounded-md bg-chrome-bg-raised p-2 text-xs shadow-chrome ring-1 ring-chrome-fg/10"
+          className="absolute right-0 top-full z-20 mt-1 flex w-max max-w-72 flex-col gap-1.5 rounded-md bg-chrome-bg-raised p-2 text-xs shadow-chrome ring-1 ring-chrome-fg/10"
         >
           <span className="text-chrome-fg">{prompt}</span>
           {error !== null && <span className="text-chrome-danger">{error}</span>}
@@ -89,7 +92,7 @@ export function ConfirmDelete({
               disabled={busy}
               className="flex h-[26px] items-center rounded-md bg-chrome-danger px-2.5 text-xs font-medium text-white transition-[filter] hover:brightness-110 disabled:opacity-50"
             >
-              Delete
+              {confirmLabel}
             </button>
           </div>
         </div>

@@ -22,10 +22,9 @@ describe('data directory resolution', () => {
       expect(paths.tokenFile).toBe(join(dir, 'token'));
       expect(paths.worktreesDir).toBe(join(dir, 'worktrees'));
       expect(paths.logsDir).toBe(join(dir, 'logs'));
-      expect(paths.cacheDir).toBe(join(dir, 'cache'));
 
       await ensureDataDirs(paths);
-      for (const d of [paths.worktreesDir, paths.logsDir, paths.cacheDir]) {
+      for (const d of [paths.worktreesDir, paths.logsDir]) {
         const s = await stat(d);
         expect(s.isDirectory()).toBe(true);
       }

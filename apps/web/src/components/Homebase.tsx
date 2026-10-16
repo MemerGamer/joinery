@@ -26,6 +26,7 @@ import {
   Loader2,
   ChevronDown,
   RefreshCw,
+  Settings as SettingsIcon,
   Waypoints,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -36,7 +37,7 @@ import { useHeroTones } from '../lib/heroTone.ts';
 import { personFrom } from '../lib/people.ts';
 import { pullUrl } from '../lib/pullUrl.ts';
 import { relativeTime } from '../lib/relativeTime.ts';
-import { goReview } from '../lib/router.ts';
+import { goReview, goSettings } from '../lib/router.ts';
 import { useHomeData, type HomeReview } from '../state/HomeData.tsx';
 import { useTheme } from '../state/ThemeContext.tsx';
 import { CommandPalette } from './CommandPalette.tsx';
@@ -300,10 +301,13 @@ export function Homebase(): React.JSX.Element {
             alt="Joinery"
             className="pointer-events-none absolute top-[19px] left-4 h-[30px] w-auto select-none"
           />
-          {/* Right: an update (when there is one), the backdrop switcher, then refresh. */}
+          {/* Right: an update (when there is one), the backdrop switcher, settings, then refresh. */}
           <div className="home-topbar-right absolute top-4 right-4 flex h-9 items-center gap-1" data-tone={behindButtons}>
             <UpdateButton {...version} />
             <BackdropPicker value={backdrop} onChange={setBackdrop} />
+            <button type="button" aria-label="Settings" title="Settings" onClick={goSettings} className="chrome-icon-btn">
+              <SettingsIcon size={16} strokeWidth={1.75} aria-hidden />
+            </button>
             <button
               type="button"
               aria-label="Refresh"

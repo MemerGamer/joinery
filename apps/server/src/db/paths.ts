@@ -9,7 +9,6 @@
  *   token                    bearer token, mode 0600
  *   worktrees/<repo>/<sha>-<branch>/
  *   logs/
- *   cache/
  * ```
  */
 import { randomBytes } from 'node:crypto';
@@ -23,7 +22,6 @@ export type DataPaths = {
   readonly tokenFile: string;
   readonly worktreesDir: string;
   readonly logsDir: string;
-  readonly cacheDir: string;
 };
 
 /** Resolve the data directory. Does not touch the filesystem. */
@@ -35,7 +33,6 @@ export function resolveDataPaths(): DataPaths {
     tokenFile: join(root, 'token'),
     worktreesDir: join(root, 'worktrees'),
     logsDir: join(root, 'logs'),
-    cacheDir: join(root, 'cache'),
   };
 }
 
@@ -44,7 +41,6 @@ export async function ensureDataDirs(paths: DataPaths): Promise<void> {
   await mkdir(paths.root, { recursive: true });
   await mkdir(paths.worktreesDir, { recursive: true });
   await mkdir(paths.logsDir, { recursive: true });
-  await mkdir(paths.cacheDir, { recursive: true });
 }
 
 async function exists(path: string): Promise<boolean> {

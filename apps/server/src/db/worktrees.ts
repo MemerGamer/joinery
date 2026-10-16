@@ -76,3 +76,12 @@ export async function listStaleWorktrees(db: Db, maxAgeSeconds: number): Promise
 export async function deleteWorktree(db: Db, repoId: string, sha: string): Promise<void> {
   await db.delete(agentWorktree).where(and(eq(agentWorktree.repoId, repoId), eq(agentWorktree.sha, sha)));
 }
+
+/** Every cached worktree, or only one repo's. */
+export async function listWorktrees(db: Db, repoId?: string): Promise<AgentWorktree[]> {
+  const rows =
+    repoId === undefined
+      ? await db.select().from(agentWorktree)
+      : await db.select().from(agentWorktree).where(eq(agentWorktree.repoId, repoId));
+  return rows.map(toAgentWorktree);
+}

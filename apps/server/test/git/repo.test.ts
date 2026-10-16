@@ -10,7 +10,7 @@ import {
   pinReviewRef,
   remoteIdentity,
   revParse,
-  unpinReviewRef,
+  unpinReviewRefs,
 } from '../../src/git/repo.ts';
 import { gitCommit, initRepo, makeTempDir, removeTempDir, runGit, writeRepoFile } from './helpers.ts';
 
@@ -139,7 +139,7 @@ describe('repo.ts against real repos', () => {
     expect(await detectInProgressOperation(commonDir)).toBe('cherry-pick');
   });
 
-  it('pinReviewRef writes refs/review/<id> and unpinReviewRef removes it', async () => {
+  it('pinReviewRef writes refs/review/<id> and unpinReviewRefs removes it', async () => {
     const dir = await makeTempDir('joinery-repo-');
     dirs.push(dir);
     await initRepo(dir);
@@ -150,7 +150,7 @@ describe('repo.ts against real repos', () => {
     const resolved = runGit(dir, ['rev-parse', 'refs/review/rev_abc123']);
     expect(resolved.stdout.trim()).toBe(sha);
 
-    await unpinReviewRef('rev_abc123', { cwd: dir });
+    await unpinReviewRefs('rev_abc123', { cwd: dir });
     const afterDelete = runGit(dir, ['rev-parse', '--verify', 'refs/review/rev_abc123']);
     expect(afterDelete.exitCode).not.toBe(0);
   });
