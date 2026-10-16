@@ -2,9 +2,12 @@
  * Release awareness: which version is running, whether a newer GitHub
  * release exists, and kicking off `joinery update --yes`.
  *
- * The latest-release lookup is lazy (first request) and cached in memory for
- * six hours. Any failure — offline, a 404 while the repo is private, a rate
- * limit — yields `latest: null`, is logged once, and never throws.
+ * The latest-release lookup runs on request (Homebase asks each time it
+ * opens) and is cached in memory for ten minutes. It reads the redirect
+ * behind `github.com/<repo>/releases/latest` rather than calling the REST
+ * API, whose unauthenticated limit is 60 requests an hour per IP. Any
+ * failure — offline, a 404 while the repo is private, no release yet —
+ * yields `latest: null`, is logged once, and never throws.
  */
 import { spawn } from 'node:child_process';
 import { mkdirSync, openSync } from 'node:fs';
@@ -14,7 +17,7 @@ import { resolveDataPaths } from './db/paths.ts';
 import { conflict } from './http/errors.ts';
 import { RELEASE_REPO, runtimeLayout } from './runtime.ts';
 
-const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const CHECK_INTERVAL_MS = 10 * 60 * 1000;
 const CHECK_TIMEOUT_MS = 5_000;
 
 let latest: string | null = null;
@@ -41,13 +44,17 @@ function isNewer(candidate: string, current: string): boolean {
 
 async function fetchLatest(): Promise<void> {
   try {
-    const res = await fetch(`https://api.github.com/repos/${RELEASE_REPO}/releases/latest`, {
-      headers: { accept: 'application/vnd.github+json', 'user-agent': 'joinery' },
+    // Answers with a redirect to `/releases/tag/<tag>`; not followed, only read.
+    const res = await fetch(`https://github.com/${RELEASE_REPO}/releases/latest`, {
+      method: 'HEAD',
+      redirect: 'manual',
+      headers: { 'user-agent': 'joinery' },
       signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
     });
-    if (!res.ok) throw new Error(`GitHub responded ${res.status}`);
-    const body = (await res.json()) as { tag_name?: unknown };
-    const tag = typeof body.tag_name === 'string' ? body.tag_name.replace(/^v/, '') : '';
+    const location = res.headers.get('location') ?? '';
+    const match = /\/releases\/tag\/([^/?#]+)$/.exec(location);
+    if (match?.[1] === undefined) throw new Error(`GitHub responded ${res.status} without a release tag`);
+    const tag = decodeURIComponent(match[1]).replace(/^v/, '');
     latest = parseSemver(tag) === null ? null : tag;
   } catch (err) {
     latest = null;
