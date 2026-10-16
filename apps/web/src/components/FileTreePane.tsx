@@ -72,15 +72,13 @@ function chromeToTreeStyles(): TreeThemeStyles {
     '--trees-theme-sidebar-header-fg': chrome('--chrome-fg-muted'),
     '--trees-theme-sidebar-border': chrome('--chrome-border'),
     '--trees-theme-list-hover-bg': chrome('--chrome-bg-hover'),
-    // Tint rather than a solid accent block — see `chrome-row-selected` in
-    // styles/index.css; the tree can't use that utility (shadow root) so the
-    // same treatment is spelled out here.
-    '--trees-theme-list-active-selection-bg': chrome('--chrome-accent-soft'),
+    // No selection tint: a clicked file staying highlighted read as stuck,
+    // so the selected row looks like any other (hover still marks it).
+    '--trees-theme-list-active-selection-bg': 'transparent',
     '--trees-theme-list-active-selection-fg': chrome('--chrome-fg'),
     '--trees-theme-input-bg': chrome('--chrome-bg'),
     '--trees-theme-input-fg': chrome('--chrome-fg'),
-    // No outline on the focused/selected row: the tint alone marks it,
-    // matching the reading-order rows.
+    // No outline on the focused/selected row either.
     '--trees-theme-focus-ring': 'transparent',
     '--trees-theme-scrollbar-thumb': chrome('--chrome-border-strong'),
     '--trees-theme-git-added-fg': chrome('--chrome-success'),

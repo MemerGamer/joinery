@@ -57,7 +57,7 @@ function CodeBlock({
 // and when a caller overrides it smaller.
 export function Markdown({ children }: { children: string }): React.JSX.Element {
   return (
-    <div className="prose-sm max-w-none text-body leading-snug text-chrome-fg [&_a]:text-chrome-accent [&_code]:text-xs [&_p]:my-1">
+    <div className="prose-sm max-w-none text-body leading-relaxed text-chrome-fg [&_a]:text-chrome-accent [&_code]:text-xs [&_p]:my-1">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{

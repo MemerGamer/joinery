@@ -229,6 +229,15 @@ button:focus-visible,
 }
 
 /*
+ * No focus ring anywhere on the review page. It is driven by shortcuts and
+ * clicks, and the ring kept turning up on whatever was last clicked — a
+ * link in a thread, a file row — as a stray accent outline.
+ */
+.review-window :focus-visible {
+  outline: none;
+}
+
+/*
  * Tailwind v4's Preflight dropped the v3 default of `button { cursor:
  * pointer }` in favour of matching native browser behaviour, where a
  * bare <button> gets `cursor: default`. Almost every interactive control
@@ -491,17 +500,6 @@ button:focus-visible,
   border-radius: var(--chrome-radius-lg);
   background: var(--chrome-bg);
   box-shadow: inset 0 40px 40px -40px var(--chrome-island-sheen);
-}
-
-/*
- * Selected-row treatment shared by the reading-order file rows and the
- * threads list: an accent tint, not a solid accent block. A solid block
- * fights with the diff's own addition/deletion colour and is the single
- * loudest element on screen for what is only "you're here".
- */
-@utility chrome-row-selected {
-  background: var(--chrome-accent-soft);
-  color: var(--chrome-fg);
 }
 
 /* Shiki-rendered fenced blocks inside markdown (thread bodies, step notes). */

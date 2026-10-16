@@ -10,7 +10,7 @@
  * Threads entry point, since the threads panel slides over this pane.
  */
 import { DEFAULT_READING_ORDER_MODEL, type AgentModel } from '@joinery/core';
-import { AlertTriangle, ChevronRight, Loader2, MessageSquare } from 'lucide-react';
+import { AlertTriangle, Check, ChevronRight, Loader2, MessageSquare } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { resolveCurrentStepIndex } from '../lib/reviewNav.ts';
 import { runUiState } from '../lib/runState.ts';
@@ -35,6 +35,7 @@ export function ReadingOrderPane(): React.JSX.Element {
     threads,
     currentStepId,
     setCurrentStepId,
+    isViewed,
   } = useReview();
   const scrolledPath = useScrolledPath();
   const openThreads = threads.filter((t) => t.status === 'open').length;
@@ -121,6 +122,8 @@ export function ReadingOrderPane(): React.JSX.Element {
     }
     return [...missing];
   })();
+
+  const viewedPaths = new Set(fileList.filter(isViewed).map((f) => f.path));
 
   const jumpTo = (path: string, stepId?: string) => {
     if (stepId !== undefined) setCurrentStepId(stepId);
@@ -291,7 +294,7 @@ export function ReadingOrderPane(): React.JSX.Element {
                                 column explicitly rather than letting e.g. a wide code
                                 block or table blow out the panel; the trailing right
                                 padding keeps its measure off the panel's edge. */}
-                            <div className="min-w-0 overflow-hidden pb-2 pr-2 pt-0.5 text-body leading-relaxed text-chrome-fg-muted [&_.prose-sm]:text-body [&_.prose-sm]:leading-relaxed [&_code]:break-words [&_pre]:overflow-x-auto">
+                            <div className="min-w-0 overflow-hidden pb-2 pr-2 pt-0.5 text-body leading-[1.75] text-chrome-fg-muted [&_.prose-sm]:text-body [&_.prose-sm]:leading-[1.75] [&_code]:break-words [&_pre]:overflow-x-auto">
                               <Markdown>{step.guidance}</Markdown>
                             </div>
                           </div>
@@ -303,7 +306,7 @@ export function ReadingOrderPane(): React.JSX.Element {
                             key={f.path}
                             path={f.path}
                             title={f.note ?? undefined}
-                            selected={selectedPath === f.path}
+                            viewed={viewedPaths.has(f.path)}
                             onClick={() => jumpTo(f.path, step.id)}
                           />
                         ))}
@@ -325,7 +328,7 @@ export function ReadingOrderPane(): React.JSX.Element {
                   Also changed
                 </h3>
                 <div className="mb-2 ml-[2.125rem]">
-                  <p className="pb-2 pr-2 pt-0.5 text-body leading-relaxed text-chrome-fg-muted">
+                  <p className="pb-2 pr-2 pt-0.5 text-body leading-[1.75] text-chrome-fg-muted">
                     Changed after this reading order was generated.
                   </p>
                   <ul className="flex flex-col gap-0.5">
@@ -333,7 +336,7 @@ export function ReadingOrderPane(): React.JSX.Element {
                       <FileRow
                         key={path}
                         path={path}
-                        selected={selectedPath === path}
+                        viewed={viewedPaths.has(path)}
                         onClick={() => jumpTo(path)}
                       />
                     ))}
@@ -377,18 +380,18 @@ export function ReadingOrderPane(): React.JSX.Element {
 
 /**
  * A single jump-to-file row, shared between a step's own files and the
- * "Also changed" section below — both need the identical selected-state
- * styling, so this is the one place that defines it.
+ * "Also changed" section below. No selected state: a clicked row going
+ * tinted and staying that way read as stuck, so only hover marks a row.
  */
 function FileRow({
   path,
   title,
-  selected,
+  viewed,
   onClick,
 }: {
   path: string;
   title?: string | undefined;
-  selected: boolean;
+  viewed: boolean;
   onClick: () => void;
 }): React.JSX.Element {
   return (
@@ -396,14 +399,13 @@ function FileRow({
       <button
         type="button"
         onClick={onClick}
-        className={`flex w-full min-w-0 items-center rounded-[4px] px-2 py-[3px] text-left font-mono text-xs transition-colors ${
-          selected
-            ? 'chrome-row-selected'
-            : 'text-chrome-fg-muted hover:bg-chrome-bg-hover hover:text-chrome-fg'
-        }`}
+        className="flex w-full min-w-0 items-center gap-1 rounded-[4px] px-2 py-[3px] text-left font-mono text-xs text-chrome-fg-muted transition-colors hover:bg-chrome-bg-hover hover:text-chrome-fg"
         title={title ?? path}
       >
         <FilePath path={path} />
+        {viewed && (
+          <Check size={12} strokeWidth={2} className="ml-auto shrink-0 text-chrome-success" aria-label="Viewed" />
+        )}
       </button>
     </li>
   );

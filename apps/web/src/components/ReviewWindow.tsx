@@ -95,7 +95,7 @@ function ReviewWindowInner(): React.JSX.Element {
   }
 
   return (
-    <div className="flex h-full flex-col gap-2 bg-chrome-bg-sunken p-2">
+    <div className="review-window flex h-full flex-col gap-2 bg-chrome-bg-sunken p-2">
       {/*
        * Islands layout: every region — header, divergence banner, file
        * tree, diff pane, reading order — is its own rounded, bordered box
