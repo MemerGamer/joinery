@@ -1,4 +1,5 @@
 /** `joinery open`: open the web UI in the default browser. */
+import { openCommand } from '@joinery/server/runtime';
 import { baseUrl } from '../client.ts';
 import { printLine } from '../format.ts';
 import { parseCommand, wantsHelp } from './shared.ts';
@@ -12,7 +13,7 @@ export const open: Command = {
     const parsed = parseCommand(argv);
     if (wantsHelp(parsed)) return printLine(open.usage);
     const url = baseUrl();
-    const proc = Bun.spawn(['open', url], { stdout: 'inherit', stderr: 'inherit' });
+    const proc = Bun.spawn(openCommand(url), { stdout: 'inherit', stderr: 'inherit' });
     if ((await proc.exited) !== 0) throw new Error(`could not open ${url}`);
     printLine(url);
   },

@@ -15,7 +15,7 @@
 <p align="center">
   <a href="https://github.com/szhabolcs/joinery/releases/latest"><img src="https://img.shields.io/github/v/release/szhabolcs/joinery" alt="Latest release" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/szhabolcs/joinery" alt="MIT license" /></a>
-  <img src="https://img.shields.io/badge/platform-macOS-lightgrey" alt="Platform: macOS" />
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey" alt="Platform: macOS | Linux" />
 </p>
 
 https://github.com/user-attachments/assets/9e65d5d0-4fc3-4bb8-81ea-a9c59a61e001
@@ -73,7 +73,7 @@ Search every branch and PR across your repos.
 
 ## Install
 
-Joinery runs on macOS (Apple Silicon). You'll need `git`, the GitHub CLI
+Joinery runs on macOS (Apple Silicon) and Linux (x64, arm64). You'll need `git`, the GitHub CLI
 (`gh auth login`), and Claude Code (logged in) on your PATH.
 
 ```sh
@@ -81,7 +81,8 @@ curl -fsSL https://raw.githubusercontent.com/szhabolcs/joinery/main/scripts/inst
 ```
 
 This installs to `~/.joinery`, links `joinery` into `~/.local/bin`, and starts
-the server as a background service (a LaunchAgent).
+the server as a background service (a LaunchAgent on macOS, a systemd user
+unit on Linux).
 
 The server listens on `127.0.0.1:7317`. If that port is taken, the installer
 picks a free one; to choose it yourself, pass `--port`:

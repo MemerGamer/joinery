@@ -12,17 +12,19 @@ import { mkdtemp, readFile, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
-import { RELEASE_REPO, runtimeLayout } from '@joinery/server/runtime';
+import { RELEASE_REPO, releaseTarget, runtimeLayout, serviceRestartCommand } from '@joinery/server/runtime';
 import { UsageError, flagBoolean, flagString } from '../args.ts';
 import { printLine } from '../format.ts';
 import { parseCommand, wantsHelp } from './shared.ts';
-import { plistPath, serviceTarget } from './service.ts';
+import { serviceFile } from './service.ts';
 import type { Command } from './types.ts';
 
 const SEMVER = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 
 function assetName(version: string): string {
-  return `joinery-${version}-darwin-arm64.tar.gz`;
+  const target = releaseTarget();
+  if (target === null) throw new Error(`no release is published for ${process.platform}-${process.arch}`);
+  return `joinery-${version}-${target}.tar.gz`;
 }
 
 function assetUrl(version: string, suffix = ''): string {
@@ -134,7 +136,7 @@ export const update: Command = {
       printLine(`current   ${layout.version}`);
       printLine(`target    ${from !== undefined ? `${from} (local tarball)` : version}`);
       printLine(`install   ${join(layout.home, 'current')}`);
-      if (existsSync(plistPath())) printLine('then restart the background service');
+      if (existsSync(serviceFile())) printLine('then restart the background service');
       if (!yes && !(await confirm('Continue?'))) {
         printLine('cancelled');
         return;
@@ -169,9 +171,9 @@ export const update: Command = {
       }
       printLine(`updated ${layout.version} -> ${version}`);
 
-      if (existsSync(plistPath())) {
+      if (existsSync(serviceFile())) {
         printLine('restarting service');
-        if ((await run(['launchctl', 'kickstart', '-k', serviceTarget()])) !== 0) {
+        if ((await run(serviceRestartCommand())) !== 0) {
           printLine('could not restart the service; run `joinery service install`');
         }
       }

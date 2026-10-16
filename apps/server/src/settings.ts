@@ -5,7 +5,7 @@
  * - integrations: is `claude` there, are `gh`/`glab` on PATH, and can each
  *   forge host the registered repos point at actually be asked;
  * - Full Disk Access for the installed binary on macOS, opening the pane
- *   to grant it, and restarting the LaunchAgent so a grant applies;
+ *   to grant it, and restarting the background service so a grant applies;
  * - the data directory's footprint, and clearing what's only a cache.
  */
 import { spawn } from 'node:child_process';
@@ -19,7 +19,7 @@ import { cacheEntryStats, clearCacheEntries, listRepos, listUnfinishedRuns, list
 import { resolveDataPaths } from './db/paths.ts';
 import { diagnose } from './git/forge/cli.ts';
 import { conflict } from './http/errors.ts';
-import { SERVICE_LABEL, runtimeLayout } from './runtime.ts';
+import { runsAsService, runtimeLayout, serviceRestartCommand } from './runtime.ts';
 import { clearAllStoredCaches } from './storedCache.ts';
 
 const FULL_DISK_ACCESS_PANE = 'x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles';
@@ -72,15 +72,6 @@ async function hasFullDiskAccess(): Promise<boolean> {
   }
 }
 
-function serviceTarget(): string {
-  return `gui/${process.getuid?.() ?? 501}/${SERVICE_LABEL}`;
-}
-
-/** Started by launchd as the Joinery LaunchAgent (it sets `XPC_SERVICE_NAME` to the label). */
-function runsAsService(): boolean {
-  return process.env['XPC_SERVICE_NAME'] === SERVICE_LABEL;
-}
-
 export async function getFullDiskAccess(): Promise<FullDiskAccess> {
   const binary = await installedBinary();
   const applies = process.platform === 'darwin' && binary !== null;
@@ -106,12 +97,13 @@ export async function openFullDiskAccess(): Promise<void> {
   openDetached(['-R', binary]);
 }
 
-/** `launchctl kickstart -k` replaces this process, so it's spawned detached and the response goes out first. */
+/** Restarting the service replaces this process, so it's spawned detached and the response goes out first. */
 export function restartServer(): void {
   if (!runsAsService()) {
     throw conflict('the server is not running as the background service', 'Restart `joinery serve` yourself.');
   }
-  const child = spawn('launchctl', ['kickstart', '-k', serviceTarget()], { detached: true, stdio: 'ignore' });
+  const [cmd, ...args] = serviceRestartCommand();
+  const child = spawn(cmd ?? '', args, { detached: true, stdio: 'ignore' });
   child.unref();
 }
 

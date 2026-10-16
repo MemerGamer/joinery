@@ -17,7 +17,8 @@
  *     migrations/                server SQL migrations
  *   data/                        state.sqlite, token, worktrees, logs, cache
  * ~/.local/bin/joinery -> ~/.joinery/current/joinery
- * ~/Library/LaunchAgents/dev.joinery.server.plist   runs `current/joinery serve`
+ * ~/Library/LaunchAgents/dev.joinery.server.plist   macOS: runs `current/joinery serve`
+ * ~/.config/systemd/user/joinery.service             Linux: the same, as a systemd user unit
  * ```
  *
  * `JOINERY_DATA_DIR` still overrides the data directory in both shapes.
@@ -32,6 +33,40 @@ export const RELEASE_REPO = 'szhabolcs/joinery';
 
 /** The launchd label of the background server service. */
 export const SERVICE_LABEL = 'dev.joinery.server';
+
+/** The systemd user unit of the background server service on Linux. */
+export const SYSTEMD_UNIT = 'joinery.service';
+
+/** Set in the service's environment so the server knows it may restart itself through it. */
+export const SERVICE_ENV = 'JOINERY_SERVICE';
+
+/** The release asset suffix for this machine, e.g. `darwin-arm64`; null when no build is published for it. */
+export function releaseTarget(): string | null {
+  const target = `${process.platform}-${process.arch}`;
+  return ['darwin-arm64', 'linux-x64', 'linux-arm64'].includes(target) ? target : null;
+}
+
+/** The launchd domain target of the current user's GUI session. */
+export function launchdTarget(): string {
+  return `gui/${process.getuid?.() ?? 501}/${SERVICE_LABEL}`;
+}
+
+/** Kill and relaunch the background service: launchd on macOS, systemd on Linux. */
+export function serviceRestartCommand(): string[] {
+  return process.platform === 'darwin'
+    ? ['launchctl', 'kickstart', '-k', launchdTarget()]
+    : ['systemctl', '--user', 'restart', SYSTEMD_UNIT];
+}
+
+/** Started by the background service (launchd sets `XPC_SERVICE_NAME` to the label; the systemd unit sets `SERVICE_ENV`). */
+export function runsAsService(): boolean {
+  return process.env['XPC_SERVICE_NAME'] === SERVICE_LABEL || process.env[SERVICE_ENV] === '1';
+}
+
+/** The command that opens a URL or file with the desktop's default app. */
+export function openCommand(target: string): string[] {
+  return process.platform === 'darwin' ? ['open', target] : ['xdg-open', target];
+}
 
 export type RuntimeLayout = {
   readonly mode: 'dev' | 'installed';

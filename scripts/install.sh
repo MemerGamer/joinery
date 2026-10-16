@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install Joinery (macOS, Apple Silicon) from a GitHub Release tarball.
+# Install Joinery (macOS on Apple Silicon, or Linux x64/arm64) from a GitHub Release tarball.
 #
 #   curl -fsSL https://raw.githubusercontent.com/szhabolcs/joinery/main/scripts/install.sh | sh
 #   curl -fsSL .../install.sh | sh -s -- --port 8123     pick the server port
@@ -60,11 +60,22 @@ random_port() {
 retry_hint="re-run with --port <number>, e.g.
   curl -fsSL https://raw.githubusercontent.com/$REPO/main/scripts/install.sh | sh -s -- --port 8123"
 
-[ "$(uname -s)" = "Darwin" ] || die "Joinery only supports macOS for now."
-[ "$(uname -m)" = "arm64" ] || die "Joinery only supports Apple Silicon (arm64) for now."
+case "$(uname -s)-$(uname -m)" in
+  Darwin-arm64) target="darwin-arm64" ;;
+  Darwin-*) die "Joinery only supports Apple Silicon Macs for now." ;;
+  Linux-x86_64|Linux-amd64) target="linux-x64" ;;
+  Linux-aarch64|Linux-arm64) target="linux-arm64" ;;
+  *) die "Joinery supports macOS (Apple Silicon) and Linux (x64, arm64); this is $(uname -s) $(uname -m)." ;;
+esac
 
-command -v git >/dev/null 2>&1 || warn "git not found on PATH (install Xcode command line tools: xcode-select --install)"
-command -v gh >/dev/null 2>&1 || command -v glab >/dev/null 2>&1 || warn "neither gh nor glab found on PATH (GitHub: brew install gh && gh auth login; GitLab: brew install glab && glab auth login)"
+if [ "$target" = "darwin-arm64" ]; then
+  command -v git >/dev/null 2>&1 || warn "git not found on PATH (install Xcode command line tools: xcode-select --install)"
+  command -v gh >/dev/null 2>&1 || command -v glab >/dev/null 2>&1 || warn "neither gh nor glab found on PATH (GitHub: brew install gh && gh auth login; GitLab: brew install glab && glab auth login)"
+else
+  command -v git >/dev/null 2>&1 || warn "git not found on PATH (install it with your package manager)"
+  command -v gh >/dev/null 2>&1 || command -v glab >/dev/null 2>&1 || warn "neither gh nor glab found on PATH (install one, then gh auth login / glab auth login)"
+  command -v systemctl >/dev/null 2>&1 || [ "${JOINERY_SKIP_SERVICE:-}" = "1" ] || warn "systemctl not found: the background service needs systemd (or set JOINERY_SKIP_SERVICE=1 and run \`joinery serve\` yourself)"
+fi
 command -v claude >/dev/null 2>&1 || warn "claude not found on PATH (install Claude Code and log in)"
 
 if [ -n "$requested_port" ]; then
@@ -103,13 +114,17 @@ else
     [ -n "$version" ] || die "could not determine the latest release"
   fi
   version="${version#v}"
-  asset="joinery-$version-darwin-arm64.tar.gz"
+  asset="joinery-$version-$target.tar.gz"
   url="https://github.com/$REPO/releases/download/v$version/$asset"
   say "Downloading Joinery $version..."
   curl -fsSL -o "$tmp/$asset" "$url" || die "download failed: $url"
   curl -fsSL -o "$tmp/$asset.sha256" "$url.sha256" || die "download failed: $url.sha256"
   expected="$(awk '{print $1}' "$tmp/$asset.sha256")"
-  actual="$(shasum -a 256 "$tmp/$asset" | awk '{print $1}')"
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "$tmp/$asset" | awk '{print $1}')"
+  else
+    actual="$(shasum -a 256 "$tmp/$asset" | awk '{print $1}')"
+  fi
   [ "$expected" = "$actual" ] || die "sha256 mismatch (expected $expected, got $actual)"
   tarball="$tmp/$asset"
 fi
