@@ -87,6 +87,18 @@ const FILE_CARD_CSS = `
   box-shadow: inset 0 40px 40px -40px var(--chrome-island-sheen, transparent);
 }
 /*
+ * The fold chevron's ::after stretches over the whole header (see
+ * renderHeaderPrefix), so its empty space folds the file. The text is lifted
+ * above that layer so it stays selectable.
+ */
+[data-title],
+[data-prev-name],
+[data-additions-count],
+[data-deletions-count] {
+  position: relative;
+  z-index: 1;
+}
+/*
  * Corner masks. While a header is stuck, the file's code scrolls up under
  * it and shows through the two rounded top corners (the header's own
  * background stops at its border). These paint the region *outside* each
@@ -311,7 +323,7 @@ export function ReviewCodeView(): React.JSX.Element {
             aria-checked={viewed}
             onClick={() => void toggleViewed(entry.path)}
             title={viewed ? 'Viewed — unchecks itself when this file changes' : 'Mark as viewed'}
-            className={`flex h-6 shrink-0 select-none items-center gap-1.5 rounded-md px-2 font-sans text-xs transition-colors ${
+            className={`relative z-1 flex h-6 shrink-0 select-none items-center gap-1.5 rounded-md px-2 font-sans text-xs transition-colors ${
               viewed
                 ? 'bg-chrome-success-bg text-chrome-success'
                 : 'text-chrome-fg-muted hover:bg-chrome-bg-hover hover:text-chrome-fg'
@@ -329,7 +341,10 @@ export function ReviewCodeView(): React.JSX.Element {
           aria-label={item.collapsed === true ? `Expand ${item.id}` : `Collapse ${item.id}`}
           title={item.collapsed === true ? `Expand ${item.id}` : `Collapse ${item.id}`}
           aria-expanded={item.collapsed !== true}
-          className="chrome-icon-btn -ml-1 size-6 text-chrome-fg-subtle"
+          // `after:` stretches the hit area over the whole header (the
+          // nearest positioned ancestor), so its empty space folds the file
+          // too; the title, counts, and "Viewed" sit above it.
+          className="chrome-icon-btn -ml-1 size-6 text-chrome-fg-subtle after:absolute after:inset-0 after:cursor-pointer"
         >
           {item.collapsed === true ? (
             <ChevronRight size={14} strokeWidth={1.5} aria-hidden />
