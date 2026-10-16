@@ -6,13 +6,13 @@
  * worktree cache pruned (`agent/maintenance.ts`), and the git/`gh` answer
  * cache too (`storedCache.ts`).
  */
-import { DEFAULT_HOST, DEFAULT_PORT } from '@joinery/core';
+import { DEFAULT_HOST } from '@joinery/core';
 import { initDataDir, openDb, readToken, runMigrations } from './db/index.ts';
 import { EngineRegistry } from './engine/index.ts';
 import { createApp } from './http/app.ts';
 import { failOrphanedRuns, startWorktreeSweep } from './agent/maintenance.ts';
 import { startCacheEntryPrune } from './storedCache.ts';
-import { runtimeLayout } from './runtime.ts';
+import { configuredPort, portFile, runtimeLayout } from './runtime.ts';
 
 export async function startServer(): Promise<void> {
   const paths = await initDataDir();
@@ -33,14 +33,23 @@ export async function startServer(): Promise<void> {
   const { app, websocket } = createApp({ db, registry, token, webDistDir });
 
   const host = process.env['JOINERY_HOST']?.trim() || DEFAULT_HOST;
-  const port = Number(process.env['JOINERY_PORT']?.trim() || DEFAULT_PORT);
+  const port = configuredPort();
 
-  const server = Bun.serve({
-    hostname: host,
-    port,
-    fetch: app.fetch,
-    websocket,
-  });
+  let server: ReturnType<typeof Bun.serve>;
+  try {
+    server = Bun.serve({
+      hostname: host,
+      port,
+      fetch: app.fetch,
+      websocket,
+    });
+  } catch (err) {
+    if ((err as { code?: unknown }).code !== 'EADDRINUSE') throw err;
+    throw new Error(
+      `port ${String(port)} is already in use (see \`lsof -i :${String(port)}\`); ` +
+        `set another in ${portFile()} or with JOINERY_PORT`,
+    );
+  }
 
   console.log(`joinery ${layout.version} listening on http://${host}:${String(port)}`);
   console.log(`data dir: ${paths.root}`);

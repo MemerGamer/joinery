@@ -26,6 +26,7 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { DEFAULT_PORT } from '@joinery/core';
 
 /** The GitHub repo releases are published to and checked against. */
 export const RELEASE_REPO = 'szhabolcs/joinery';
@@ -139,4 +140,30 @@ export function runtimeLayout(): RuntimeLayout {
 /** The data directory, honouring `JOINERY_DATA_DIR`. */
 export function dataDirRoot(): string {
   return resolve(process.env['JOINERY_DATA_DIR']?.trim() || runtimeLayout().defaultDataDir);
+}
+
+/** The data-dir file `scripts/install.sh` persists the chosen port to. */
+export function portFile(): string {
+  return join(dataDirRoot(), '.port');
+}
+
+function parsePort(raw: string, source: string): number {
+  const port = Number(raw);
+  if (!/^\d+$/.test(raw) || port < 1 || port > 65535) throw new Error(`invalid port "${raw}" in ${source}`);
+  return port;
+}
+
+/**
+ * The port the server listens on and the CLI connects to: `JOINERY_PORT`,
+ * then the data dir's `.port` file, then `DEFAULT_PORT`.
+ */
+export function configuredPort(): number {
+  const fromEnv = process.env['JOINERY_PORT']?.trim();
+  if (fromEnv) return parsePort(fromEnv, 'JOINERY_PORT');
+  const file = portFile();
+  if (existsSync(file)) {
+    const fromFile = readFileSync(file, 'utf8').trim();
+    if (fromFile) return parsePort(fromFile, file);
+  }
+  return DEFAULT_PORT;
 }

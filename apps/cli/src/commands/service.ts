@@ -29,7 +29,8 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 
 function renderPlist(binary: string, logFile: string, path: string): string {
   const e = escapeXml;
-  const extraEnv = ['JOINERY_PORT', 'JOINERY_DATA_DIR']
+  // The port is not baked in: the server reads it from the data dir's `.port`.
+  const extraEnv = ['JOINERY_DATA_DIR']
     .filter((k) => process.env[k])
     .map((k) => `\n    <key>${k}</key><string>${e(process.env[k] ?? '')}</string>`)
     .join('');

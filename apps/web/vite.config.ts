@@ -13,6 +13,19 @@ import type { Plugin } from 'vite';
 // `packages/core/src/api.ts`'s `DEFAULT_PORT`.
 const DEFAULT_PORT = 7317;
 
+const dataDir = process.env['JOINERY_DATA_DIR'] ?? fileURLToPath(new URL('../../data', import.meta.url));
+
+/** Mirrors `configuredPort()` in `apps/server/src/runtime.ts`: env, then `data/.port`, then the default. */
+function serverPort(): string {
+  const fromEnv = process.env['JOINERY_PORT']?.trim();
+  if (fromEnv) return fromEnv;
+  try {
+    return readFileSync(`${dataDir}/.port`, 'utf8').trim() || String(DEFAULT_PORT);
+  } catch {
+    return String(DEFAULT_PORT);
+  }
+}
+
 const TOKEN_PLACEHOLDER = '__JOINERY_TOKEN_PLACEHOLDER__';
 
 /**
@@ -28,7 +41,6 @@ function reviewToken(): Plugin {
     name: 'review-token',
     apply: 'serve',
     transformIndexHtml(html) {
-      const dataDir = process.env['JOINERY_DATA_DIR'] ?? fileURLToPath(new URL('../../data', import.meta.url));
       try {
         const token = readFileSync(`${dataDir}/token`, 'utf8').trim();
         return html.replace(TOKEN_PLACEHOLDER, token);
@@ -53,7 +65,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: `http://127.0.0.1:${DEFAULT_PORT}`,
+        target: `http://127.0.0.1:${serverPort()}`,
         changeOrigin: false,
         ws: true,
       },

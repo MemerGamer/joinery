@@ -83,6 +83,15 @@ curl -fsSL https://raw.githubusercontent.com/szhabolcs/joinery/main/scripts/inst
 This installs to `~/.joinery`, links `joinery` into `~/.local/bin`, and starts
 the server as a background service (a LaunchAgent).
 
+The server listens on `127.0.0.1:7317`. If that port is taken, the installer
+picks a free one; to choose it yourself, pass `--port`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/szhabolcs/joinery/main/scripts/install.sh | sh -s -- --port 8123
+```
+
+The port is saved to `~/.joinery/data/.port`, and the server and CLI both read it.
+
 ```sh
 joinery open      # open the web UI
 joinery update    # update to the latest release and restart

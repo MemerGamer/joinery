@@ -9,7 +9,6 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   api,
-  DEFAULT_PORT,
   errorResponseSchema,
   type ApiOperation,
   type BodyOf,
@@ -17,7 +16,7 @@ import {
   type ResponseOf,
 } from '@joinery/core';
 import type { AgentModel, DiffQuery } from '@joinery/core';
-import { dataDirRoot } from '@joinery/server/runtime';
+import { configuredPort, dataDirRoot } from '@joinery/server/runtime';
 
 /** A structured API error: the server's `{code, message, hint}` shape. */
 export class ApiError extends Error {
@@ -35,7 +34,7 @@ export class ApiError extends Error {
 // --- configuration: base URL and bearer token ---
 
 export function baseUrl(): string {
-  return process.env['JOINERY_URL'] ?? `http://127.0.0.1:${DEFAULT_PORT}`;
+  return process.env['JOINERY_URL'] ?? `http://127.0.0.1:${String(configuredPort())}`;
 }
 
 /** The data directory shared with the server (see `@joinery/server/runtime`). */
