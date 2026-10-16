@@ -43,6 +43,7 @@ import { repoLabel } from '../Explore.tsx';
 import { FolderPicker } from '../home/FolderPicker.tsx';
 import { Panel } from '../home/Panel.tsx';
 import { Chip, type Tone } from '../home/primitives.tsx';
+import { ThemePicker } from './ThemePicker.tsx';
 import { ThemeSample } from './ThemeSample.tsx';
 
 /** How long to wait for the server to come back after a restart before giving up. */
@@ -216,8 +217,8 @@ function ThemeColumn({
   onChange: (name: string) => void;
 }): React.JSX.Element {
   const id = `theme-${slot}`;
-  const colorblind = options.filter((o) => o.colorblindSafe);
-  const rest = options.filter((o) => !o.colorblindSafe);
+  // The theme highlighted in the open picker, so the sample previews it.
+  const [preview, setPreview] = useState<string | null>(null);
   return (
     <div className="flex min-w-0 flex-col gap-2">
       {/* Fixed height, so the "in use" chip doesn't push one column's picker below the other's. */}
@@ -228,28 +229,8 @@ function ThemeColumn({
         </label>
         {inUse && <Chip tone="accent">in use</Chip>}
       </div>
-      <select
-        id={id}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-8 w-full rounded-md border border-chrome-border bg-chrome-bg-raised px-2 text-body text-chrome-fg"
-      >
-        <optgroup label="Colorblind-safe">
-          {colorblind.map((o) => (
-            <option key={o.name} value={o.name}>
-              {o.displayName}
-            </option>
-          ))}
-        </optgroup>
-        <optgroup label="All themes">
-          {rest.map((o) => (
-            <option key={o.name} value={o.name}>
-              {o.displayName}
-            </option>
-          ))}
-        </optgroup>
-      </select>
-      <ThemeSample name={value} />
+      <ThemePicker id={id} options={options} value={value} onChange={onChange} onPreview={setPreview} />
+      <ThemeSample name={preview ?? value} />
     </div>
   );
 }
