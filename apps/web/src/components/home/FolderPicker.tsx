@@ -43,7 +43,7 @@ export function FolderPicker({ onAdded, onCancel }: Props): React.JSX.Element {
   const [query, setQuery] = useState('');
   const [highlighted, setHighlighted] = useState('');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; hint?: string | undefined } | null>(null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<AddReposResult | null>(null);
@@ -60,7 +60,7 @@ export function FolderPicker({ onAdded, onCancel }: Props): React.JSX.Element {
       setQuery('');
       setHighlighted(next.isRepo ? ADD_CURRENT : (next.entries[0]?.name ?? ''));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to list folder.');
+      setError(err instanceof ApiError ? { message: err.message, hint: err.hint } : { message: 'Failed to list folder.' });
     } finally {
       setLoading(false);
     }
@@ -293,7 +293,12 @@ export function FolderPicker({ onAdded, onCancel }: Props): React.JSX.Element {
 
         {(error !== null || result !== null) && (
           <div className="flex shrink-0 flex-col gap-0.5 border-t border-chrome-border bg-chrome-danger-bg px-3.5 py-2 text-xs text-chrome-danger">
-            {error !== null && <p>{error}</p>}
+            {error !== null && (
+              <>
+                <p>{error.message}</p>
+                {error.hint !== undefined && <p>{error.hint}</p>}
+              </>
+            )}
             {result !== null && (
               <>
                 <p className="font-medium">
@@ -301,10 +306,12 @@ export function FolderPicker({ onAdded, onCancel }: Props): React.JSX.Element {
                   {String(result.failed.length)} failed — still ticked to retry:
                 </p>
                 {result.failed.map((f) => (
-                  <p key={f.path} className="truncate" title={`${f.path}\n${f.message}${f.hint !== undefined ? `\n${f.hint}` : ''}`}>
-                    <span className="font-mono">{baseName(f.path)}</span> — {f.message}
-                    {f.hint !== undefined ? ` — ${f.hint}` : ''}
-                  </p>
+                  <div key={f.path}>
+                    <p className="truncate" title={`${f.path}\n${f.message}`}>
+                      <span className="font-mono">{baseName(f.path)}</span> — {f.message}
+                    </p>
+                    {f.hint !== undefined && <p>{f.hint}</p>}
+                  </div>
                 ))}
               </>
             )}
