@@ -25,6 +25,18 @@ async function hasGit(dir: string): Promise<boolean> {
   }
 }
 
+/**
+ * Folders macOS guards behind a per-app privacy prompt: the home's Desktop,
+ * Documents and Downloads, iCloud Drive, and mounted volumes (the boot
+ * volume's `/Volumes` entry is a symlink to `/` and isn't guarded).
+ */
+function isMacPrivacyGuarded(full: string, isSymlink: boolean): boolean {
+  if (process.platform !== 'darwin') return false;
+  if (dirname(full) === '/Volumes') return !isSymlink;
+  const home = homedir();
+  return ['Desktop', 'Documents', 'Downloads', 'Library/Mobile Documents'].some((d) => full === join(home, d));
+}
+
 async function isDir(path: string): Promise<boolean> {
   try {
     return (await stat(path)).isDirectory();
@@ -59,6 +71,10 @@ export async function listDirs(rawPath: string | undefined, hidden: boolean): Pr
         if (!hidden && child.name.startsWith('.')) return null;
         const full = join(path, child.name);
         if (!child.isDirectory() && !(child.isSymbolicLink() && (await isDir(full)))) return null;
+        // Don't probe guarded folders for `.git`: that alone pops the macOS prompt.
+        if (isMacPrivacyGuarded(full, child.isSymbolicLink())) {
+          return { name: child.name, path: full, isRepo: false, macPrivacyPrompt: true };
+        }
         return { name: child.name, path: full, isRepo: await hasGit(full) };
       }),
     )

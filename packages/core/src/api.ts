@@ -135,7 +135,13 @@ export const listDirsQuerySchema = z.object({
   /** Include dot-directories. */
   hidden: z.enum(['1', 'true']).optional(),
 });
-export const dirEntrySchema = z.object({ name: z.string(), path: z.string(), isRepo: z.boolean() });
+export const dirEntrySchema = z.object({
+  name: z.string(),
+  path: z.string(),
+  isRepo: z.boolean(),
+  /** macOS (server host) asks the user before Joinery may open this folder. */
+  macPrivacyPrompt: z.boolean().optional(),
+});
 export type DirEntry = z.infer<typeof dirEntrySchema>;
 export const listReviewsQuerySchema = z.object({
   /** Omitted means every status — archived reviews included. */

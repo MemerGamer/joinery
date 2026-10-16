@@ -22,7 +22,7 @@ interface Props {
 
 /** Same row as the command palette's items. */
 const ITEM_CLASS =
-  'group flex h-8 items-center gap-2.5 rounded-md px-2.5 text-body text-chrome-fg outline-hidden data-[selected=true]:bg-chrome-bg-active [&_svg]:shrink-0 [&_svg]:text-chrome-fg-subtle data-[selected=true]:[&_svg]:text-chrome-fg-muted';
+  'group flex min-h-8 items-center gap-2.5 rounded-md px-2.5 text-body text-chrome-fg outline-hidden data-[selected=true]:bg-chrome-bg-active [&_svg]:shrink-0 [&_svg]:text-chrome-fg-subtle data-[selected=true]:[&_svg]:text-chrome-fg-muted';
 
 /** cmdk item value for the "add the folder you're in" row; can't collide with a name (no `/` in names). */
 const ADD_CURRENT = '/add-current';
@@ -152,7 +152,7 @@ export function FolderPicker({ onAdded, onCancel }: Props): React.JSX.Element {
           {ticked && <Check size={11} strokeWidth={2.5} aria-hidden />}
         </button>
         <FolderGit2 size={14} strokeWidth={1.5} aria-hidden />
-        <span className="truncate">{entry.name}</span>
+        <EntryName entry={entry} className="text-chrome-fg" />
         <ChevronHint />
       </Command.Item>
     );
@@ -281,7 +281,7 @@ export function FolderPicker({ onAdded, onCancel }: Props): React.JSX.Element {
                       {/* Spacer the width of a checkbox, so names line up with the repos above. */}
                       <span className="size-4 shrink-0" aria-hidden />
                       <Folder size={14} strokeWidth={1.5} aria-hidden />
-                      <span className="truncate text-chrome-fg-muted group-data-[selected=true]:text-chrome-fg">{entry.name}</span>
+                      <EntryName entry={entry} className="text-chrome-fg-muted group-data-[selected=true]:text-chrome-fg" />
                       <ChevronHint />
                     </Command.Item>
                   ))}
@@ -371,6 +371,17 @@ function Group({
     >
       {children}
     </Command.Group>
+  );
+}
+
+/** The row's name, with a note under it when macOS will prompt before opening the folder. */
+function EntryName({ entry, className }: { entry: ListDirsResult['entries'][number]; className: string }): React.JSX.Element {
+  if (entry.macPrivacyPrompt !== true) return <span className={`truncate ${className}`}>{entry.name}</span>;
+  return (
+    <span className="flex min-w-0 flex-col py-1 leading-tight">
+      <span className={`truncate ${className}`}>{entry.name}</span>
+      <span className="truncate text-micro text-chrome-fg-subtle">macOS will ask to allow access</span>
+    </span>
   );
 }
 
