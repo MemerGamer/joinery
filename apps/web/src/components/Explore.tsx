@@ -344,10 +344,10 @@ export function ExploreSection(): React.JSX.Element {
     <Panel
       icon={<Sparkles aria-hidden />}
       title="Explore"
-      // A screen tall, less the page's margins, so scrolled to the bottom the whole
-      // panel is in view; the lists scroll inside it, so switching repos never
-      // resizes the page.
-      className="h-[calc(100dvh-5rem)] scroll-mt-10"
+      // A screen tall, less the sticky top bar and the page's foot (version and
+      // margins), so scrolled to the bottom the whole panel is in view below the
+      // bar; the lists scroll inside it, so switching repos never resizes the page.
+      className="h-[calc(100dvh-10rem)] scroll-mt-16"
       bodyClassName="flex flex-col px-0 pb-0"
     >
       {/* `id` on a wrapper rather than the panel so `goExplore()` can find it. */}

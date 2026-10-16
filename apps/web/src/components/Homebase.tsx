@@ -359,9 +359,9 @@ export function Homebase(): React.JSX.Element {
               </div>
             )}
 
-            {/* Both columns share one height: the row's, set by the reviews (with a floor); the queue scrolls inside it. */}
+            {/* Both columns share one height: the row's, set by the reviews (with a floor that grows with the screen); the queue scrolls inside it. */}
             {/* Without the queue pane the cards would stretch across the whole column, so the row narrows to roughly the width they have beside it, and Explore narrows with it. */}
-            <div className={`flex min-h-72 w-full items-stretch gap-3 ${showQueue ? '' : 'mx-auto max-w-4xl'}`}>
+            <div className={`flex min-h-[max(18rem,50dvh)] w-full items-stretch gap-3 ${showQueue ? '' : 'mx-auto max-w-4xl'}`}>
               <main className="flex min-w-0 flex-1 flex-col gap-3">
                 {showSkeleton ? (
                   // The real panel, so the swap to cards only changes what's inside it.
