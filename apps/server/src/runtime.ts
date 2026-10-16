@@ -10,12 +10,11 @@
  *
  * ```
  * ~/.joinery/                    JOINERY_HOME overrides
- *   versions/<version>/
- *     joinery                    the compiled binary (CLI + server)
- *     release.json               { "version": "<version>" }
+ *   current/                     replaced wholesale on update (a real dir, so
+ *     joinery                    the binary's path, which macOS keys folder
+ *     release.json               permissions on, never changes)
  *     web/                       built web app
  *     migrations/                server SQL migrations
- *   current -> versions/<version>
  *   data/                        state.sqlite, token, worktrees, logs, cache
  * ~/.local/bin/joinery -> ~/.joinery/current/joinery
  * ~/Library/LaunchAgents/dev.joinery.server.plist   runs `current/joinery serve`

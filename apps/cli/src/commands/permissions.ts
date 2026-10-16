@@ -34,7 +34,7 @@ export const permissions: Command = {
     if (layout.mode !== 'installed') {
       throw new Error('this is a source checkout — grant Full Disk Access to your terminal instead');
     }
-    // macOS keys the grant on the real file, not the `current` symlink.
+    // macOS keys the grant on the real file; older installs had `current` as a symlink.
     const binary = await realpath(join(layout.home, 'current', 'joinery'));
 
     printLine('Opening System Settings → Privacy & Security → Full Disk Access');

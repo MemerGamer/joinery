@@ -16,7 +16,7 @@
 #   JOINERY_PORT             same as --port
 #   JOINERY_SKIP_SERVICE=1   don't install the background service
 #
-# Safe to re-run: it installs the version alongside others and repoints `current`.
+# Safe to re-run: it replaces `$JOINERY_HOME/current` with the downloaded release.
 set -eu
 
 REPO="szhabolcs/joinery"
@@ -114,19 +114,20 @@ else
   tarball="$tmp/$asset"
 fi
 
-# Extract next to the final location, then rename, so the swap is atomic.
-mkdir -p "$HOME_DIR/versions"
-staging="$(mktemp -d "$HOME_DIR/versions/.staging-XXXXXX")"
+# Extract next to `current`, then swap it in. `current` is a real directory
+# (older installs had a symlink into versions/): macOS keys folder permissions
+# on the binary's real path, so it has to stay the same across updates.
+mkdir -p "$HOME_DIR"
+staging="$(mktemp -d "$HOME_DIR/.staging-XXXXXX")"
 trap 'rm -rf "$tmp" "$staging"' EXIT INT TERM
 tar -xzf "$tarball" -C "$staging"
 [ -f "$staging/release.json" ] || die "tarball has no release.json"
 installed="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$staging/release.json" | head -n 1)"
 [ -n "$installed" ] || die "could not read the version from release.json"
-rm -rf "$HOME_DIR/versions/$installed"
-mv "$staging" "$HOME_DIR/versions/$installed"
-
-ln -sfn "versions/$installed" "$HOME_DIR/.current-new"
-mv -fh "$HOME_DIR/.current-new" "$HOME_DIR/current"
+old="$HOME_DIR/.current-old-$$"
+if [ -e "$HOME_DIR/current" ] || [ -L "$HOME_DIR/current" ]; then mv "$HOME_DIR/current" "$old"; fi
+mv "$staging" "$HOME_DIR/current"
+rm -rf "$old"
 
 mkdir -p "$BIN_DIR"
 ln -sfn "$HOME_DIR/current/joinery" "$BIN_DIR/joinery"
