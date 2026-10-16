@@ -20,7 +20,6 @@ import {
   Check,
   Database,
   FolderGit2,
-  HardDrive,
   Moon,
   Palette,
   Plug,
@@ -601,8 +600,11 @@ function DataPanel(): React.JSX.Element {
 }
 
 /**
- * The data folder as a tree: what's inside what, each with a bar for its
- * share of the whole. Only the two caches can be cleared, from their rows.
+ * The data folder like macOS's storage bar: one bar split into what takes
+ * the space, then the same parts as a list with matching colour dots. The
+ * parts add up to the whole, so "Database" is the database without the PR
+ * caches it holds, which sit indented under it. Only the two caches can be
+ * cleared, from their rows.
  */
 function UsageTree({
   usage,
@@ -612,98 +614,97 @@ function UsageTree({
   onClear: (what: 'clearWorktrees' | 'clearCachedAnswers') => Promise<void>;
 }): React.JSX.Element {
   const total = usage.databaseBytes + usage.worktrees.bytes;
-  return (
-    <div className="px-3 pt-1 pb-2">
-      <UsageNode icon={<HardDrive />} title="Data folder" detail={usage.root} bytes={total} total={total}>
-        <UsageNode icon={<Database />} title="Database" detail="Reviews, threads, reading orders, viewed checks" bytes={usage.databaseBytes} total={total}>
-          <UsageNode
-            title="PR caches"
-            detail={`${String(usage.cachedAnswers.count)} PR lists, PR details and review stats · refetched when needed`}
-            bytes={usage.cachedAnswers.bytes}
-            total={total}
-            cache
-            action={
-              <ConfirmDelete
-                prompt="Clear the PR caches? They're refetched when next needed."
-                onConfirm={() => onClear('clearCachedAnswers')}
-                confirmLabel="Clear"
-                triggerLabel="Clear PR caches"
-                triggerClassName="chrome-icon-btn"
-              >
-                <Trash2 size={14} strokeWidth={1.75} aria-hidden />
-              </ConfirmDelete>
-            }
-          />
-        </UsageNode>
-        <UsageNode
-          icon={<FolderGit2 />}
-          title="Agent worktrees"
-          detail={`${String(usage.worktrees.count)} ${usage.worktrees.count === 1 ? 'checkout' : 'checkouts'} for agent runs · rebuilt when needed`}
-          bytes={usage.worktrees.bytes}
-          total={total}
-          cache
-          action={
-            <ConfirmDelete
-              prompt="Remove the agent worktrees? The next agent run rebuilds the one it needs."
-              onConfirm={() => onClear('clearWorktrees')}
-              confirmLabel="Remove"
-              triggerLabel="Remove agent worktrees"
-              triggerClassName="chrome-icon-btn"
-            >
-              <Trash2 size={14} strokeWidth={1.75} aria-hidden />
-            </ConfirmDelete>
-          }
-        />
-      </UsageNode>
-    </div>
-  );
-}
+  const parts = [
+    {
+      key: 'database',
+      title: 'Database',
+      detail: 'Reviews, threads, reading orders, viewed checks',
+      bytes: Math.max(0, usage.databaseBytes - usage.cachedAnswers.bytes),
+      color: 'bg-chrome-accent',
+      nested: false,
+      action: null,
+    },
+    {
+      key: 'caches',
+      title: 'PR caches',
+      detail: `${String(usage.cachedAnswers.count)} PR lists, PR details and review stats · inside the database, refetched when needed`,
+      bytes: usage.cachedAnswers.bytes,
+      color: 'bg-chrome-warning',
+      nested: true,
+      action: (
+        <ConfirmDelete
+          prompt="Clear the PR caches? They're refetched when next needed."
+          onConfirm={() => onClear('clearCachedAnswers')}
+          confirmLabel="Clear"
+          triggerLabel="Clear PR caches"
+          triggerClassName="chrome-icon-btn"
+        >
+          <Trash2 size={14} strokeWidth={1.75} aria-hidden />
+        </ConfirmDelete>
+      ),
+    },
+    {
+      key: 'worktrees',
+      title: 'Agent worktrees',
+      detail: `${String(usage.worktrees.count)} ${usage.worktrees.count === 1 ? 'checkout' : 'checkouts'} for agent runs · rebuilt when needed`,
+      bytes: usage.worktrees.bytes,
+      color: 'bg-chrome-success',
+      nested: false,
+      action: (
+        <ConfirmDelete
+          prompt="Remove the agent worktrees? The next agent run rebuilds the one it needs."
+          onConfirm={() => onClear('clearWorktrees')}
+          confirmLabel="Remove"
+          triggerLabel="Remove agent worktrees"
+          triggerClassName="chrome-icon-btn"
+        >
+          <Trash2 size={14} strokeWidth={1.75} aria-hidden />
+        </ConfirmDelete>
+      ),
+    },
+  ];
+  const shown = parts.filter((p) => p.bytes > 0);
 
-function UsageNode({
-  icon,
-  title,
-  detail,
-  bytes,
-  total,
-  cache = false,
-  action,
-  children,
-}: {
-  icon?: React.ReactNode;
-  title: string;
-  detail: string;
-  bytes: number;
-  total: number;
-  /** A cache: drawn in a quieter fill, since it's disposable. */
-  cache?: boolean;
-  action?: React.ReactNode;
-  children?: React.ReactNode;
-}): React.JSX.Element {
-  // A sliver stays visible for anything non-empty, however small its share.
-  const pct = total === 0 ? 0 : Math.max(bytes > 0 ? 0.75 : 0, (bytes / total) * 100);
   return (
-    <div className="flex flex-col">
-      <div className="flex items-center gap-3 py-2">
-        <span className="inline-flex size-4 shrink-0 items-center justify-center text-chrome-fg-subtle [&>svg]:size-4" aria-hidden>
-          {icon}
-        </span>
-        <span className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="flex items-baseline gap-2">
-            <span className="truncate text-body text-chrome-fg">{title}</span>
-            <span className="ml-auto shrink-0 text-xs tabular-nums text-chrome-fg-muted">{formatBytes(bytes)}</span>
+    <div className="flex flex-col gap-3 px-3 pt-1 pb-2">
+      <div className="flex items-baseline gap-3">
+        <span className="flex min-w-0 flex-col">
+          <span className="text-body text-chrome-fg">Data folder</span>
+          <span className="truncate text-micro text-chrome-fg-subtle" title={usage.root}>
+            {usage.root}
           </span>
-          <span className="h-1.5 overflow-hidden rounded-full bg-chrome-bg-hover" aria-hidden>
-            <span
-              className={`block h-full rounded-full ${cache ? 'bg-chrome-fg-subtle' : 'bg-chrome-accent'}`}
-              style={{ width: `${String(pct)}%` }}
-            />
-          </span>
-          <span className="truncate text-micro text-chrome-fg-subtle">{detail}</span>
         </span>
-        {/* Same width with or without a button, so every bar ends at the same edge. */}
-        <span className="flex w-7 shrink-0 justify-center">{action}</span>
+        <span className="ml-auto shrink-0 text-xs tabular-nums text-chrome-fg-muted">{formatBytes(total)}</span>
       </div>
-      {children !== undefined && <div className="ml-2 border-l border-chrome-border pl-4">{children}</div>}
+
+      {/* Segments grow by size; a tiny one keeps a few pixels so it's still there to see. */}
+      <div className="flex h-5 gap-px overflow-hidden rounded-md bg-chrome-bg-hover" role="img" aria-label="Data folder usage">
+        {shown.map((p) => (
+          <span
+            key={p.key}
+            className={`h-full ${p.color}`}
+            style={{ flexGrow: p.bytes, flexBasis: 0, minWidth: 4 }}
+            title={`${p.title}: ${formatBytes(p.bytes)}`}
+          />
+        ))}
+      </div>
+
+      <ul className="flex flex-col">
+        {parts.map((p) => (
+          <li key={p.key} className={`flex min-h-11 items-center gap-3 py-1.5 ${p.nested ? 'pl-5' : ''}`}>
+            <span className={`size-2.5 shrink-0 rounded-full ${p.color}`} aria-hidden />
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="flex items-baseline gap-2">
+                <span className="truncate text-body text-chrome-fg">{p.title}</span>
+                <span className="ml-auto shrink-0 text-xs tabular-nums text-chrome-fg-muted">{formatBytes(p.bytes)}</span>
+              </span>
+              <span className="truncate text-micro text-chrome-fg-subtle">{p.detail}</span>
+            </span>
+            {/* Same width with or without a button, so the sizes line up. */}
+            <span className="flex w-7 shrink-0 justify-center">{p.action}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
