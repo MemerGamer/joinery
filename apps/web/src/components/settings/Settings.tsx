@@ -604,7 +604,8 @@ function DataPanel(): React.JSX.Element {
  * the space, then the same parts as a list with matching colour dots. The
  * parts add up to the whole, so "Database" is the database without the PR
  * caches it holds, which sit indented under it. Only the two caches can be
- * cleared, from their rows.
+ * cleared, from their rows. Every part gets a real hue: grey and green both
+ * read as free space.
  */
 function UsageTree({
   usage,
@@ -648,7 +649,7 @@ function UsageTree({
       title: 'Agent worktrees',
       detail: `${String(usage.worktrees.count)} ${usage.worktrees.count === 1 ? 'checkout' : 'checkouts'} for agent runs · rebuilt when needed`,
       bytes: usage.worktrees.bytes,
-      color: 'bg-chrome-fg-muted',
+      color: 'bg-sky-500',
       nested: false,
       action: (
         <ConfirmDelete
