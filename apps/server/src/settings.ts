@@ -155,23 +155,28 @@ export async function getDataUsage(db: Db): Promise<DataUsage> {
 }
 
 /**
- * Remove every agent worktree and every cached answer. Refused while a run
- * is going, since its worktree would be pulled out from under it.
+ * Remove every agent worktree; returns how many. Refused while a run is
+ * going, since its worktree would be pulled out from under it.
  */
-export async function clearCaches(db: Db): Promise<{ worktreesRemoved: number; cachedAnswersRemoved: number }> {
+export async function clearWorktrees(db: Db): Promise<number> {
   if ((await listUnfinishedRuns(db)).length > 0) {
     throw conflict('an agent run is in progress', 'Wait for it to finish, or cancel it, then try again.');
   }
-  let worktreesRemoved = 0;
+  let removed = 0;
   for (const worktree of await listWorktrees(db)) {
     try {
       await removeAgentWorktree(db, worktree);
-      worktreesRemoved += 1;
+      removed += 1;
     } catch (err) {
       console.log(`[worktrees] could not remove ${worktree.path}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  const cachedAnswersRemoved = await clearCacheEntries(db);
+  return removed;
+}
+
+/** Delete every cached answer, from the database and from memory; returns how many rows. */
+export async function clearCachedAnswers(db: Db): Promise<number> {
+  const removed = await clearCacheEntries(db);
   clearAllStoredCaches();
-  return { worktreesRemoved, cachedAnswersRemoved };
+  return removed;
 }

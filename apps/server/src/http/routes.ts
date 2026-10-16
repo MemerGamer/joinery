@@ -33,7 +33,7 @@ import {
 import { z } from 'zod';
 import { getVersionInfo, startUpdate } from '../updates.ts';
 import { deleteRepoFully, deleteReviewFully } from '../cleanup.ts';
-import { clearCaches, getDataUsage, getFullDiskAccess, getIntegrations, openFullDiskAccess, restartServer } from '../settings.ts';
+import { clearCachedAnswers, clearWorktrees, getDataUsage, getFullDiskAccess, getIntegrations, openFullDiskAccess, restartServer } from '../settings.ts';
 import {
   appendReply,
   createReview,
@@ -221,8 +221,12 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     return c.json(await getDataUsage(deps.db));
   });
 
-  app.post('/api/settings/clear-caches', async (c) => {
-    return c.json(await clearCaches(deps.db));
+  app.post('/api/settings/worktrees/clear', async (c) => {
+    return c.json({ removed: await clearWorktrees(deps.db) });
+  });
+
+  app.post('/api/settings/cached-answers/clear', async (c) => {
+    return c.json({ removed: await clearCachedAnswers(deps.db) });
   });
 
   // Server-side folder browsing for the add-repo picker.

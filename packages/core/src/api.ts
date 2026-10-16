@@ -329,13 +329,21 @@ export const api = {
     query: undefined,
     response: dataUsageSchema,
   }),
-  /** Remove the agent worktrees and the cached answers. Refused while an agent run is going. */
-  clearCaches: def({
+  /** Remove every agent worktree. Refused while an agent run is going. */
+  clearWorktrees: def({
     method: 'POST',
-    path: () => '/api/settings/clear-caches',
+    path: () => '/api/settings/worktrees/clear',
     body: undefined,
     query: undefined,
-    response: z.object({ worktreesRemoved: z.number().int(), cachedAnswersRemoved: z.number().int() }),
+    response: z.object({ removed: z.number().int() }),
+  }),
+  /** Delete every cached answer (PR lists, PR details, review stats, your forge user). */
+  clearCachedAnswers: def({
+    method: 'POST',
+    path: () => '/api/settings/cached-answers/clear',
+    body: undefined,
+    query: undefined,
+    response: z.object({ removed: z.number().int() }),
   }),
   listDirs: def({
     method: 'GET',

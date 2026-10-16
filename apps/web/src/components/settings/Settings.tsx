@@ -534,21 +534,20 @@ function DataPanel(): React.JSX.Element {
   const usage = useLoad(() => callApi('dataUsage'));
   const archived = useLoad(() => callApi('listReviews', { query: { status: 'archived' } }));
   const { repos, unarchiveReview } = useHomeData();
-  const [clearing, setClearing] = useState(false);
   const [clearResult, setClearResult] = useState<string | null>(null);
 
-  const clear = async () => {
-    setClearing(true);
+  const clear = async (what: 'clearWorktrees' | 'clearCachedAnswers') => {
     setClearResult(null);
     try {
-      const res = await callApi('clearCaches');
+      const { removed } = await callApi(what);
       setClearResult(
-        `Removed ${String(res.worktreesRemoved)} ${res.worktreesRemoved === 1 ? 'worktree' : 'worktrees'} and ${String(res.cachedAnswersRemoved)} cached ${res.cachedAnswersRemoved === 1 ? 'answer' : 'answers'}.`,
+        what === 'clearWorktrees'
+          ? `Removed ${String(removed)} ${removed === 1 ? 'worktree' : 'worktrees'}.`
+          : `Cleared ${String(removed)} cached ${removed === 1 ? 'answer' : 'answers'}.`,
       );
     } catch (err) {
-      throw new Error(errorText(err, 'Could not clear the caches.'));
+      throw new Error(errorText(err, 'Could not clear it.'));
     } finally {
-      setClearing(false);
       usage.reload();
     }
   };
@@ -559,20 +558,9 @@ function DataPanel(): React.JSX.Element {
       {usage.data === null ? (
         usage.error === null && <Empty>Measuring…</Empty>
       ) : (
-        <UsageRows usage={usage.data} />
+        <UsageTree usage={usage.data} onClear={clear} />
       )}
-      <div className="flex items-center gap-2 px-3 pt-1 pb-3">
-        <ConfirmDelete
-          prompt="Clear the agent worktrees and cached answers? They're rebuilt when next needed."
-          onConfirm={clear}
-          confirmLabel="Clear"
-          triggerClassName="chrome-btn"
-        >
-          <Trash2 size={13} strokeWidth={1.75} aria-hidden />
-          {clearing ? 'Clearing…' : 'Clear caches'}
-        </ConfirmDelete>
-        {clearResult !== null && <span className="text-xs text-chrome-fg-muted">{clearResult}</span>}
-      </div>
+      {clearResult !== null && <p className="px-3 pb-2 text-xs text-chrome-fg-muted">{clearResult}</p>}
 
       <div className="border-t border-chrome-border pt-2">
         <div className="flex items-center gap-2 px-3 pb-1">
@@ -612,24 +600,111 @@ function DataPanel(): React.JSX.Element {
   );
 }
 
-function UsageRows({ usage }: { usage: DataUsage }): React.JSX.Element {
+/**
+ * The data folder as a tree: what's inside what, each with a bar for its
+ * share of the whole. Only the two caches can be cleared, from their rows.
+ */
+function UsageTree({
+  usage,
+  onClear,
+}: {
+  usage: DataUsage;
+  onClear: (what: 'clearWorktrees' | 'clearCachedAnswers') => Promise<void>;
+}): React.JSX.Element {
+  const total = usage.databaseBytes + usage.worktrees.bytes;
   return (
-    <ul className="flex flex-col">
-      <Row icon={<HardDrive />} title="Data folder" detail={usage.root}>
-        <span className="text-xs tabular-nums text-chrome-fg-muted">
-          {formatBytes(usage.databaseBytes + usage.worktrees.bytes)}
+    <div className="px-3 pt-1 pb-2">
+      <UsageNode icon={<HardDrive />} title="Data folder" detail={usage.root} bytes={total} total={total}>
+        <UsageNode icon={<Database />} title="Database" detail="Reviews, threads, reading orders, viewed checks" bytes={usage.databaseBytes} total={total}>
+          <UsageNode
+            title="PR caches"
+            detail={`${String(usage.cachedAnswers.count)} PR lists, PR details and review stats · refetched when needed`}
+            bytes={usage.cachedAnswers.bytes}
+            total={total}
+            cache
+            action={
+              <ConfirmDelete
+                prompt="Clear the PR caches? They're refetched when next needed."
+                onConfirm={() => onClear('clearCachedAnswers')}
+                confirmLabel="Clear"
+                triggerLabel="Clear PR caches"
+                triggerClassName="chrome-icon-btn"
+              >
+                <Trash2 size={14} strokeWidth={1.75} aria-hidden />
+              </ConfirmDelete>
+            }
+          />
+        </UsageNode>
+        <UsageNode
+          icon={<FolderGit2 />}
+          title="Agent worktrees"
+          detail={`${String(usage.worktrees.count)} ${usage.worktrees.count === 1 ? 'checkout' : 'checkouts'} for agent runs · rebuilt when needed`}
+          bytes={usage.worktrees.bytes}
+          total={total}
+          cache
+          action={
+            <ConfirmDelete
+              prompt="Remove the agent worktrees? The next agent run rebuilds the one it needs."
+              onConfirm={() => onClear('clearWorktrees')}
+              confirmLabel="Remove"
+              triggerLabel="Remove agent worktrees"
+              triggerClassName="chrome-icon-btn"
+            >
+              <Trash2 size={14} strokeWidth={1.75} aria-hidden />
+            </ConfirmDelete>
+          }
+        />
+      </UsageNode>
+    </div>
+  );
+}
+
+function UsageNode({
+  icon,
+  title,
+  detail,
+  bytes,
+  total,
+  cache = false,
+  action,
+  children,
+}: {
+  icon?: React.ReactNode;
+  title: string;
+  detail: string;
+  bytes: number;
+  total: number;
+  /** A cache: drawn in a quieter fill, since it's disposable. */
+  cache?: boolean;
+  action?: React.ReactNode;
+  children?: React.ReactNode;
+}): React.JSX.Element {
+  // A sliver stays visible for anything non-empty, however small its share.
+  const pct = total === 0 ? 0 : Math.max(bytes > 0 ? 0.75 : 0, (bytes / total) * 100);
+  return (
+    <div className="flex flex-col">
+      <div className="flex items-center gap-3 py-2">
+        <span className="inline-flex size-4 shrink-0 items-center justify-center text-chrome-fg-subtle [&>svg]:size-4" aria-hidden>
+          {icon}
         </span>
-      </Row>
-      <Row title="Database" detail="Reviews, threads, reading orders, viewed checks">
-        <span className="text-xs tabular-nums text-chrome-fg-muted">{formatBytes(usage.databaseBytes)}</span>
-      </Row>
-      <Row title="Agent worktrees" detail={`${String(usage.worktrees.count)} checkouts for agent runs · cache`}>
-        <span className="text-xs tabular-nums text-chrome-fg-muted">{formatBytes(usage.worktrees.bytes)}</span>
-      </Row>
-      <Row title="Cached answers" detail={`${String(usage.cachedAnswers.count)} PR lists, PR details and review stats · cache, inside the database`}>
-        <span className="text-xs tabular-nums text-chrome-fg-muted">{formatBytes(usage.cachedAnswers.bytes)}</span>
-      </Row>
-    </ul>
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="flex items-baseline gap-2">
+            <span className="truncate text-body text-chrome-fg">{title}</span>
+            <span className="ml-auto shrink-0 text-xs tabular-nums text-chrome-fg-muted">{formatBytes(bytes)}</span>
+          </span>
+          <span className="h-1.5 overflow-hidden rounded-full bg-chrome-bg-hover" aria-hidden>
+            <span
+              className={`block h-full rounded-full ${cache ? 'bg-chrome-fg-subtle' : 'bg-chrome-accent'}`}
+              style={{ width: `${String(pct)}%` }}
+            />
+          </span>
+          <span className="truncate text-micro text-chrome-fg-subtle">{detail}</span>
+        </span>
+        {/* Same width with or without a button, so every bar ends at the same edge. */}
+        <span className="flex w-7 shrink-0 justify-center">{action}</span>
+      </div>
+      {children !== undefined && <div className="ml-2 border-l border-chrome-border pl-4">{children}</div>}
+    </div>
   );
 }
 
