@@ -313,12 +313,16 @@ export function ExploreSection(): React.JSX.Element {
   // anywhere inside it — the search field, but also a row button once it has
   // focus after a click — so arrow-key navigation keeps working either way.
   // The search field's own `onKeyDown` (below) already handles its keys, so
-  // it's excluded here to avoid double-processing.
+  // it's excluded here to avoid double-processing, as are keys from an open
+  // dialog (the folder picker).
   useEffect(() => {
     const main = mainRef.current;
     if (main === null) return;
     const listener = (e: KeyboardEvent): void => {
       if (e.target === searchInputRef.current) return;
+      // The folder picker renders inside this node, and its React-level
+      // `stopPropagation` runs only after this native listener has fired.
+      if (e.target instanceof Element && e.target.closest('[role="dialog"]') !== null) return;
       handleNavKeyRef.current(e);
     };
     main.addEventListener('keydown', listener);
