@@ -399,13 +399,17 @@ function Group({
   );
 }
 
-/** The row's name, with a note under it when macOS will prompt before opening the folder. */
+/** The row's name, with notes under it: the worktree's repo, and whether macOS will prompt before opening it. */
 function EntryName({ entry, className }: { entry: ListDirsResult['entries'][number]; className: string }): React.JSX.Element {
-  if (entry.macPrivacyPrompt !== true) return <span className={`truncate ${className}`}>{entry.name}</span>;
+  const notes = [
+    entry.worktreeOf !== undefined && `Worktree of ${entry.worktreeOf}`,
+    entry.macPrivacyPrompt === true && 'macOS will ask to allow access',
+  ].filter((n) => n !== false);
+  if (notes.length === 0) return <span className={`truncate ${className}`}>{entry.name}</span>;
   return (
     <span className="flex min-w-0 flex-col py-1 leading-tight">
       <span className={`truncate ${className}`}>{entry.name}</span>
-      <span className="truncate text-micro text-chrome-fg-subtle">macOS will ask to allow access</span>
+      <span className="truncate text-micro text-chrome-fg-subtle">{notes.join(' · ')}</span>
     </span>
   );
 }

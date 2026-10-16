@@ -139,6 +139,8 @@ export const dirEntrySchema = z.object({
   name: z.string(),
   path: z.string(),
   isRepo: z.boolean(),
+  /** For a linked git worktree: the name of the repo it belongs to. */
+  worktreeOf: z.string().optional(),
   /** macOS (server host) asks the user before Joinery may open this folder. */
   macPrivacyPrompt: z.boolean().optional(),
 });

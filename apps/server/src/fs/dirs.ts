@@ -2,9 +2,9 @@
  * Directory listing for the web folder picker. Names and paths of
  * directories only — never file names or contents.
  */
-import { readdir, realpath, stat } from 'node:fs/promises';
+import { readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, join } from 'node:path';
+import { basename, dirname, isAbsolute, join } from 'node:path';
 import type { DirEntry } from '@joinery/core';
 import { badRequest, pathError } from '../http/errors.ts';
 
@@ -23,6 +23,24 @@ async function hasGit(dir: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * The owning repo's name when `dir` is a linked worktree: its `.git` file reads
+ * `gitdir: <common dir>/worktrees/<name>`, and the common dir is `<repo>/.git`
+ * (or `<repo>.git` when bare). Submodules point into `/modules/` instead.
+ */
+async function worktreeOf(dir: string): Promise<string | undefined> {
+  let content: string;
+  try {
+    content = await readFile(join(dir, '.git'), 'utf8');
+  } catch {
+    return undefined; // no `.git`, or a directory (a regular clone)
+  }
+  const gitdir = /^gitdir:\s*(.+)$/m.exec(content)?.[1]?.trim();
+  if (gitdir === undefined || basename(dirname(gitdir)) !== 'worktrees') return undefined;
+  const common = dirname(dirname(gitdir));
+  return basename(common) === '.git' ? basename(dirname(common)) : basename(common).replace(/\.git$/, '');
 }
 
 /**
@@ -75,7 +93,9 @@ export async function listDirs(rawPath: string | undefined, hidden: boolean): Pr
         if (isMacPrivacyGuarded(full, child.isSymbolicLink())) {
           return { name: child.name, path: full, isRepo: false, macPrivacyPrompt: true };
         }
-        return { name: child.name, path: full, isRepo: await hasGit(full) };
+        if (!(await hasGit(full))) return { name: child.name, path: full, isRepo: false };
+        const owner = await worktreeOf(full);
+        return { name: child.name, path: full, isRepo: true, ...(owner === undefined ? {} : { worktreeOf: owner }) };
       }),
     )
   ).filter((e): e is DirEntry => e !== null);
