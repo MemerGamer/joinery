@@ -1,19 +1,21 @@
 /**
  * `Cmd+K` command palette: a Linear-style, mode-scoped launcher.
  *
- * The default (root) mode ranks a small, bounded set of jump targets —
- * reading-order steps, open threads — rather than dumping every file, every
- * thread, and all 75 themes into one flat list at once. Typing a query adds
- * commands, reviews and themes, with files last; an empty query lists no
- * files at all. Three explicit
+ * The default (root) mode lists the commands first, then a small, bounded
+ * set of jump targets — open threads, or the reviews on Homebase — rather
+ * than dumping every file and thread into one flat list at once. Typing a
+ * query adds the reviews and, last, the files; an empty query lists no
+ * files at all. Themes aren't listed in root: "Change theme…" opens the `#`
+ * mode instead. Three explicit
  * sub-modes are reached by typing a leading character in the search box,
  * exactly like VS Code's palette:
  *
  *   `>`  commands   — actions: generate reading order, switch revision,
  *                     toggle panels, diff style, expand/collapse all
  *   `#`  themes     — all 75 diff themes, never a truncated slice, on
- *                     Dark | Light tabs (`←`/`→`); a pick fills only that
- *                     tab's slot and leaves the chrome mode alone
+ *                     Dark | Light tabs; `←`/`→` switch the tab *and* the
+ *                     chrome mode, so the preview is always on screen, and
+ *                     a pick fills that tab's slot
  *   `@`  reviews    — switch to another open review
  *
  * The trigger character lives directly in the (controlled) search string, so
@@ -32,11 +34,11 @@
  * (typing `#`/`>`/`@` while forced into `file` mode switches away from it
  * immediately) and that's cleared whenever the palette closes.
  *
- * A fifth, `model`, is a nested page: the "Change model…" command opens it
- * (Enter, or `→` while it's highlighted) and `←`, Backspace on an empty
- * query or Escape goes back to where it was opened from. It's tracked like
- * `file`, through `forcedMode`, and sets the same remembered pick as the
- * Ask buttons (`lib/agentModel.ts`).
+ * A fifth, `generate`, is a nested page: "Generate reading order" opens it
+ * (Enter, or `→` while it's highlighted) to pick the model for that one run,
+ * and `←`, Backspace on an empty query or Escape goes back to where it was
+ * opened from. It's tracked like `file`, through `forcedMode`. "Change
+ * theme…" opens `#` the same way.
  *
  * Outside a review (on Homebase) there is no review context: root lists
  * the open reviews in place of files/steps/threads, and the commands are
@@ -45,12 +47,13 @@
  * There is deliberately no "ask agent" command here: asking an agent
  * happens from a thread (its composer's `Cmd+Enter` or its Ask agent button).
  */
-import { AGENT_MODELS } from '@joinery/core';
+import { AGENT_MODELS, DEFAULT_READING_ORDER_MODEL } from '@joinery/core';
 import { Command, defaultFilter } from 'cmdk';
 import {
   Bot,
   Check,
   ChevronRight,
+  Palette,
   CheckCheck,
   Eraser,
   Loader2,
@@ -72,7 +75,6 @@ import {
   Waypoints,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { setAgentModel, useAgentModel } from '../lib/agentModel.ts';
 import { callApi } from '../lib/apiClient.ts';
 import { goReview, goSettings } from '../lib/router.ts';
 import { runUiState } from '../lib/runState.ts';
@@ -81,7 +83,7 @@ import { threadSummary } from '../lib/threadSummary.ts';
 import { useOptionalReview } from '../state/ReviewContext.tsx';
 import { useTheme, type ChromeMode } from '../state/ThemeContext.tsx';
 
-type Mode = 'root' | 'command' | 'theme' | 'review' | 'file' | 'model';
+type Mode = 'root' | 'command' | 'theme' | 'review' | 'file' | 'generate';
 
 /** The two modes reachable directly (without typing a prefix) via `initialMode`. */
 type ForcedMode = 'command' | 'file';
@@ -101,12 +103,12 @@ const MODE_HINTS: [string, string][] = [
 ];
 
 const MODE_PLACEHOLDER: Record<Mode, string> = {
-  root: 'Search commands, reviews, themes, and files…',
+  root: 'Search commands, reviews, and files…',
   command: 'Run a command…',
   theme: 'Switch theme…',
   review: 'Switch review…',
   file: 'Jump to a file…',
-  model: 'Pick a model…',
+  generate: 'Pick a model to generate with…',
 };
 
 const MODE_LABEL: Record<Mode, string> = {
@@ -115,7 +117,7 @@ const MODE_LABEL: Record<Mode, string> = {
   theme: 'Themes',
   review: 'Reviews',
   file: 'Files',
-  model: 'Model',
+  generate: 'Generate with',
 };
 
 /** Root-mode groups show at most this many rows until the user actually types a query. */
@@ -133,8 +135,9 @@ const ROOT_CAP = 6;
 const ITEM_CLASS =
   'flex h-8 items-center gap-2.5 rounded-md px-2.5 text-body text-chrome-fg outline-hidden data-[selected=true]:bg-chrome-bg-active [&_svg]:shrink-0 [&_svg]:text-chrome-fg-subtle data-[selected=true]:[&_svg]:text-chrome-fg-muted';
 
-/** The `value` of the "Change model…" command, so `→` can tell when it's highlighted. */
-const MODEL_COMMAND_VALUE = 'change agent model';
+/** `value`s of the commands that open a page of their own, so `→` can tell when one is highlighted. */
+const GENERATE_COMMAND_VALUE = 'generate regenerate reading order';
+const THEME_COMMAND_VALUE = 'change theme diff syntax colors';
 
 function modelItemValue(id: string): string {
   return `model ${id}`;
@@ -166,13 +169,9 @@ export function CommandPalette({
   const review = useOptionalReview();
   const { chromeMode, setChromeMode, diffTheme, setDiffTheme } = useTheme();
   const [search, setSearch] = useState('');
-  const [forcedMode, setForcedMode] = useState<ForcedMode | 'model' | null>(null);
-  // Where the model page goes back to: the search string it was opened from.
-  const modelReturnRef = useRef('');
-  const agentModel = useAgentModel();
-  // Which slot theme mode is browsing and picking for; set to the current
-  // chrome mode each time theme mode is entered.
-  const [themeTab, setThemeTab] = useState<ChromeMode>(chromeMode);
+  const [forcedMode, setForcedMode] = useState<ForcedMode | 'generate' | null>(null);
+  // Where the generate page goes back to: the search string it was opened from.
+  const generateReturnRef = useRef('');
   const [reviewList, setReviewList] = useState<{ id: string; branch: string | null }[]>([]);
   // The currently-highlighted item's cmdk `value`, kept controlled so theme
   // mode can observe it (see the live-preview effect below) — cmdk only
@@ -223,12 +222,12 @@ export function CommandPalette({
 
   // Radix dismisses on Escape from a capture-phase document listener, before
   // the input's own `onKeyDown` sees the key, so stepping back happens here:
-  // the model page goes back to where it was opened, a query is cleared
+  // the generate page goes back to where it was opened, a query is cleared
   // (backing a sub-mode out to root), and only then does the palette close.
   // The backdrop click calls `close()` directly, so it always closes.
   const handleOpenChange = (next: boolean) => {
-    if (!next && mode === 'model') {
-      closeModelPage();
+    if (!next && mode === 'generate') {
+      closeGeneratePage();
       return;
     }
     if (!next && search !== '') {
@@ -249,14 +248,14 @@ export function CommandPalette({
 
   // Live theme preview: moving the highlighted row in theme mode applies
   // that theme immediately, so scrolling through with the arrow keys
-  // previews each one as you go. Only on the tab for the chrome mode you're
-  // in — the other slot isn't on screen, so there's nothing to preview, and
-  // switching to it puts the current slot back. `previewRef` remembers the
-  // pair from *before* theme mode was entered, and whether one was committed
-  // (Enter/click); backing out (Escape, switching to another mode, closing
-  // the palette) without committing restores it. The chrome mode itself is
-  // never touched here.
-  const previewRef = useRef<{ entry: typeof diffTheme; committed: boolean } | null>(null);
+  // previews each one as you go. The tab is the chrome mode itself (`←`/`→`
+  // switch both), so whatever is highlighted is on screen. `previewRef`
+  // remembers the pair and the chrome mode from *before* theme mode was
+  // entered, and whether a theme was committed (Enter/click); backing out
+  // (Escape, switching to another mode, closing the palette) without
+  // committing restores both.
+  const previewRef = useRef<{ entry: { diffTheme: typeof diffTheme; chromeMode: ChromeMode }; committed: boolean } | null>(null);
+  const themeTab = chromeMode;
 
   // Tracks entering/leaving theme mode. Deliberately keyed on `mode` alone —
   // not on `diffTheme`/`chromeMode`, which this effect also reads: `diffTheme`
@@ -266,12 +265,15 @@ export function CommandPalette({
   useEffect(() => {
     if (mode === 'theme') {
       if (previewRef.current === null) {
-        previewRef.current = { entry: diffTheme, committed: false };
-        setThemeTab(chromeMode);
+        previewRef.current = { entry: { diffTheme, chromeMode }, committed: false };
         setHighlightedValue(themeValueOf(diffTheme[chromeMode]));
       }
     } else if (previewRef.current !== null) {
-      if (!previewRef.current.committed) setDiffTheme(previewRef.current.entry);
+      if (!previewRef.current.committed) {
+        const { entry } = previewRef.current;
+        setDiffTheme(entry.diffTheme);
+        if (entry.chromeMode !== chromeMode) setChromeMode(entry.chromeMode);
+      }
       previewRef.current = null;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -282,33 +284,35 @@ export function CommandPalette({
   // which must not re-trigger this effect against the same `highlightedValue`.
   useEffect(() => {
     if (mode !== 'theme' || previewRef.current === null) return;
-    const base = previewRef.current.entry;
+    const base = previewRef.current.entry.diffTheme;
     const opt = themeValueMap.get(highlightedValue);
-    const next =
-      themeTab === chromeMode && opt !== undefined && fitsScheme(opt, themeTab) ? { ...base, [themeTab]: opt.name } : base;
+    const next = opt !== undefined && fitsScheme(opt, themeTab) ? { ...base, [themeTab]: opt.name } : base;
     if (next.dark !== diffTheme.dark || next.light !== diffTheme.light) setDiffTheme(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highlightedValue, mode, themeTab, themeValueMap]);
 
-  // Switches the tab and puts the highlight on that tab's current pick.
+  // Switches the tab, which is the chrome mode, and puts the highlight on
+  // that tab's pick from before theme mode was entered.
   const switchThemeTab = (tab: ChromeMode) => {
     if (tab === themeTab) return;
-    setThemeTab(tab);
-    setHighlightedValue(themeValueOf(diffTheme[tab]));
+    setChromeMode(tab);
+    setHighlightedValue(themeValueOf((previewRef.current?.entry.diffTheme ?? diffTheme)[tab]));
   };
 
-  const openModelPage = () => {
-    modelReturnRef.current = search;
+  const openGeneratePage = () => {
+    generateReturnRef.current = search;
     setSearch('');
-    setForcedMode('model');
-    setHighlightedValue(modelItemValue(agentModel));
+    setForcedMode('generate');
+    setHighlightedValue(modelItemValue(DEFAULT_READING_ORDER_MODEL));
   };
 
-  const closeModelPage = () => {
+  const closeGeneratePage = () => {
     setForcedMode(initialMode ?? null);
-    setSearch(modelReturnRef.current);
-    setHighlightedValue(MODEL_COMMAND_VALUE);
+    setSearch(generateReturnRef.current);
+    setHighlightedValue(GENERATE_COMMAND_VALUE);
   };
+
+  const openThemeMode = () => setSearch('#');
 
   const goToFile = (path: string) => {
     if (review === null) return;
@@ -320,8 +324,6 @@ export function CommandPalette({
   const allFiles = review?.fileList ?? [];
   // ⌘P's file mode lists them all; root only offers files once you type.
   const files = mode === 'file' || query !== '' ? allFiles : [];
-  const allSteps = review?.readingOrder?.steps ?? [];
-  const steps = query === '' ? allSteps.slice(0, ROOT_CAP) : allSteps;
   const openThreads = (review?.threads ?? []).filter((t) => t.status === 'open');
   const threads = query === '' ? openThreads.slice(0, ROOT_CAP) : openThreads;
 
@@ -343,20 +345,16 @@ export function CommandPalette({
     </Command.Item>
   ));
 
-  // Also offered in root mode once you type, so "generate" or "regenerate"
-  // finds it without the `>` prefix.
-  // While a run is going, the item stays listed but disabled, so it says why
-  // nothing new starts.
+  // Opens the generate page to pick the model for this one run. While a run
+  // is going, the item stays listed but disabled, so it says why nothing new
+  // starts.
   const generating = review !== null && runUiState(review.readingOrderRun).phase === 'pending';
   const generateVerb = review?.readingOrder != null && review.readingOrder.steps.length > 0 ? 'Regenerate' : 'Generate';
   const generateItem = review !== null && currentReview !== null && (
     <Command.Item
-      value="generate regenerate reading order"
+      value={GENERATE_COMMAND_VALUE}
       disabled={generating}
-      onSelect={() => {
-        void review.generateReadingOrder();
-        close();
-      }}
+      onSelect={openGeneratePage}
       className={`${ITEM_CLASS} data-[disabled=true]:text-chrome-fg-muted`}
     >
       {generating ? (
@@ -364,7 +362,8 @@ export function CommandPalette({
       ) : (
         <Waypoints size={14} strokeWidth={1.5} aria-hidden />
       )}
-      {generating ? `${generateVerb.replace(/e$/, '')}ing reading order…` : `${generateVerb} reading order`}
+      {generating ? `${generateVerb.replace(/e$/, '')}ing reading order…` : `${generateVerb} reading order…`}
+      {!generating && <ChevronRight size={13} strokeWidth={1.75} className="ml-auto" aria-hidden />}
     </Command.Item>
   );
 
@@ -403,13 +402,10 @@ export function CommandPalette({
         <Settings size={14} strokeWidth={1.5} aria-hidden />
         Open settings
       </Command.Item>
-      <Command.Item value={MODEL_COMMAND_VALUE} onSelect={openModelPage} className={ITEM_CLASS}>
-        <Bot size={14} strokeWidth={1.5} aria-hidden />
-        Change model…
-        <span className="ml-auto flex items-center gap-1 text-xs text-chrome-fg-subtle">
-          {AGENT_MODELS.find((m) => m.id === agentModel)?.label ?? agentModel}
-          <ChevronRight size={13} strokeWidth={1.75} aria-hidden />
-        </span>
+      <Command.Item value={THEME_COMMAND_VALUE} onSelect={openThemeMode} className={ITEM_CLASS}>
+        <Palette size={14} strokeWidth={1.5} aria-hidden />
+        Change theme…
+        <ChevronRight size={13} strokeWidth={1.75} className="ml-auto" aria-hidden />
       </Command.Item>
       {/*
         * Light/dark *chrome* mode, distinct from the `#` theme mode
@@ -559,25 +555,6 @@ export function CommandPalette({
     </>
   );
 
-  // Root's typed search lists every theme; a pick goes in the slot for its
-  // own color scheme (the current one if it declares none), leaving the
-  // chrome mode alone. Writing a light theme into the dark slot would paint
-  // light-on-light token colors over the dark chrome.
-  const themeItems = [...colorblindThemes, ...otherThemes].map((opt) => {
-    const slot = opt.colorScheme ?? chromeMode;
-    return (
-      <ThemeItem
-        key={opt.name}
-        opt={opt}
-        active={opt.name === diffTheme[slot]}
-        onSelect={() => {
-          setDiffTheme({ ...diffTheme, [slot]: opt.name });
-          close();
-        }}
-      />
-    );
-  });
-
   // Theme mode: only the current tab's themes, a pick filling that tab's slot.
   const themeTabItems = [...colorblindThemes, ...otherThemes]
     .filter((opt) => fitsScheme(opt, themeTab))
@@ -585,9 +562,9 @@ export function CommandPalette({
       <ThemeItem
         key={opt.name}
         opt={opt}
-        active={opt.name === (previewRef.current?.entry ?? diffTheme)[themeTab]}
+        active={opt.name === (previewRef.current?.entry.diffTheme ?? diffTheme)[themeTab]}
         onSelect={() => {
-          const entry = previewRef.current?.entry ?? diffTheme;
+          const entry = previewRef.current?.entry.diffTheme ?? diffTheme;
           if (previewRef.current !== null) previewRef.current.committed = true;
           setDiffTheme({ ...entry, [themeTab]: opt.name });
           close();
@@ -595,20 +572,21 @@ export function CommandPalette({
       />
     ));
 
+  // The generate page: one run of reading-order generation on the picked model.
   const modelItems = AGENT_MODELS.map((m) => (
     <Command.Item
       key={m.id}
       value={modelItemValue(m.id)}
       keywords={[m.label]}
       onSelect={() => {
-        setAgentModel(m.id);
+        void review?.generateReadingOrder(m.id);
         close();
       }}
       className={ITEM_CLASS}
     >
       <Bot size={14} strokeWidth={1.5} aria-hidden />
       {m.label}
-      {m.id === agentModel && <Check size={13} strokeWidth={2} className="ml-auto text-chrome-accent!" aria-hidden />}
+      {m.id === DEFAULT_READING_ORDER_MODEL && <span className="ml-auto text-xs text-chrome-fg-subtle">default</span>}
     </Command.Item>
   ));
 
@@ -673,14 +651,19 @@ export function CommandPalette({
                 switchThemeTab(e.key === 'ArrowLeft' ? 'dark' : 'light');
                 return;
               }
-              if (mode === 'model') {
+              if (mode === 'generate') {
                 if ((e.key === 'ArrowLeft' || e.key === 'Backspace') && input.value === '') {
                   e.preventDefault();
-                  closeModelPage();
+                  closeGeneratePage();
                 }
-              } else if (e.key === 'ArrowRight' && caretAtEnd && highlightedValue === MODEL_COMMAND_VALUE) {
-                e.preventDefault();
-                openModelPage();
+              } else if (e.key === 'ArrowRight' && caretAtEnd) {
+                if (highlightedValue === GENERATE_COMMAND_VALUE && !generating) {
+                  e.preventDefault();
+                  openGeneratePage();
+                } else if (highlightedValue === THEME_COMMAND_VALUE) {
+                  e.preventDefault();
+                  openThemeMode();
+                }
               }
             }}
             placeholder={MODE_PLACEHOLDER[mode]}
@@ -714,9 +697,11 @@ export function CommandPalette({
                 {tab === 'dark' ? 'Dark' : 'Light'}
               </button>
             ))}
-            {themeTab !== chromeMode && (
-              <span className="ml-auto text-micro text-chrome-fg-subtle">Shown in {themeTab} mode</span>
-            )}
+            <span className="ml-auto flex items-center gap-1 text-micro text-chrome-fg-subtle">
+              <Key>←</Key>
+              <Key>→</Key>
+              switch light and dark mode
+            </span>
           </div>
         )}
         {mode === 'root' && (
@@ -741,37 +726,15 @@ export function CommandPalette({
 
           {mode === 'root' && (
             <>
+              {/* Commands first, typed or not; files last, and only once you type. */}
+              <Group heading="Commands">{commandItems}</Group>
+
               {/* Homebase: the reviews are what there is to jump to. */}
               {review === null && reviewList.length > 0 && (
                 <Group heading="Reviews">{query === '' ? reviewItems.slice(0, ROOT_CAP) : reviewItems}</Group>
               )}
 
-              {/* Typed query: everything actionable first, files last. An empty query lists no files. */}
-              {query !== '' && <Group heading="Commands">{commandItems}</Group>}
-
               {review !== null && query !== '' && reviewList.length > 0 && <Group heading="Reviews">{reviewItems}</Group>}
-
-              {query !== '' && <Group heading="Themes">{themeItems}</Group>}
-
-              {steps.length > 0 && (
-                <Group heading="Steps">
-                  {steps.map((step) => (
-                    <Command.Item
-                      key={step.id}
-                      value={`step ${step.title}`}
-                      onSelect={() => {
-                        const first = step.files[0];
-                        if (first !== undefined) goToFile(first.path);
-                        else close();
-                      }}
-                      className={ITEM_CLASS}
-                    >
-                      <Waypoints size={14} strokeWidth={1.5} aria-hidden />
-                      <span className="truncate">{step.title}</span>
-                    </Command.Item>
-                  ))}
-                </Group>
-              )}
 
               {threads.length > 0 && (
                 <Group heading="Threads">
@@ -822,7 +785,7 @@ export function CommandPalette({
             </Command.Group>
           )}
 
-          {mode === 'model' && <Group heading="Model for Ask">{modelItems}</Group>}
+          {mode === 'generate' && <Group heading={`${generateVerb} reading order with`}>{modelItems}</Group>}
 
           {mode === 'review' && reviewList.length > 0 && <Group heading="Reviews">{reviewItems}</Group>}
         </Command.List>
@@ -832,13 +795,6 @@ export function CommandPalette({
             <Key>↓</Key>
             navigate
           </span>
-          {mode === 'theme' && (
-            <span className="flex items-center gap-1">
-              <Key>←</Key>
-              <Key>→</Key>
-              dark / light
-            </span>
-          )}
           <span className="flex items-center gap-1">
             <Key>↵</Key>
             select
