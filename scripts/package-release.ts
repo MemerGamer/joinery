@@ -2,8 +2,9 @@
  * Builds the release tarball for macOS Apple Silicon:
  * `dist/release/joinery-<version>-darwin-arm64.tar.gz` (+ `.sha256`).
  *
- * The archive root holds `joinery` (compiled CLI + server, ad-hoc signed),
+ * The archive root holds `joinery` (compiled CLI + server),
  * `release.json`, `web/` and `migrations/` — the layout `runtime.ts` expects.
+ * The binary is signed with `JOINERY_SIGN_IDENTITY` when set, ad-hoc otherwise.
  */
 import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -39,8 +40,17 @@ await writeFile(join(stage, 'release.json'), `${JSON.stringify({ version })}\n`)
 await cp(join(root, 'apps', 'web', 'dist'), join(stage, 'web'), { recursive: true });
 await cp(join(root, 'apps', 'server', 'migrations'), join(stage, 'migrations'), { recursive: true });
 
-console.log('signing');
-await run(['codesign', '--force', '--sign', '-', join(stage, 'joinery')]);
+// A stable certificate + identifier keeps macOS folder grants (TCC) across
+// updates; an ad-hoc signature is tied to the build hash, so every release
+// would look like a new app. CI sets these from the signing secrets.
+const identity = process.env['JOINERY_SIGN_IDENTITY']?.trim();
+const keychain = process.env['JOINERY_SIGN_KEYCHAIN']?.trim();
+if (identity) console.log('signing with the Joinery certificate');
+else console.warn('signing ad-hoc (JOINERY_SIGN_IDENTITY unset): folder permissions will not survive updates');
+await run([
+  'codesign', '--force', '--sign', identity || '-', '--identifier', 'dev.joinery.server',
+  ...(keychain ? ['--keychain', keychain] : []), join(stage, 'joinery'),
+]);
 await run(['codesign', '--verify', '--verbose=2', join(stage, 'joinery')]);
 
 await run(['tar', '-czf', archive, '-C', stage, '.'], root, { COPYFILE_DISABLE: '1' });

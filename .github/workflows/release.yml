@@ -22,6 +22,32 @@ jobs:
             exit 1
           fi
       - run: bun run typecheck
+      # Self-signed certificate: a stable signing identity lets macOS keep
+      # folder permissions across updates. Imported by SHA-1 hash because the
+      # certificate isn't trusted, so codesign can't look it up by name.
+      - name: Import signing certificate
+        env:
+          P12: ${{ secrets.JOINERY_SIGNING_P12 }}
+          P12_PASSWORD: ${{ secrets.JOINERY_SIGNING_P12_PASSWORD }}
+        run: |
+          if [ -z "$P12" ] || [ -z "$P12_PASSWORD" ]; then
+            echo "JOINERY_SIGNING_P12 / JOINERY_SIGNING_P12_PASSWORD secrets are missing" >&2
+            exit 1
+          fi
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password="$(openssl rand -base64 24)"
+          printf '%s' "$P12" | base64 -D > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
+          identity="$(security find-certificate -c "Joinery Code Signing" -Z "$keychain" | awk '/SHA-1/ { print $NF }')"
+          [ -n "$identity" ] || { echo "signing certificate not found after import" >&2; exit 1; }
+          echo "JOINERY_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+          echo "JOINERY_SIGN_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
       - run: bun run package
       - name: Create GitHub release
         env:
