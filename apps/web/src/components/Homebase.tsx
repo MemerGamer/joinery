@@ -213,7 +213,8 @@ export function Homebase(): React.JSX.Element {
     );
   }, [order, reviewing]);
 
-  // The queue: every open PR across every repo that has no review yet.
+  // The queue: every open PR across every repo that has no review yet
+  // (or only an unstarted draft one). Archived reviews stay out for good.
   // Lightest first by default — so "I have twenty minutes" has an obvious
   // answer — or by last update, either way.
   const queue = useMemo(
@@ -221,7 +222,7 @@ export function Homebase(): React.JSX.Element {
       Array.from(pullsByRepo.entries())
         .flatMap(([repoId, pulls]) =>
           pulls
-            .filter((p) => p.reviewId === null || p.reviewStatus === 'draft' || p.reviewStatus === 'archived')
+            .filter((p) => p.reviewId === null || p.reviewStatus === 'draft')
             .map((p) => ({ repoId, pull: p })),
         )
         .sort((a, b) => {
@@ -861,7 +862,6 @@ function QueueRow({
   if (p.isDraft) flags.push(<Chip key="draft">draft</Chip>);
   if (p.reviewRequested) flags.push(<Chip key="req" tone="accent">Review requested</Chip>);
   if (p.reviewStatus === 'draft') flags.push(<Chip key="opened">opened</Chip>);
-  if (p.reviewStatus === 'archived') flags.push(<Chip key="archived">archived</Chip>);
   return (
     <li>
       {/* Three fixed columns — avatar, text, effort — so every row lines

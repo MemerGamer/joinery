@@ -2,11 +2,14 @@
  * Explore — a finder over real repositories, the last section of Homebase
  * (scroll down, or `goExplore()` to jump there).
  *
- * One search field, the repositories as pills (or All of them), then two plain lists to
- * scroll — pull requests and branches, local and remote. Anything you
- * already have a review of is left out; that lives on Homebase. Rows use
- * the same shape as Homebase's queue so the two screens rhyme without
- * Explore growing a personality of its own.
+ * One search field, the repositories as pills (or All of them), then the
+ * branches, local and remote. Open pull requests already live in Homebase's
+ * "Up for review", so pull requests only show up here once you type: the
+ * cached open ones that match (archived ones included), then whatever the
+ * forge search finds beyond them, closed and merged too. Anything you're
+ * actively reviewing is left out; that lives on Homebase. Rows use the same
+ * shape as Homebase's queue so the two screens rhyme without Explore growing
+ * a personality of its own.
  *
  * Data comes from `useHomeData()` (repos, open pulls) plus direct, debounced
  * calls per repo/query: `listBranches` (branches aren't part of the shared
@@ -123,20 +126,19 @@ export function ExploreSection(): React.JSX.Element {
   const fetchKey = `${scopeKey}\0${needle}`;
   const branchesStale = branchState.key !== fetchKey;
 
+  // Open PRs matching the query. With no query there's nothing to list:
+  // the open ones are Homebase's "Up for review".
   const pulls = useMemo<RepoPull[]>(() => {
-    const list = scopeIds.flatMap((id) =>
-      (pullsByRepo.get(id) ?? []).filter((p) => !isClaimed(p.reviewStatus)).map((pull) => ({ repoId: id, pull })),
-    );
-    const filtered =
-      needle === ''
-        ? list
-        : list.filter(
-            ({ pull: p }) =>
-              p.title.toLowerCase().includes(needle) ||
-              p.headRefName.toLowerCase().includes(needle) ||
-              `#${String(p.number)}`.includes(needle),
-          );
-    return filtered.sort((a, b) => b.pull.updatedAtUnix - a.pull.updatedAtUnix);
+    if (needle === '') return [];
+    return scopeIds
+      .flatMap((id) => (pullsByRepo.get(id) ?? []).filter((p) => !isClaimed(p.reviewStatus)).map((pull) => ({ repoId: id, pull })))
+      .filter(
+        ({ pull: p }) =>
+          p.title.toLowerCase().includes(needle) ||
+          p.headRefName.toLowerCase().includes(needle) ||
+          `#${String(p.number)}`.includes(needle),
+      )
+      .sort((a, b) => b.pull.updatedAtUnix - a.pull.updatedAtUnix);
   }, [pullsByRepo, scopeIds, needle]);
 
   // Debounced, abortable branch fetch. Stale responses are dropped via a
@@ -414,35 +416,37 @@ export function ExploreSection(): React.JSX.Element {
                 <Empty>Register a repository to start.</Empty>
               ) : (
                 <div className="-mx-4 flex min-h-0 flex-1 flex-col gap-7 overflow-y-auto px-4 pb-6">
-                  <section className="flex flex-col gap-2">
-                    <SectionHeading title="Pull requests" count={pulls.length} />
-                    {loading ? (
-                      <Empty>Loading…</Empty>
-                    ) : pullsUnavailable ? (
-                      <Empty>{pullsNoticeText ?? 'Install and sign in to `gh` or `glab` to list pull requests.'}</Empty>
-                    ) : pulls.length === 0 ? (
-                      <Empty>{needle === '' ? "Nothing open that you aren't already reviewing." : `No pull requests match "${q.trim()}".`}</Empty>
-                    ) : (
-                      <ul role="listbox" aria-label="Pull requests" className="-mx-2.5 flex flex-col">
-                        {pulls.map(({ repoId: id, pull: p }) => {
-                          const key = pullKey(id, p.number);
-                          const idx = rows.findIndex((r) => rowKeyOf(r) === key);
-                          return (
-                            <PullRow
-                              key={key}
-                              pull={p}
-                              repoName={repoNameOf(id)}
-                              highlighted={idx === highlighted}
-                              busy={busyKey === key}
-                              registerRef={(el) => setRowRef(key, el)}
-                              onOpen={() => void openRow({ kind: 'pull', repoId: id, pull: p })}
-                            />
-                          );
-                        })}
-                      </ul>
-                    )}
-                    {!loading && partialNoticeText !== null && <p className="px-0.5 text-xs text-chrome-fg-muted">{partialNoticeText}</p>}
-                  </section>
+                  {needle !== '' && (
+                    <section className="flex flex-col gap-2">
+                      <SectionHeading title="Pull requests" count={pulls.length} />
+                      {loading ? (
+                        <Empty>Loading…</Empty>
+                      ) : pullsUnavailable ? (
+                        <Empty>{pullsNoticeText ?? 'Install and sign in to `gh` or `glab` to list pull requests.'}</Empty>
+                      ) : pulls.length === 0 ? (
+                        <Empty>{`No open pull requests match "${q.trim()}".`}</Empty>
+                      ) : (
+                        <ul role="listbox" aria-label="Pull requests" className="-mx-2.5 flex flex-col">
+                          {pulls.map(({ repoId: id, pull: p }) => {
+                            const key = pullKey(id, p.number);
+                            const idx = rows.findIndex((r) => rowKeyOf(r) === key);
+                            return (
+                              <PullRow
+                                key={key}
+                                pull={p}
+                                repoName={repoNameOf(id)}
+                                highlighted={idx === highlighted}
+                                busy={busyKey === key}
+                                registerRef={(el) => setRowRef(key, el)}
+                                onOpen={() => void openRow({ kind: 'pull', repoId: id, pull: p })}
+                              />
+                            );
+                          })}
+                        </ul>
+                      )}
+                      {!loading && partialNoticeText !== null && <p className="px-0.5 text-xs text-chrome-fg-muted">{partialNoticeText}</p>}
+                    </section>
+                  )}
 
                   {searchable && (found.length > 0 || searching || !searchState.available) && (
                     <section className="flex flex-col gap-2">
