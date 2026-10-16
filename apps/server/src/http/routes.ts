@@ -80,6 +80,8 @@ import {
   detectForge,
   forgeFor,
   getFileContents,
+  gitUserName,
+  selectBranches,
   getFilePatch,
   listBranches,
   remoteHost,
@@ -257,19 +259,35 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     const repo = await getRepoById(deps.db, id);
     if (repo === null) throw notFound(`repo ${id} not found`);
     const query = parseQuery(listBranchesQuerySchema, c);
-    const rawBranches = await listBranches({
-      cwd: repo.rootPath,
-      ...(query.filter === undefined ? {} : { filter: query.filter }),
-      limit: query.limit ?? 50,
-      defaultBranch: repo.defaultBranch,
-    });
-    const branches = await Promise.all(
-      rawBranches.map(async (branch) => {
-        const existing = await findReviewByBranch(deps.db, repo.id, branch.name);
-        return { ...branch, reviewId: existing?.id ?? null, reviewStatus: existing?.status ?? null };
+    const [all, reviews, author] = await Promise.all([
+      listBranches({
+        cwd: repo.rootPath,
+        ...(query.filter === undefined ? {} : { filter: query.filter }),
+        defaultBranch: repo.defaultBranch,
       }),
-    );
-    return c.json({ branches });
+      listReviews(deps.db, { repoId: repo.id }),
+      query.mine === 'true' ? gitUserName(repo.rootPath) : Promise.resolve(null),
+    ]);
+    // Statuses go on before filtering, since the review filter reads them.
+    const reviewByBranch = new Map(reviews.flatMap((r) => (r.branch === null ? [] : [[r.branch, r] as const])));
+    const withReviews = all.map((branch) => {
+      const existing = reviewByBranch.get(branch.name);
+      return { ...branch, reviewId: existing?.id ?? null, reviewStatus: existing?.status ?? null };
+    });
+    // "Mine" with no `user.name` set can't match anything, so it lists nothing rather than everything.
+    if (query.mine === 'true' && author === null) return c.json({ branches: [] });
+    const branches = selectBranches(withReviews, {
+      defaultBranch: repo.defaultBranch,
+      limit: query.limit ?? 50,
+      ...(query.sort === undefined ? {} : { sort: query.sort }),
+      ...(author === null ? {} : { author }),
+      ...(query.unmerged === 'true' ? { unmerged: true } : {}),
+      ...(query.where === undefined ? {} : { where: query.where }),
+      ...(query.since === undefined ? {} : { since: Math.floor(Date.now() / 1000) - query.since * 24 * 60 * 60 }),
+      ...(query.review === undefined ? {} : { review: query.review }),
+    });
+    // `merged` only feeds the filter; it isn't part of the API's branch shape.
+    return c.json({ branches: branches.map(({ merged, ...branch }) => branch) });
   });
 
   app.get('/api/repos/:id/pulls', async (c) => {

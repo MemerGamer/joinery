@@ -14,6 +14,7 @@ import { fileListSchema, revisionSchema, reviewStateSchema } from './domain/file
 import {
   agentRunSchema,
   branchSchema,
+  branchSortSchema,
   forgeUnavailableReasonSchema,
   meSchema,
   pullDetailSchema,
@@ -125,9 +126,27 @@ export const setReviewStatusBodySchema = z.object({ status: reviewStatusSchema }
 
 // A monorepo can have thousands of remote branches — `filter` and `limit`
 // keep the response bounded rather than dumping the whole ref namespace.
+/**
+ * Explore's branch filters. All are applied server-side before `limit`, so
+ * they look through every branch, not just the most recent page.
+ *
+ * - `mine`: the tip commit's author is the repo's `git config user.name`.
+ * - `unmerged`: has commits the default branch doesn't (the default branch
+ *   itself always stays).
+ * - `where`: `local` has a local branch; `origin` exists only on origin.
+ * - `since`: committed within the last that many days.
+ * - `review`: `unreviewed` has no review or only an unstarted draft;
+ *   `reviewing` has one open (or orphaned).
+ */
 export const listBranchesQuerySchema = z.object({
   filter: z.string().min(1).optional(),
   limit: z.coerce.number().int().positive().max(500).optional(),
+  sort: branchSortSchema.optional(),
+  mine: z.enum(['true', 'false']).optional(),
+  unmerged: z.enum(['true', 'false']).optional(),
+  where: z.enum(['local', 'origin']).optional(),
+  since: z.coerce.number().int().positive().optional(),
+  review: z.enum(['unreviewed', 'reviewing']).optional(),
 });
 export const listDirsQuerySchema = z.object({
   /** Absolute (or `~`-prefixed) directory to list; defaults to the server user's home. */

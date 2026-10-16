@@ -10,7 +10,7 @@
  * here keeps "which remote" a non-question rather than inventing a
  * multi-remote UI nobody asked for.
  */
-import type { ReviewStatus } from '@joinery/core';
+import { compareBranches, type BranchSort, type ReviewStatus } from '@joinery/core';
 import { git, gitOrThrow, bytesToText, type GitCallOptions } from './run.ts';
 
 export type BranchSummary = {
@@ -28,6 +28,12 @@ export type BranchSummary = {
   /** Commits ahead of / behind the repo's default branch; null when git can't say. */
   ahead: number | null;
   behind: number | null;
+  /**
+   * Whether the default branch already contains it. From `ahead` when git
+   * can count (2.41+); otherwise from `for-each-ref --no-merged`, which older
+   * git has too. Null when there's no default branch to compare against.
+   */
+  merged: boolean | null;
 };
 
 export type ListBranchesOptions = GitCallOptions & {
@@ -164,6 +170,7 @@ export async function listBranches(options: ListBranchesOptions): Promise<Branch
         reviewStatus: null,
         ahead,
         behind,
+        merged: ahead === null ? null : ahead === 0,
       });
       continue;
     }
@@ -180,6 +187,21 @@ export async function listBranches(options: ListBranchesOptions): Promise<Branch
       existing.authorName = authorName === undefined || authorName === '' ? null : authorName;
       existing.ahead = ahead;
       existing.behind = behind;
+      existing.merged = ahead === null ? null : ahead === 0;
+    }
+  }
+
+  // Git too old to count: ask which refs the default branch doesn't contain
+  // instead. A branch is unmerged if either of its refs is.
+  if (!hasAheadBehind && defaultRef !== null) {
+    const result = await git(['for-each-ref', `--no-merged=${defaultRef}`, '--format=%(refname)', 'refs/heads', 'refs/remotes/origin'], options);
+    if (result.exitCode === 0) {
+      const unmerged = new Set<string>();
+      for (const refname of bytesToText(result.stdout).split('\n')) {
+        if (refname.startsWith(LOCAL_PREFIX)) unmerged.add(refname.slice(LOCAL_PREFIX.length));
+        else if (refname.startsWith(REMOTE_PREFIX)) unmerged.add(refname.slice(REMOTE_PREFIX.length));
+      }
+      for (const branch of byName.values()) branch.merged = !unmerged.has(branch.name);
     }
   }
 
@@ -193,4 +215,43 @@ export async function listBranches(options: ListBranchesOptions): Promise<Branch
     branches = branches.slice(0, options.limit);
   }
   return branches;
+}
+
+export type SelectBranchesOptions = {
+  sort?: BranchSort;
+  /** Keep only branches whose tip commit's author is this name (case-insensitive). */
+  author?: string;
+  /** Keep only branches with commits the default branch doesn't have; the default branch itself stays. */
+  unmerged?: boolean;
+  /** `local`: has a local branch. `origin`: exists only on origin. */
+  where?: 'local' | 'origin';
+  /** Keep only branches committed to at or after this unix time. */
+  since?: number;
+  /** `unreviewed`: no review, or an unstarted draft. `reviewing`: open or orphaned. Reads `reviewStatus`, so fill it first. */
+  review?: 'unreviewed' | 'reviewing';
+  /** The repo's default branch short name, for `unmerged`. */
+  defaultBranch: string;
+  limit?: number;
+};
+
+/**
+ * Explore's filters and sort over the full branch list `listBranches`
+ * returns, then the limit, so a filter looks through every branch rather
+ * than just the most recent page.
+ */
+export function selectBranches<T extends BranchSummary>(branches: readonly T[], options: SelectBranchesOptions): T[] {
+  const author = options.author?.trim().toLowerCase();
+  let selected = branches.filter((b) => {
+    if (author !== undefined && (b.authorName ?? '').trim().toLowerCase() !== author) return false;
+    // Unknown (no default branch to compare with) isn't evidence of being merged, so it stays.
+    if (options.unmerged === true && b.name !== options.defaultBranch && b.merged === true) return false;
+    if (options.where === 'local' && !b.hasLocalRef) return false;
+    if (options.where === 'origin' && b.hasLocalRef) return false;
+    if (options.since !== undefined && b.committerDate < options.since) return false;
+    if (options.review === 'unreviewed' && b.reviewStatus !== null && b.reviewStatus !== 'draft') return false;
+    if (options.review === 'reviewing' && b.reviewStatus !== 'open' && b.reviewStatus !== 'orphaned') return false;
+    return true;
+  });
+  selected = selected.sort(compareBranches(options.sort ?? 'recent'));
+  return options.limit === undefined ? selected : selected.slice(0, options.limit);
 }

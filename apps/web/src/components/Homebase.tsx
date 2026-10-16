@@ -37,6 +37,7 @@ import { useHeroTones } from '../lib/heroTone.ts';
 import { personFrom } from '../lib/people.ts';
 import { pullUrl } from '../lib/pullUrl.ts';
 import { relativeTime } from '../lib/relativeTime.ts';
+import { useStoredState } from '../lib/storedState.ts';
 import { goReview, goSettings } from '../lib/router.ts';
 import { useHomeData, type HomeReview } from '../state/HomeData.tsx';
 import { useTheme } from '../state/ThemeContext.tsx';
@@ -576,26 +577,6 @@ const TOPBAR_FADE = `linear-gradient(to bottom, ${[
 const ONLY_REQUESTED_KEY = 'joinery.queue.only-requested';
 const QUEUE_SORT_KEY = 'joinery.queue.sort';
 const QUEUE_HIDDEN_REPOS_KEY = 'joinery.queue.hidden-repos';
-
-/** The queue's filters and sort, remembered across visits as JSON. */
-function useStoredState<T>(key: string, fallback: T): [T, React.Dispatch<React.SetStateAction<T>>] {
-  const [value, setValue] = useState<T>(() => {
-    try {
-      const raw = window.localStorage.getItem(key);
-      return raw === null ? fallback : (JSON.parse(raw) as T);
-    } catch {
-      return fallback;
-    }
-  });
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(key, JSON.stringify(value));
-    } catch {
-      // Best-effort only — private/locked-down storage just won't persist.
-    }
-  }, [key, value]);
-  return [value, setValue];
-}
 
 function OrderTab({ label, selected, onSelect }: { label: string; selected: boolean; onSelect: () => void }): React.JSX.Element {
   return (

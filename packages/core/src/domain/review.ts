@@ -128,6 +128,33 @@ export const branchSchema = z.object({
 });
 export type Branch = z.infer<typeof branchSchema>;
 
+export const branchSortSchema = z.enum(['recent', 'name', 'ahead', 'behind']);
+export type BranchSort = z.infer<typeof branchSortSchema>;
+
+type SortableBranch = Pick<Branch, 'name' | 'committerDate' | 'ahead' | 'behind'>;
+
+/** Newest first, then by name, so equal keys keep a stable order. */
+function byRecent(a: SortableBranch, b: SortableBranch): number {
+  return b.committerDate - a.committerDate || a.name.localeCompare(b.name);
+}
+
+/** Descending by a count; unknown counts (older git) sort last. */
+function byCount(key: 'ahead' | 'behind'): (a: SortableBranch, b: SortableBranch) => number {
+  return (a, b) => (b[key] ?? -1) - (a[key] ?? -1) || byRecent(a, b);
+}
+
+const BRANCH_COMPARE: Record<BranchSort, (a: SortableBranch, b: SortableBranch) => number> = {
+  recent: byRecent,
+  name: (a, b) => a.name.localeCompare(b.name),
+  ahead: byCount('ahead'),
+  behind: byCount('behind'),
+};
+
+/** The branch list's order for a sort, shared by the server (per repo) and Explore (merging repos). */
+export function compareBranches(sort: BranchSort): (a: SortableBranch, b: SortableBranch) => number {
+  return BRANCH_COMPARE[sort];
+}
+
 export const pullSchema = z.object({
   number: z.number().int().positive(),
   title: z.string(),

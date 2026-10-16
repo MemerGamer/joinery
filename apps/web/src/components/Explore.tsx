@@ -8,7 +8,9 @@
  * cached open ones that match, whatever their review status, then whatever the
  * forge search finds beyond them, closed and merged too. A branch whose PR
  * is listed is left out, the PR row standing for it. Reviews in progress
- * show up too, with a "reviewing" chip, and open where they left off. Rows use the same
+ * show up too, with a "reviewing" chip, and open where they left off. The
+ * Branches heading has filter and sort menus (`home/BranchMenus.tsx`),
+ * remembered in localStorage and applied by the server. Rows use the same
  * shape as Homebase's queue so the two screens rhyme without Explore growing
  * a personality of its own.
  *
@@ -19,14 +21,23 @@
  */
 import { Cloud, FolderGit2, GitBranch, HardDrive, Layers, Plus, Search, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Branch, Pull, PullSearchResult, PullState, Repo, ReviewStatus } from '@joinery/core';
+import { compareBranches, type Branch, type BranchSort, type Pull, type PullSearchResult, type PullState, type Repo, type ReviewStatus } from '@joinery/core';
 import { ApiError, callApi } from '../lib/apiClient.ts';
 import { firstForgeNotice, forgeNoticeLine, forgeNoticeText, type ForgeNotice } from '../lib/forgeNotice.ts';
 import { effortOf } from '../lib/effort.ts';
 import { personFrom, type Person } from '../lib/people.ts';
 import { relativeTime } from '../lib/relativeTime.ts';
+import { useStoredState } from '../lib/storedState.ts';
 import { EXPLORE_ID } from '../lib/router.ts';
 import { useHomeData } from '../state/HomeData.tsx';
+import {
+  BranchFilterMenu,
+  BranchSortMenu,
+  branchFiltersActive,
+  NO_BRANCH_FILTERS,
+  RECENT_DAYS,
+  type BranchFilters,
+} from './home/BranchMenus.tsx';
 import { FolderPicker } from './home/FolderPicker.tsx';
 import { Panel } from './home/Panel.tsx';
 import { Avatar, Chip, CiIcon, EffortMeter, SectionHeading, type Tone } from './home/primitives.tsx';
@@ -37,6 +48,20 @@ const SEARCH_DEBOUNCE_MS = 300;
 const SEARCH_MIN_CHARS = 2;
 /** The repo pill that stands for every repository at once. */
 const ALL_REPOS = '*';
+const BRANCH_FILTERS_KEY = 'joinery.explore.branch-filters';
+const BRANCH_SORT_KEY = 'joinery.explore.branch-sort';
+
+/** The `listBranches` query for a filter set and sort (the defaults are left off). */
+function branchQuery(filters: BranchFilters, sort: BranchSort) {
+  return {
+    ...(sort === 'recent' ? {} : { sort }),
+    ...(filters.mine ? { mine: 'true' as const } : {}),
+    ...(filters.unmerged ? { unmerged: 'true' as const } : {}),
+    ...(filters.where === 'any' ? {} : { where: filters.where }),
+    ...(filters.recent ? { since: RECENT_DAYS } : {}),
+    ...(filters.review === 'any' ? {} : { review: filters.review }),
+  };
+}
 
 type Row =
   | { kind: 'pull'; repoId: string; pull: Pull }
@@ -89,6 +114,11 @@ export function ExploreSection(): React.JSX.Element {
   const [openError, setOpenError] = useState<string | null>(null);
 
   const [addingRepo, setAddingRepo] = useState(false);
+  const [storedFilters, setBranchFilters] = useStoredState<BranchFilters>(BRANCH_FILTERS_KEY, NO_BRANCH_FILTERS);
+  // Older stored shapes get the defaults for anything they lack.
+  const branchFilters: BranchFilters = { ...NO_BRANCH_FILTERS, ...storedFilters };
+  const [branchSort, setBranchSort] = useStoredState<BranchSort>(BRANCH_SORT_KEY, 'recent');
+  const branchQueryKey = JSON.stringify(branchQuery(branchFilters, branchSort));
 
   // Branches are tagged with the scope + query they were fetched for, so a
   // switch keeps the old list on screen (dimmed) until the new one lands
@@ -126,7 +156,9 @@ export function ExploreSection(): React.JSX.Element {
   const scopeKey = all ? repos.map((r) => r.id).join('\n') : repoId;
   const scopeIds = useMemo(() => (scopeKey === '' ? [] : scopeKey.split('\n')), [scopeKey]);
   const fetchKey = `${scopeKey}\0${needle}`;
-  const branchesStale = branchState.key !== fetchKey;
+  // Branches also refetch when their filters or sort change.
+  const branchFetchKey = `${fetchKey}\0${branchQueryKey}`;
+  const branchesStale = branchState.key !== branchFetchKey;
 
   // Open PRs matching the query. With no query there's nothing to list:
   // the open ones are Homebase's "Up for review".
@@ -147,9 +179,10 @@ export function ExploreSection(): React.JSX.Element {
   // request counter as well as the abort, in case a server races past it.
   useEffect(() => {
     if (scopeIds.length === 0) {
-      setBranchState({ key: fetchKey, branches: [], truncated: false });
+      setBranchState({ key: branchFetchKey, branches: [], truncated: false });
       return;
     }
+    const filterQuery = JSON.parse(branchQueryKey) as ReturnType<typeof branchQuery>;
     const timer = setTimeout(() => {
       branchAbortRef.current?.abort();
       const controller = new AbortController();
@@ -161,18 +194,20 @@ export function ExploreSection(): React.JSX.Element {
             scopeIds.map(async (id) => {
               const res = await callApi('listBranches', {
                 params: [id],
-                query: { limit: BRANCH_LIMIT, ...(needle !== '' ? { filter: needle } : {}) },
+                query: { limit: BRANCH_LIMIT, ...filterQuery, ...(needle !== '' ? { filter: needle } : {}) },
                 signal: controller.signal,
               });
               return { id, branches: res.branches };
             }),
           );
           if (reqId !== branchReqIdRef.current) return;
+          const compare = compareBranches(filterQuery.sort ?? 'recent');
           setBranchState({
-            key: fetchKey,
+            key: branchFetchKey,
+            // Each repo's page is already in this order; merging keeps it across repos.
             branches: results
               .flatMap(({ id, branches }) => branches.map((branch) => ({ repoId: id, branch })))
-              .sort((a, b) => b.branch.committerDate - a.branch.committerDate),
+              .sort((a, b) => compare(a.branch, b.branch)),
             truncated: results.some((r) => r.branches.length === BRANCH_LIMIT),
           });
         } catch (err) {
@@ -182,7 +217,7 @@ export function ExploreSection(): React.JSX.Element {
       })();
     }, BRANCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [scopeIds, needle, fetchKey]);
+  }, [scopeIds, needle, branchFetchKey, branchQueryKey]);
 
   useEffect(() => () => branchAbortRef.current?.abort(), []);
 
@@ -480,11 +515,26 @@ export function ExploreSection(): React.JSX.Element {
                   )}
 
                   <section className="flex flex-col gap-2">
-                    <SectionHeading title="Branches" count={branches.length} />
+                    <SectionHeading
+                      title="Branches"
+                      count={branches.length}
+                      action={
+                        <div className="flex items-center gap-0.5">
+                          <BranchFilterMenu filters={branchFilters} onChange={setBranchFilters} />
+                          <BranchSortMenu sort={branchSort} onChange={setBranchSort} />
+                        </div>
+                      }
+                    />
                     {loading || (branchesStale && branches.length === 0) ? (
                       <Empty>Loading…</Empty>
                     ) : branches.length === 0 ? (
-                      <Empty>{needle === '' ? 'No branches.' : `No branches match "${q.trim()}".`}</Empty>
+                      <Empty>
+                        {needle !== ''
+                          ? `No branches match "${q.trim()}"${branchFiltersActive(branchFilters) ? ' with these filters' : ''}.`
+                          : branchFiltersActive(branchFilters)
+                            ? 'No branches match these filters.'
+                            : 'No branches.'}
+                      </Empty>
                     ) : (
                       <ul
                         role="listbox"

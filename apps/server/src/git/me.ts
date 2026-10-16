@@ -15,6 +15,11 @@ let nameResolved = false;
 /** Forge logins by `kind@host`: a GitHub and a GitLab repo (or two GitLab hosts) are different accounts. */
 const cachedLogins = new Map<string, string>();
 
+/** `git config user.name` as seen from `cwd` (repo-local config included); null when unset. */
+export async function gitUserName(cwd: string): Promise<string | null> {
+  return resolveName(cwd);
+}
+
 async function resolveName(cwd: string): Promise<string | null> {
   const result = await git(['config', '--get', 'user.name'], { cwd });
   if (result.exitCode !== 0) return null;

@@ -53,9 +53,9 @@ export {
   type ResolvedPr,
 } from './forge/index.ts';
 
-export { getMe, type Me } from './me.ts';
+export { getMe, gitUserName, type Me } from './me.ts';
 
-export { listBranches, type BranchSummary, type ListBranchesOptions } from './refs.ts';
+export { listBranches, selectBranches, type BranchSummary, type ListBranchesOptions } from './refs.ts';
 
 export {
   getFilePatch,
