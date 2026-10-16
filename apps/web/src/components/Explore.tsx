@@ -5,9 +5,10 @@
  * One search field, the repositories as pills (or All of them), then the
  * branches, local and remote. Open pull requests already live in Homebase's
  * "Up for review", so pull requests only show up here once you type: the
- * cached open ones that match (archived ones included), then whatever the
- * forge search finds beyond them, closed and merged too. Anything you're
- * actively reviewing is left out; that lives on Homebase. Rows use the same
+ * cached open ones that match, whatever their review status, then whatever the
+ * forge search finds beyond them, closed and merged too. A branch whose PR
+ * is listed is left out, the PR row standing for it. Reviews in progress
+ * show up too, with a "reviewing" chip, and open where they left off. Rows use the same
  * shape as Homebase's queue so the two screens rhyme without Explore growing
  * a personality of its own.
  *
@@ -63,8 +64,8 @@ function isNumberQuery(needle: string): boolean {
   return /^#?\d+$/.test(needle);
 }
 
-/** A pull/branch is claimed — and hidden from Explore — when its review is `open` or `orphaned`. */
-function isClaimed(status: ReviewStatus | null): boolean {
+/** A pull/branch whose review is `open` or `orphaned`: in progress, so it gets a "reviewing" chip. */
+function isReviewing(status: ReviewStatus | null): boolean {
   return status === 'open' || status === 'orphaned';
 }
 
@@ -132,7 +133,7 @@ export function ExploreSection(): React.JSX.Element {
   const pulls = useMemo<RepoPull[]>(() => {
     if (needle === '') return [];
     return scopeIds
-      .flatMap((id) => (pullsByRepo.get(id) ?? []).filter((p) => !isClaimed(p.reviewStatus)).map((pull) => ({ repoId: id, pull })))
+      .flatMap((id) => (pullsByRepo.get(id) ?? []).map((pull) => ({ repoId: id, pull })))
       .filter(
         ({ pull: p }) =>
           p.title.toLowerCase().includes(needle) ||
@@ -224,8 +225,8 @@ export function ExploreSection(): React.JSX.Element {
     };
   }, [searchable, needle, scopeIds, fetchKey]);
 
-  // Search hits not already listed above. Open PRs we already hold are
-  // dropped whatever their review status, so a claimed PR stays hidden.
+  // Search hits not already listed above: the open PRs we already hold are
+  // the cached matches, so they're dropped here.
   const found = useMemo(() => {
     if (!searchable || searchState.key !== fetchKey) return [];
     const known = new Set(
@@ -234,14 +235,11 @@ export function ExploreSection(): React.JSX.Element {
     return searchState.pulls.filter((f) => !known.has(pullKey(f.repoId, f.number)));
   }, [searchable, searchState, fetchKey, pullsByRepo]);
 
+  // A PR's branch is left out only while that PR's row is listed above.
   const branches = useMemo(() => {
-    const heads = new Set(
-      Array.from(pullsByRepo.entries()).flatMap(([id, ps]) =>
-        ps.filter((p) => !isClaimed(p.reviewStatus)).map((p) => `${id}\0${p.headRefName}`),
-      ),
-    );
-    return branchState.branches.filter(({ repoId: id, branch: b }) => !heads.has(`${id}\0${b.name}`) && !isClaimed(b.reviewStatus));
-  }, [branchState, pullsByRepo]);
+    const heads = new Set(pulls.map(({ repoId: id, pull: p }) => `${id}\0${p.headRefName}`));
+    return branchState.branches.filter(({ repoId: id, branch: b }) => !heads.has(`${id}\0${b.name}`));
+  }, [branchState, pulls]);
 
   const rows = useMemo<Row[]>(
     () => [
@@ -592,6 +590,7 @@ function PullRow({
             <span className="truncate text-body font-medium text-chrome-fg">{p.title}</span>
             {p.isDraft && <Chip>draft</Chip>}
             {p.reviewRequested && <Chip tone="accent">Review requested</Chip>}
+            {isReviewing(p.reviewStatus) && <Chip tone="accent">reviewing</Chip>}
             {p.reviewStatus === 'draft' && <Chip>opened</Chip>}
             {p.reviewStatus === 'archived' && <Chip>archived</Chip>}
           </span>
@@ -684,6 +683,7 @@ function BranchRow({
           <span className="flex min-w-0 items-center gap-1.5">
             <span className="truncate font-mono text-xs font-medium text-chrome-fg">{b.name}</span>
             {isDefault && <Chip>default</Chip>}
+            {isReviewing(b.reviewStatus) && <Chip tone="accent">reviewing</Chip>}
             {b.reviewStatus === 'draft' && <Chip>opened</Chip>}
             {b.reviewStatus === 'archived' && <Chip>archived</Chip>}
           </span>
