@@ -187,9 +187,6 @@ function AppearancePanel(): React.JSX.Element {
   const options = useMemo(() => listThemeOptions(), []);
   return (
     <Panel icon={<Palette />} title="Appearance" className={OVERFLOW} bodyClassName={`px-3 pb-3 ${OVERFLOW}`}>
-      <p className="pb-3 text-xs text-chrome-fg-muted">
-        One theme for dark mode and one for light; switching modes swaps between them. ⌘K's <code>#</code> picks them too.
-      </p>
       <div className="grid gap-3 sm:grid-cols-2">
         {(['dark', 'light'] as const).map((slot) => (
           <ThemeColumn
@@ -224,7 +221,8 @@ function ThemeColumn({
   const rest = options.filter((o) => !o.colorblindSafe);
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <div className="flex items-center gap-1.5">
+      {/* Fixed height, so the "in use" chip doesn't push one column's picker below the other's. */}
+      <div className="flex h-5 items-center gap-1.5">
         {slot === 'dark' ? <Moon size={13} strokeWidth={1.75} className="text-chrome-fg-subtle" aria-hidden /> : <Sun size={13} strokeWidth={1.75} className="text-chrome-fg-subtle" aria-hidden />}
         <label htmlFor={id} className="text-xs font-medium text-chrome-fg">
           {slot === 'dark' ? 'Dark' : 'Light'}
@@ -368,11 +366,9 @@ function IntegrationsPanel(): React.JSX.Element {
             title="Claude Code"
             detail={
               data.claude.path !== null
-                ? data.claude.bundled
-                  ? `${data.claude.path} · a source checkout runs the Agent SDK's own copy`
-                  : data.claude.path
+                ? data.claude.path
                 : data.claude.bundled
-                  ? "Not on PATH · a source checkout runs the Agent SDK's own copy"
+                  ? 'Not on PATH'
                   : 'Install it and run `claude` once to sign in; agent replies need it'
             }
           >
