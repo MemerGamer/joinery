@@ -536,7 +536,7 @@ export function CommandPalette({
             }}
             className={ITEM_CLASS}
           >
-            <MessageSquareDashed size={14} strokeWidth={1.5} aria-hidden />
+            <MessageSquare size={14} strokeWidth={1.5} aria-hidden />
             Resolve all threads
           </Command.Item>
           <Command.Item
@@ -547,7 +547,7 @@ export function CommandPalette({
             }}
             className={ITEM_CLASS}
           >
-            <MessageSquare size={14} strokeWidth={1.5} aria-hidden />
+            <MessageSquareDashed size={14} strokeWidth={1.5} aria-hidden />
             Unresolve all threads
           </Command.Item>
         </>
