@@ -3,7 +3,7 @@
  * order — plus the header, divergence banner, staged-refresh pill, and the
  * global keymap + command palette.
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ReviewProvider, useReview } from '../state/ReviewContext.tsx';
 import { useReviewShortcuts } from '../state/useReviewShortcuts.ts';
 import { useGlobalKeymap } from '../lib/keymap.ts';
@@ -18,6 +18,7 @@ import { RefreshPill } from './RefreshPill.tsx';
 import { ResizeHandle } from './ResizeHandle.tsx';
 import { ReviewCodeView } from './ReviewCodeView.tsx';
 import { ShortcutHelp } from './ShortcutHelp.tsx';
+import { useReviewPull } from './ReviewSummaryCard.tsx';
 
 export function ReviewWindow({ reviewId }: { reviewId: string }): React.JSX.Element {
   return (
@@ -39,6 +40,18 @@ function ReviewWindowInner(): React.JSX.Element {
   const [helpOpen, setHelpOpen] = useState(false);
   const closeHelp = useCallback(() => setHelpOpen(false), []);
   const shortcuts = useReviewShortcuts();
+  const pull = useReviewPull(review.review?.id, review.fileList);
+
+  // Tab title: `#123 Title` for a PR, else the branch (or pinned sha).
+  const tabTitle =
+    pull !== null ? `#${pull.number} ${pull.title}` : (review.review?.branch ?? review.review?.pinnedSha?.slice(0, 10) ?? null);
+  useEffect(() => {
+    if (tabTitle === null) return;
+    document.title = tabTitle;
+    return () => {
+      document.title = 'Joinery';
+    };
+  }, [tabTitle]);
 
   const openPaletteIn = (nextMode: 'command' | 'file' | undefined) => {
     setPaletteMode(nextMode);

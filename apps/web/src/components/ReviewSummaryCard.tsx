@@ -37,7 +37,7 @@ const STATE_TONE: Record<PullState, Tone> = {
  * Never forces a refresh: in the working revision the file list moves on every
  * save, and the server's few-minute cache keeps that from becoming a `gh` call each time.
  */
-function useReviewPull(reviewId: string | undefined, refreshKey: unknown): PullDetail | null {
+export function useReviewPull(reviewId: string | undefined, refreshKey: unknown): PullDetail | null {
   const [pull, setPull] = useState<PullDetail | null>(null);
 
   useEffect(() => {
