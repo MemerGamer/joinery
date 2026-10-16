@@ -90,7 +90,7 @@ import { projectThreads } from '../engine/threadProjection.ts';
 import { cancelRun, generateReadingOrder, requestThreadReply } from '../agent/runs.ts';
 import type { Invoke } from '../agent/tools.ts';
 import { resolveRunCwd } from '../agent/worktree.ts';
-import { badRequest, conflict, notFound } from './errors.ts';
+import { badRequest, conflict, notFound, pathError } from './errors.ts';
 import { parseBody, parseQuery } from './validate.ts';
 
 export type RoutesDeps = {
@@ -162,8 +162,8 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     let canonical: string;
     try {
       canonical = await canonicalizePath(body.path);
-    } catch {
-      throw badRequest(`path does not exist: ${body.path}`);
+    } catch (err) {
+      throw pathError(err, body.path);
     }
     let toplevel: string;
     try {

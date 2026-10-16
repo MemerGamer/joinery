@@ -6,7 +6,7 @@ import { readdir, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
 import type { DirEntry } from '@joinery/core';
-import { badRequest } from '../http/errors.ts';
+import { badRequest, pathError } from '../http/errors.ts';
 
 export interface DirListing {
   path: string;
@@ -41,16 +41,16 @@ export async function listDirs(rawPath: string | undefined, hidden: boolean): Pr
   let path: string;
   try {
     path = await realpath(wanted);
-  } catch {
-    throw badRequest(`path does not exist: ${wanted}`);
+  } catch (err) {
+    throw pathError(err, wanted);
   }
   if (!(await isDir(path))) throw badRequest(`not a directory: ${wanted}`);
 
   let children;
   try {
     children = await readdir(path, { withFileTypes: true });
-  } catch {
-    throw badRequest(`cannot read directory: ${path}`);
+  } catch (err) {
+    throw pathError(err, path);
   }
 
   const entries = (

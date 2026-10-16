@@ -49,3 +49,23 @@ export function renderError(err: unknown, c: Context): Response {
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
+
+/**
+ * A failed `realpath`/`readdir` on a user-supplied path. Only ENOENT means
+ * "does not exist": on macOS, a folder the user declined in the privacy
+ * prompt (Desktop, Documents, Downloads, iCloud Drive, external volumes)
+ * fails with EPERM, and macOS never asks again — say so instead of lying.
+ */
+export function pathError(err: unknown, path: string): HttpError {
+  const code = (err as NodeJS.ErrnoException | undefined)?.code;
+  if (code === 'EPERM' || code === 'EACCES') {
+    return badRequest(
+      `permission denied: ${path}`,
+      process.platform === 'darwin'
+        ? 'macOS is blocking access to this folder. Allow joinery in System Settings → Privacy & Security → Files and Folders (or Full Disk Access), then restart joinery.'
+        : undefined,
+    );
+  }
+  if (code === 'ENOTDIR') return badRequest(`not a directory: ${path}`);
+  return badRequest(`path does not exist: ${path}`);
+}
