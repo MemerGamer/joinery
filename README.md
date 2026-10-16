@@ -5,17 +5,71 @@
   </picture>
 </p>
 
-A local-first, agent-native code review app. Joinery renders diffs fast, walks
-you through a change with a generated reading order, and keeps comment threads
-that Claude Code can answer asynchronously.
+<p align="center"><b>A local-first, agent-native code review app.</b></p>
 
-- **Homebase** is a dashboard with one row per branch across your registered
-  repos, covering both local branches and open PRs. Each row shows what's
-  waiting on you.
-- **Review page** has three panes: the changed files, the diffs with inline
-  threads, and the reading order.
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#development">Development</a>
+</p>
 
-Everything runs on your machine. State lives in SQLite under `data/`.
+<p align="center">
+  <a href="https://github.com/szhabolcs/joinery/releases/latest"><img src="https://img.shields.io/github/v/release/szhabolcs/joinery" alt="Latest release" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/szhabolcs/joinery" alt="MIT license" /></a>
+  <img src="https://img.shields.io/badge/platform-macOS-lightgrey" alt="Platform: macOS" />
+</p>
+
+https://github.com/user-attachments/assets/9e65d5d0-4fc3-4bb8-81ea-a9c59a61e001
+
+Joinery renders diffs fast, walks you through a change with a generated reading
+order, and keeps comment threads that Claude Code can answer asynchronously.
+
+- **Local-first.** Everything runs on your machine. State lives in SQLite under
+  `data/`, and comments are never posted to GitHub.
+- **Agent-native threads.** Ask a question on any line and Claude Code replies
+  in the thread, while you keep reading.
+- **Generated reading order.** The change is split into ordered steps, each
+  marked Focus or Skim, so you know where to spend your attention.
+- **Fast diffs.** Per-file viewed checks, and a revision picker for the working
+  tree, committed head, and PR head.
+- **One dashboard.** Homebase lists every branch and open PR across your
+  registered repos and shows what is waiting on you.
+
+## Tour
+
+### Homebase
+
+One row per branch across your registered repos, covering both local branches
+and open PRs. Each row shows size, viewed progress, and what is waiting on you.
+
+<p align="center">
+  <img src="docs/media/homebase.png" alt="Homebase dashboard" width="860" />
+</p>
+
+### Review page
+
+Three panes: the changed files, the diffs with inline threads, and the reading
+order. Mark files as viewed as you go.
+
+<p align="center">
+  <img src="docs/media/review.png" alt="Review page with file tree, diff and reading order" width="860" />
+</p>
+
+### Agent threads
+
+Comment on a line, then ask Claude Code to answer. Replies land in the same
+thread, and you can reply back or resolve it.
+
+<p align="center">
+  <img src="docs/media/thread.png" alt="Comment thread with agent replies and the Ask model picker" width="860" />
+</p>
+
+### Explore
+
+Search every branch and PR across your repos.
+
+<p align="center">
+  <img src="docs/media/explore.png" alt="Explore section" width="860" />
+</p>
 
 ## Install
 
@@ -49,6 +103,15 @@ Your data lives in `~/.joinery/data`, so keep it if you plan to reinstall.
 bun install
 bun run dev      # server + web
 bun run check    # typecheck + tests
+```
+
+To try Joinery against a seeded demo instance (fake repos, no network or Claude
+calls) or to regenerate the README media, see
+[scripts/demo/README.md](scripts/demo/README.md):
+
+```sh
+bun scripts/demo/seed.ts      # build the demo data
+bun scripts/demo/capture.ts   # regenerate docs/media
 ```
 
 ## Releasing

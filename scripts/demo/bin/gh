@@ -1,0 +1,85 @@
+#!/usr/bin/env bun
+/**
+ * Fake `gh` for the demo instance. Answers only the invocations Joinery's
+ * GitHub forge makes (apps/server/src/git/forge/github.ts) with canned JSON
+ * that matches the fake repos; never touches the network. The repo is
+ * identified from the cwd's `origin` URL.
+ */
+const args = process.argv.slice(2);
+const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
+const ME = process.env['JOINERY_DEMO_LOGIN'] ?? 'johndoe';
+
+type Check = 'pass' | 'fail' | 'pending' | 'none';
+type Pr = {
+  n: number; title: string; head: string; author: string; min: number; draft?: boolean;
+  add: number; del: number; files: number; ci: Check; requested?: boolean; body?: string;
+};
+
+const PRS: Record<string, Pr[]> = {
+  'billing-service': [
+    { n: 142, title: 'Prorate plan changes mid-cycle', head: 'feat/prorate-plan-changes', author: 'priyaraman', min: 55, add: 214, del: 38, files: 9, ci: 'pass', requested: true, body: 'Moves money helpers into `lib/money` and prorates upgrades and downgrades by remaining days.' },
+    { n: 139, title: 'Reject replayed Stripe webhooks', head: 'fix/webhook-signature-replay', author: 'marcuswebb', min: 190, add: 96, del: 12, files: 4, ci: 'pass', requested: true },
+    { n: 137, title: 'Retry Stripe calls with exponential backoff', head: 'refactor/retry-with-backoff', author: 'priyaraman', min: 410, add: 143, del: 60, files: 5, ci: 'pending' },
+    { n: 134, title: 'Add dunning email sequence', head: 'feat/dunning-emails', author: ME, min: 700, draft: true, add: 180, del: 4, files: 6, ci: 'none' },
+    { n: 146, title: 'Export invoices as PDF', head: 'feat/invoice-pdf-export', author: 'marcuswebb', min: 25, add: 312, del: 20, files: 8, ci: 'pass', requested: true },
+    { n: 144, title: 'Fix EU tax rounding on partial refunds', head: 'fix/tax-rounding-eu', author: 'sofialindqvist', min: 120, add: 41, del: 9, files: 3, ci: 'fail', requested: true },
+    { n: 131, title: 'Bump Stripe SDK to the 2025-02-24 API', head: 'chore/bump-stripe-sdk', author: 'priyaraman', min: 1500, add: 18, del: 18, files: 2, ci: 'pass' },
+  ],
+  'storefront-web': [
+    { n: 88, title: 'Slide-over cart drawer', head: 'feat/cart-drawer', author: ME, min: 240, add: 120, del: 6, files: 4, ci: 'pass' },
+    { n: 91, title: 'Shareable wishlist links', head: 'feat/wishlist-sharing', author: 'marcuswebb', min: 80, add: 164, del: 3, files: 6, ci: 'pass', requested: true },
+    { n: 90, title: 'Visible focus ring on checkout fields', head: 'fix/checkout-focus-ring', author: 'sofialindqvist', min: 600, add: 22, del: 2, files: 2, ci: 'pending' },
+  ],
+};
+
+async function repoName(): Promise<string> {
+  const p = Bun.spawn(['git', 'config', '--get', 'remote.origin.url'], { stdout: 'pipe', stderr: 'ignore' });
+  const url = (await new Response(p.stdout).text()).trim();
+  return url.replace(/\.git$/, '').split('/').pop() ?? '';
+}
+
+const rollup = (c: Check) =>
+  c === 'pass' ? [{ status: 'COMPLETED', conclusion: 'SUCCESS' }, { status: 'COMPLETED', conclusion: 'SUCCESS' }]
+  : c === 'fail' ? [{ status: 'COMPLETED', conclusion: 'SUCCESS' }, { status: 'COMPLETED', conclusion: 'FAILURE' }]
+  : c === 'pending' ? [{ status: 'COMPLETED', conclusion: 'SUCCESS' }, { status: 'IN_PROGRESS', conclusion: null }]
+  : [];
+
+function full(p: Pr, repo: string) {
+  return {
+    number: p.n, title: p.title, headRefName: p.head, baseRefName: 'main', author: { login: p.author },
+    updatedAt: ago(p.min), isDraft: p.draft ?? false, additions: p.add, deletions: p.del, changedFiles: p.files,
+    statusCheckRollup: rollup(p.ci), reviewRequests: p.requested ? [{ __typename: 'User', login: ME }] : [],
+    state: 'OPEN', body: p.body ?? '', url: `https://github.com/acme/${repo}/pull/${p.n}`,
+  };
+}
+const pick = (o: Record<string, unknown>, fields: string) => Object.fromEntries(fields.split(',').map((f) => [f, o[f]]));
+const flag = (name: string) => (args.includes(name) ? (args[args.indexOf(name) + 1] ?? '') : '');
+const out = (v: unknown) => { process.stdout.write(JSON.stringify(v)); process.exit(0); };
+const fail = (): never => { process.stderr.write('fake gh: unsupported\n'); process.exit(1); };
+
+const [a, b] = args;
+if (a === 'auth' && b === 'status') process.exit(0);
+if (a === 'api' && b === 'user') { process.stdout.write(`${ME}\n`); process.exit(0); }
+
+const repo = flag('--repo') ? flag('--repo').split('/')[1]! : await repoName();
+const prs = PRS[repo] ?? [];
+if (a === 'pr' && b === 'list') out(prs.map((p) => full(p, repo)));
+if (a === 'pr' && b === 'view') {
+  const rest = args.slice(2).filter((x, i, arr) => !x.startsWith('--') && arr[i - 1] !== '--json' && arr[i - 1] !== '--repo');
+  const ref = rest[0] ?? '';
+  const p = prs.find((x) => String(x.n) === ref || x.head === ref);
+  if (p === undefined) fail();
+  out(pick(full(p!, repo), flag('--json')));
+}
+if (a === 'search' && b === 'prs') {
+  const repos = args.flatMap((x, i) => (x === '--repo' ? [args[i + 1]!] : []));
+  const q = (args[args.indexOf('--') + 1] ?? '').toLowerCase();
+  out(
+    repos.flatMap((slug) =>
+      (PRS[slug.split('/')[1]!] ?? [])
+        .filter((p) => p.title.toLowerCase().includes(q))
+        .map((p) => ({ ...pick(full(p, slug.split('/')[1]!), 'number,title,state,author,updatedAt,isDraft'), state: 'open', repository: { nameWithOwner: slug } })),
+    ),
+  );
+}
+fail();
