@@ -29,7 +29,7 @@ import {
   Sun,
   Trash2,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiError, callApi } from '../../lib/apiClient.ts';
 import { useGlobalKeymap } from '../../lib/keymap.ts';
 import { relativeTime } from '../../lib/relativeTime.ts';
@@ -185,36 +185,6 @@ function Row({
 function AppearancePanel(): React.JSX.Element {
   const { chromeMode, diffTheme, setDiffTheme } = useTheme();
   const options = useMemo(() => listThemeOptions(), []);
-  // Hovering or arrowing through a picker applies the theme for real, so the
-  // page itself shows it (the column in use, at least); only a click saves.
-  // This holds the pair from before the preview started, put back when the
-  // picker closes without a pick. A ref, since a pick and the close that
-  // follows it arrive in the same tick.
-  const savedRef = useRef<typeof diffTheme | null>(null);
-  const saved = savedRef.current ?? diffTheme;
-
-  const apply = (next: typeof diffTheme) => {
-    if (next.dark !== diffTheme.dark || next.light !== diffTheme.light) setDiffTheme(next);
-  };
-  const preview = (slot: ChromeMode, name: string | null) => {
-    // An unhighlight with no preview running (e.g. one arriving after the close) changes nothing.
-    if (name === null && savedRef.current === null) return;
-    savedRef.current ??= diffTheme;
-    const base = savedRef.current;
-    apply(name === null ? base : { ...base, [slot]: name });
-  };
-  const commit = (slot: ChromeMode, name: string) => {
-    const next = { ...(savedRef.current ?? diffTheme), [slot]: name };
-    savedRef.current = null;
-    apply(next);
-  };
-  const close = () => {
-    if (savedRef.current === null) return;
-    const base = savedRef.current;
-    savedRef.current = null;
-    apply(base);
-  };
-
   return (
     <Panel icon={<Palette />} title="Appearance" className={OVERFLOW} bodyClassName={`px-3 pb-3 ${OVERFLOW}`}>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -223,12 +193,9 @@ function AppearancePanel(): React.JSX.Element {
             key={slot}
             slot={slot}
             inUse={slot === chromeMode}
-            value={saved[slot]}
-            shown={diffTheme[slot]}
+            value={diffTheme[slot]}
             options={options.filter((o) => o.colorScheme === undefined || o.colorScheme === slot)}
-            onChange={(name) => commit(slot, name)}
-            onPreview={(name) => preview(slot, name)}
-            onClose={close}
+            onChange={(name) => setDiffTheme({ ...diffTheme, [slot]: name })}
           />
         ))}
       </div>
@@ -240,24 +207,19 @@ function ThemeColumn({
   slot,
   inUse,
   value,
-  shown,
   options,
   onChange,
-  onPreview,
-  onClose,
 }: {
   slot: ChromeMode;
   inUse: boolean;
-  /** The saved theme. */
   value: string;
-  /** What's applied right now: the saved theme, or the one being previewed. */
-  shown: string;
   options: ReturnType<typeof listThemeOptions>;
   onChange: (name: string) => void;
-  onPreview: (name: string | null) => void;
-  onClose: () => void;
 }): React.JSX.Element {
   const id = `theme-${slot}`;
+  // The theme highlighted in the open picker: previewed in the sample only;
+  // the app's theme changes on a pick.
+  const [preview, setPreview] = useState<string | null>(null);
   return (
     <div className="flex min-w-0 flex-col gap-2">
       {/* Fixed height, so the "in use" chip doesn't push one column's sample below the other's. */}
@@ -268,8 +230,15 @@ function ThemeColumn({
         </label>
         {inUse && <Chip tone="accent">in use</Chip>}
       </div>
-      <ThemeSample name={shown} />
-      <ThemePicker id={id} options={options} value={value} onChange={onChange} onPreview={onPreview} onClose={onClose} />
+      <ThemeSample name={preview ?? value} />
+      <ThemePicker
+        id={id}
+        options={options}
+        value={value}
+        onChange={onChange}
+        onPreview={setPreview}
+        onClose={() => setPreview(null)}
+      />
     </div>
   );
 }
