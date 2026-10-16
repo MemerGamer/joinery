@@ -7,7 +7,8 @@
  */
 import { AGENT_MODELS, type AgentModel } from '@joinery/core';
 import { Check, ChevronDown } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { setAgentModel, useAgentModel } from '../lib/agentModel.ts';
 
 export function AskButton({
@@ -36,12 +37,29 @@ export function AskButton({
   const label = AGENT_MODELS.find((m) => m.id === model)?.label ?? model;
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
+  // The menu is portaled to <body> so ancestors with `overflow` (the diff
+  // view) can't clip it; it's positioned from the button's viewport rect.
+  const [pos, setPos] = useState<{ right: number; top?: number; bottom?: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open || menuRef.current === null) return;
+    const r = menuRef.current.getBoundingClientRect();
+    const right = window.innerWidth - r.right;
+    const menuHeight = AGENT_MODELS.length * 28 + 8;
+    setPos(
+      window.innerHeight - r.bottom < menuHeight + 8
+        ? { right, bottom: window.innerHeight - r.top + 4 }
+        : { right, top: r.bottom + 4 },
+    );
+  }, [open]);
 
   // Close the menu on outside click / Escape.
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (e: PointerEvent) => {
-      if (!menuRef.current?.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (!menuRef.current?.contains(t) && !popupRef.current?.contains(t)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false);
@@ -77,10 +95,12 @@ export function AskButton({
         {label}
         <ChevronDown size={12} strokeWidth={2} aria-hidden />
       </button>
-      {open && (
+      {open && pos !== null && createPortal(
         <div
+          ref={popupRef}
           role="menu"
-          className="absolute right-0 top-full z-20 mt-1 min-w-32 overflow-hidden rounded-md bg-chrome-bg-raised p-1 shadow-chrome ring-1 ring-chrome-fg/10"
+          style={pos}
+          className="fixed z-50 min-w-32 overflow-hidden rounded-md bg-chrome-bg-raised p-1 shadow-chrome ring-1 ring-chrome-fg/10"
         >
           {AGENT_MODELS.map((m) => (
             <button
@@ -100,7 +120,8 @@ export function AskButton({
               {m.id === model && <Check size={12} strokeWidth={2} className="text-chrome-accent" aria-hidden />}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
