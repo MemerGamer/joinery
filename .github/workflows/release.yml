@@ -22,6 +22,7 @@ jobs:
             exit 1
           fi
       - run: bun run typecheck
+      - run: bun test
       # Self-signed certificate: a stable signing identity lets macOS keep
       # folder permissions across updates. Imported by SHA-1 hash because the
       # certificate isn't trusted, so codesign can't look it up by name.
