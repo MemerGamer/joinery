@@ -81,6 +81,7 @@ import {
   forgeFor,
   getFileContents,
   gitUserName,
+  countAheadBehind,
   selectBranches,
   getFilePatch,
   listBranches,
@@ -276,6 +277,11 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     });
     // "Mine" with no `user.name` set can't match anything, so it lists nothing rather than everything.
     if (query.mine === 'true' && author === null) return c.json({ branches: [] });
+    // Git that can't count ahead/behind in `for-each-ref` (< 2.41) gets them one
+    // branch at a time: for every branch when they decide the order, else only
+    // for the page returned (below).
+    const sortsByCount = query.sort === 'ahead' || query.sort === 'behind';
+    if (sortsByCount) await countAheadBehind(withReviews, repo.defaultBranch, { cwd: repo.rootPath });
     const branches = selectBranches(withReviews, {
       defaultBranch: repo.defaultBranch,
       limit: query.limit ?? 50,
@@ -286,6 +292,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
       ...(query.since === undefined ? {} : { since: Math.floor(Date.now() / 1000) - query.since * 24 * 60 * 60 }),
       ...(query.review === undefined ? {} : { review: query.review }),
     });
+    if (!sortsByCount) await countAheadBehind(branches, repo.defaultBranch, { cwd: repo.rootPath });
     // `merged` only feeds the filter; it isn't part of the API's branch shape.
     return c.json({ branches: branches.map(({ merged, ...branch }) => branch) });
   });

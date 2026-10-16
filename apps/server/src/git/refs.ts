@@ -255,3 +255,39 @@ export function selectBranches<T extends BranchSummary>(branches: readonly T[], 
   selected = selected.sort(compareBranches(options.sort ?? 'recent'));
   return options.limit === undefined ? selected : selected.slice(0, options.limit);
 }
+
+/** How many `rev-list` counts run at once when git can't count in `for-each-ref`. */
+const COUNT_CONCURRENCY = 8;
+
+/**
+ * Fill in `ahead`/`behind` for branches that don't have them, one
+ * `rev-list --left-right --count` each — for git older than 2.41, whose
+ * `for-each-ref` can't count. That's a spawn per branch, so callers pass only
+ * what they need: the page being returned, or everything when sorting by
+ * the counts. Mutates the branches; a failed count stays null.
+ */
+export async function countAheadBehind(
+  branches: readonly BranchSummary[],
+  defaultBranch: string,
+  options: GitCallOptions,
+): Promise<void> {
+  const missing = branches.filter((b) => b.ahead === null || b.behind === null);
+  if (missing.length === 0) return;
+  const defaultRef = await resolveDefaultRef(defaultBranch, options);
+  if (defaultRef === null) return;
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < missing.length) {
+      const branch = missing[next++];
+      if (branch === undefined) return;
+      // Left: on the default branch only (behind); right: on the branch only (ahead).
+      const result = await git(['rev-list', '--left-right', '--count', `${defaultRef}...${branch.tipSha}`], options);
+      if (result.exitCode !== 0) continue;
+      const [behind, ahead] = bytesToText(result.stdout).trim().split(/\s+/u).map(Number);
+      if (ahead === undefined || behind === undefined || !Number.isFinite(ahead) || !Number.isFinite(behind)) continue;
+      branch.ahead = ahead;
+      branch.behind = behind;
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(COUNT_CONCURRENCY, missing.length) }, worker));
+}

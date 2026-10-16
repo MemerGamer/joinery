@@ -55,7 +55,7 @@ export {
 
 export { getMe, gitUserName, type Me } from './me.ts';
 
-export { listBranches, selectBranches, type BranchSummary, type ListBranchesOptions } from './refs.ts';
+export { countAheadBehind, listBranches, selectBranches, type BranchSummary, type ListBranchesOptions } from './refs.ts';
 
 export {
   getFilePatch,
