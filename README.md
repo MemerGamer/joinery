@@ -13,7 +13,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/szhabolcs/joinery/releases/latest"><img src="https://img.shields.io/github/v/release/szhabolcs/joinery" alt="Latest release" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/szhabolcs/joinery" alt="MIT license" /></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey" alt="Platform: macOS | Linux" />
 </p>
