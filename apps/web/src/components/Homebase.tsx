@@ -44,6 +44,7 @@ import { BackdropPicker } from './home/BackdropPicker.tsx';
 import { GlowScene } from './home/GlowScene.tsx';
 import { Panel } from './home/Panel.tsx';
 import { Avatar, Chip, CiIcon, DiffStat, EffortMeter, ProgressBar } from './home/primitives.tsx';
+import { QueueFilterMenu, QueueSortMenu, type QueueSort } from './home/QueueMenus.tsx';
 import { ExploreSection } from './Explore.tsx';
 import { UpdateButton, useVersion, VersionText } from './home/VersionBadge.tsx';
 import { FolderPicker } from './home/FolderPicker.tsx';
@@ -131,7 +132,9 @@ export function Homebase(): React.JSX.Element {
     return () => clearTimeout(timer);
   }, [ready]);
   const [order, setOrder] = useState<Order>('effort');
-  const [onlyRequested, setOnlyRequested] = useOnlyRequested();
+  const [onlyRequested, setOnlyRequested] = useStoredState(ONLY_REQUESTED_KEY, false);
+  const [queueSort, setQueueSort] = useStoredState<QueueSort>(QUEUE_SORT_KEY, 'effort');
+  const [hiddenRepoIds, setHiddenRepoIds] = useStoredState<readonly string[]>(QUEUE_HIDDEN_REPOS_KEY, []);
   const version = useVersion();
   const { chromeMode } = useTheme();
   const [openingKeys, setOpeningKeys] = useState<ReadonlySet<string>>(new Set());
@@ -210,8 +213,9 @@ export function Homebase(): React.JSX.Element {
     );
   }, [order, reviewing]);
 
-  // The queue: every open PR across every repo that has no review yet,
-  // lightest first — so "I have twenty minutes" has an obvious answer.
+  // The queue: every open PR across every repo that has no review yet.
+  // Lightest first by default — so "I have twenty minutes" has an obvious
+  // answer — or by last update, either way.
   const queue = useMemo(
     () =>
       Array.from(pullsByRepo.entries())
@@ -220,15 +224,28 @@ export function Homebase(): React.JSX.Element {
             .filter((p) => p.reviewId === null || p.reviewStatus === 'draft' || p.reviewStatus === 'archived')
             .map((p) => ({ repoId, pull: p })),
         )
-        .sort(
-          (a, b) =>
+        .sort((a, b) => {
+          if (queueSort === 'newest') return b.pull.updatedAtUnix - a.pull.updatedAtUnix;
+          if (queueSort === 'oldest') return a.pull.updatedAtUnix - b.pull.updatedAtUnix;
+          return (
             effortOf({ filesTotal: a.pull.changedFiles, additions: a.pull.additions, deletions: a.pull.deletions }).score -
-            effortOf({ filesTotal: b.pull.changedFiles, additions: b.pull.additions, deletions: b.pull.deletions }).score,
-        ),
-    [pullsByRepo],
+            effortOf({ filesTotal: b.pull.changedFiles, additions: b.pull.additions, deletions: b.pull.deletions }).score
+          );
+        }),
+    [pullsByRepo, queueSort],
   );
 
-  const shownQueue = onlyRequested ? queue.filter((q) => q.pull.reviewRequested) : queue;
+  const queueRepoName = (repoId: string): string => {
+    const repo = repos.find((r) => r.id === repoId);
+    return repo !== undefined ? repoDisplayName(repo) : repoId;
+  };
+  // Only repos with something in the queue are worth filtering by.
+  const queueRepos = Array.from(new Set(queue.map((q) => q.repoId)), (id) => ({ id, name: queueRepoName(id) })).sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
+  const hiddenRepos = new Set(hiddenRepoIds);
+  const queueFiltered = onlyRequested || queueRepos.some((r) => hiddenRepos.has(r.id));
+  const shownQueue = queue.filter((q) => (!onlyRequested || q.pull.reviewRequested) && !hiddenRepos.has(q.repoId));
 
   const handleOpenPull = (repoId: string, pull: Pull) => {
     const key = `${repoId}:${String(pull.number)}`;
@@ -385,7 +402,7 @@ export function Homebase(): React.JSX.Element {
                     title="Currently reviewing"
                     count={list.length}
                     className="flex-1"
-                    bodyClassName="px-0 pb-0"
+                    bodyClassName="flex flex-col px-0 pb-0"
                     actions={
                       // Ordering one (or no) review changes nothing, so the tabs only show when there's something to reorder.
                       list.length > 1 ? (
@@ -402,7 +419,7 @@ export function Homebase(): React.JSX.Element {
                         Nothing in review — pick something up from the queue
                       </p>
                     ) : (
-                      <ul className="divide-y divide-chrome-border border-t border-chrome-border">
+                      <ul className="divide-y divide-chrome-border">
                         {list.map((r) => (
                           <ReviewCard
                             key={r.review.id}
@@ -415,7 +432,8 @@ export function Homebase(): React.JSX.Element {
                     )}
                     {done.length > 0 && (
                       <>
-                        <div className="flex h-8 items-center gap-2 border-t border-chrome-border bg-chrome-bg-hover/40 pl-4 pr-1.5">
+                        {/* `mt-auto` pins Cleared to the bottom of the card, below any empty space. */}
+                        <div className="mt-auto flex h-8 shrink-0 items-center gap-2 border-t border-chrome-border bg-chrome-bg-hover/40 pl-4 pr-1.5">
                           <Check size={12} strokeWidth={2} className="text-chrome-fg-subtle" aria-hidden />
                           <h3 className="text-micro font-medium text-chrome-fg-muted">Cleared</h3>
                           <span className="text-micro tabular-nums text-chrome-fg-subtle">{done.length}</span>
@@ -424,7 +442,7 @@ export function Homebase(): React.JSX.Element {
                             Archive all
                           </button>
                         </div>
-                        <ul className="divide-y divide-chrome-border border-t border-chrome-border">
+                        <ul className="divide-y divide-chrome-border">
                           {done.map((r) => (
                             <DoneRow key={r.review.id} review={r} onArchive={archiveReview} />
                           ))}
@@ -444,17 +462,18 @@ export function Homebase(): React.JSX.Element {
                     title="Up for review"
                     count={shownQueue.length}
                     actions={
-                      <button
-                        type="button"
-                        aria-pressed={onlyRequested}
-                        onClick={() => setOnlyRequested((v) => !v)}
-                        title="Show only PRs where you're a requested reviewer"
-                        className={`flex h-6 items-center rounded-md px-2.5 text-xs font-medium transition-colors ${
-                          onlyRequested ? 'bg-chrome-bg-active text-chrome-fg' : 'text-chrome-fg-muted hover:bg-chrome-bg-hover hover:text-chrome-fg'
-                        }`}
-                      >
-                        Only requested
-                      </button>
+                      <>
+                        <QueueFilterMenu
+                          onlyRequested={onlyRequested}
+                          onOnlyRequestedChange={setOnlyRequested}
+                          repos={queueRepos}
+                          hiddenRepoIds={hiddenRepos}
+                          onRepoToggle={(repoId, shown) =>
+                            setHiddenRepoIds((ids) => (shown ? ids.filter((id) => id !== repoId) : [...ids, repoId]))
+                          }
+                        />
+                        <QueueSortMenu sort={queueSort} onSortChange={setQueueSort} />
+                      </>
                     }
                     className="absolute! inset-0"
                     bodyClassName="flex flex-col px-0 pb-0"
@@ -476,18 +495,17 @@ export function Homebase(): React.JSX.Element {
                     ) : shownQueue.length === 0 ? (
                       <div className="px-2 pt-1 pb-2">
                         <p className="rounded-lg border border-dashed border-chrome-border px-4 py-6 text-center text-xs text-chrome-fg-muted">
-                          Nobody's asked for your review right now
+                          {queueFiltered ? 'Nothing matches these filters' : "Nobody's asked for your review right now"}
                         </p>
                       </div>
                     ) : (
                       <ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pt-1 pb-2">
                         {shownQueue.map(({ repoId, pull }) => {
                           const key = `${repoId}:${String(pull.number)}`;
-                          const repo = repos.find((r) => r.id === repoId);
                           return (
                             <QueueRow
                               key={key}
-                              repoName={repo !== undefined ? repoDisplayName(repo) : repoId}
+                              repoName={queueRepoName(repoId)}
                               repoId={repoId}
                               pull={pull}
                               opening={openingKeys.has(key)}
@@ -551,24 +569,27 @@ const TOPBAR_FADE = `linear-gradient(to bottom, ${[
   .join(', ')})`;
 
 const ONLY_REQUESTED_KEY = 'joinery.queue.only-requested';
+const QUEUE_SORT_KEY = 'joinery.queue.sort';
+const QUEUE_HIDDEN_REPOS_KEY = 'joinery.queue.hidden-repos';
 
-/** The queue's "Only requested" filter, remembered across visits. */
-function useOnlyRequested(): [boolean, React.Dispatch<React.SetStateAction<boolean>>] {
-  const [on, setOn] = useState(() => {
+/** The queue's filters and sort, remembered across visits as JSON. */
+function useStoredState<T>(key: string, fallback: T): [T, React.Dispatch<React.SetStateAction<T>>] {
+  const [value, setValue] = useState<T>(() => {
     try {
-      return window.localStorage.getItem(ONLY_REQUESTED_KEY) === 'true';
+      const raw = window.localStorage.getItem(key);
+      return raw === null ? fallback : (JSON.parse(raw) as T);
     } catch {
-      return false;
+      return fallback;
     }
   });
   useEffect(() => {
     try {
-      window.localStorage.setItem(ONLY_REQUESTED_KEY, String(on));
+      window.localStorage.setItem(key, JSON.stringify(value));
     } catch {
       // Best-effort only — private/locked-down storage just won't persist.
     }
-  }, [on]);
-  return [on, setOn];
+  }, [key, value]);
+  return [value, setValue];
 }
 
 function OrderTab({ label, selected, onSelect }: { label: string; selected: boolean; onSelect: () => void }): React.JSX.Element {
