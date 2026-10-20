@@ -3,6 +3,7 @@ import { useRoute } from './lib/router.ts';
 import { ThemeProvider } from './state/ThemeContext.tsx';
 import { Homebase } from './components/Homebase.tsx';
 import { ReviewWindow } from './components/ReviewWindow.tsx';
+import { Onboarding } from './components/onboarding/Onboarding.tsx';
 import { Settings } from './components/settings/Settings.tsx';
 
 export function App(): React.JSX.Element {
@@ -18,6 +19,7 @@ export function App(): React.JSX.Element {
         ) : (
           <ReviewWindow reviewId={route.reviewId} />
         )}
+        <Onboarding />
       </ThemeProvider>
     </DiffWorkerPoolProvider>
   );

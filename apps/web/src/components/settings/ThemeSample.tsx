@@ -42,7 +42,14 @@ async function render(name: string): Promise<Rendered | null> {
   };
 }
 
-export function ThemeSample({ name }: { name: string }): React.JSX.Element {
+export function ThemeSample({
+  name,
+  framed = true,
+}: {
+  name: string;
+  /** Its own border and corners; off where it sits inside a frame of the caller's (onboarding's mock review). */
+  framed?: boolean;
+}): React.JSX.Element {
   const [state, setState] = useState<{ name: string; rendered: Rendered | null } | null>(null);
 
   useEffect(() => {
@@ -64,7 +71,7 @@ export function ThemeSample({ name }: { name: string }): React.JSX.Element {
   const stale = state === null || state.name !== name;
   return (
     <div
-      className={`overflow-hidden rounded-md border border-chrome-border font-mono text-[11.5px] leading-[19px] transition-opacity ${stale ? 'opacity-60' : ''}`}
+      className={`overflow-hidden font-mono ${framed ? 'rounded-md border border-chrome-border' : ''} text-[11.5px] leading-[19px] transition-opacity ${stale ? 'opacity-60' : ''}`}
       style={{ background: rendered?.bg, color: rendered?.fg }}
       aria-hidden
     >

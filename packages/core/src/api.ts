@@ -185,13 +185,15 @@ export const versionInfoSchema = z.object({
 });
 export type VersionInfo = z.infer<typeof versionInfoSchema>;
 /**
- * The settings page's health check. `claude` is the executable thread
+ * The settings page's health check. `git` is the `git` on PATH, which
+ * everything needs. `claude` is the executable thread
  * replies run (`bundled` in a source checkout, where the Agent SDK uses its
  * own). `clis` says whether `gh`/`glab` are on PATH; `hosts` is one row per
  * forge host the registered repos point at, with why its CLI can't be asked
  * (`reason`), or null when it can.
  */
 export const integrationsSchema = z.object({
+  git: z.object({ path: z.string().nullable() }),
   claude: z.object({ path: z.string().nullable(), bundled: z.boolean() }),
   clis: z.array(z.object({ cli: z.enum(['gh', 'glab']), path: z.string().nullable() })),
   hosts: z.array(

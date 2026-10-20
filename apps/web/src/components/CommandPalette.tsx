@@ -70,12 +70,14 @@ import {
   Rows2,
   Search,
   Settings,
+  Lighthouse,
   Sun,
   Moon,
   Waypoints,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { callApi } from '../lib/apiClient.ts';
+import { openOnboarding } from '../lib/onboarding.ts';
 import { goReview, goSettings } from '../lib/router.ts';
 import { runUiState } from '../lib/runState.ts';
 import { listThemeOptions, type ThemeOption } from '../lib/themes.ts';
@@ -401,6 +403,17 @@ export function CommandPalette({
       >
         <Settings size={14} strokeWidth={1.5} aria-hidden />
         Open settings
+      </Command.Item>
+      <Command.Item
+        value="show onboarding welcome setup"
+        onSelect={() => {
+          openOnboarding();
+          close();
+        }}
+        className={ITEM_CLASS}
+      >
+        <Lighthouse size={14} strokeWidth={1.5} aria-hidden />
+        Show onboarding
       </Command.Item>
       <Command.Item value={THEME_COMMAND_VALUE} onSelect={openThemeMode} className={ITEM_CLASS}>
         <Palette size={14} strokeWidth={1.5} aria-hidden />

@@ -32,6 +32,7 @@ import {
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { effortOf } from '../lib/effort.ts';
 import { useGlobalKeymap } from '../lib/keymap.ts';
+import { maybeStartOnboarding } from '../lib/onboarding.ts';
 import { backdropProps, coverGlow, coverPainting, paintingUrl, useBackdrop } from '../lib/covers.ts';
 import { useHeroTones } from '../lib/heroTone.ts';
 import { personFrom } from '../lib/people.ts';
@@ -133,6 +134,12 @@ export function Homebase(): React.JSX.Element {
     const timer = setTimeout(() => setSlow(true), SKELETON_DELAY_MS);
     return () => clearTimeout(timer);
   }, [ready]);
+  // A first visit to an empty Joinery gets the onboarding flow (lib/onboarding.ts).
+  const loaded = lastLoadedAt !== null;
+  useEffect(() => {
+    if (loaded) maybeStartOnboarding(repos.length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on the first load
+  }, [loaded]);
   const [order, setOrder] = useState<Order>('effort');
   const [onlyRequested, setOnlyRequested] = useStoredState(ONLY_REQUESTED_KEY, false);
   const [queueSort, setQueueSort] = useStoredState<QueueSort>(QUEUE_SORT_KEY, 'effort');
@@ -296,14 +303,14 @@ export function Homebase(): React.JSX.Element {
             style={{ background: TOPBAR_FADE }}
             aria-hidden
           />
-          {/* Left: the Joinery wordmark — Homebase is the only place it appears. The -dark file is the one drawn for dark backgrounds. */}
+          {/* Left: the Joinery wordmark, 16px in from the top and the left alike (onboarding draws it in the same spot). The -dark file is the one drawn for dark backgrounds. */}
           <img
             src={behindLogo === 'dark' ? '/joinery-wordmark-squircle-dark.svg' : '/joinery-wordmark-squircle-light.svg'}
             alt="Joinery"
-            className="pointer-events-none absolute top-[19px] left-4 h-[30px] w-auto select-none"
+            className="pointer-events-none absolute top-4 left-4 h-[30px] w-auto select-none"
           />
-          {/* Right: an update (when there is one), the backdrop switcher, settings, then refresh. */}
-          <div className="home-topbar-right absolute top-4 right-4 flex h-9 items-center gap-1" data-tone={behindButtons}>
+          {/* Right: an update (when there is one), the backdrop switcher, settings, then refresh; centred on the wordmark's line (16 + 30/2 − 36/2). */}
+          <div className="home-topbar-right absolute top-[13px] right-4 flex h-9 items-center gap-1" data-tone={behindButtons}>
             <UpdateButton {...version} />
             <BackdropPicker value={backdrop} onChange={setBackdrop} />
             <button type="button" aria-label="Settings" title="Settings" onClick={goSettings} className="chrome-icon-btn">

@@ -17,7 +17,8 @@
  *
  * Everything is written as inline custom properties on <html>, so the
  * stylesheet's own values remain the fallback and `clearDerivedChrome`
- * restores them by simply removing the inline overrides.
+ * restores them by simply removing the inline overrides. Both take another
+ * element instead, to tint only its subtree (onboarding's theme preview).
  */
 import { colorUtils } from '@pierre/theming/color';
 import { themes as allThemes } from '@pierre/theming/themes';
@@ -77,17 +78,21 @@ function toHexColor(value: string | undefined): string | undefined {
   }).join('')}`;
 }
 
-export function clearDerivedChrome(): void {
-  const style = document.documentElement.style;
+export function clearDerivedChrome(target: HTMLElement = document.documentElement): void {
+  const style = target.style;
   for (const prop of DERIVED_PROPS) style.removeProperty(prop);
 }
 
 /** Resolves once the overrides are written. `isStale()` is checked after the
  * async theme load so a slow load can't clobber a newer selection. */
-export async function applyDerivedChrome(themeName: string, isStale: () => boolean = () => false): Promise<void> {
+export async function applyDerivedChrome(
+  themeName: string,
+  isStale: () => boolean = () => false,
+  target: HTMLElement = document.documentElement,
+): Promise<void> {
   const descriptor = allThemes.getTheme(themeName);
   if (descriptor === undefined) {
-    clearDerivedChrome();
+    clearDerivedChrome(target);
     return;
   }
   const loaded = await descriptor.load();
@@ -98,7 +103,7 @@ export async function applyDerivedChrome(themeName: string, isStale: () => boole
   const bg = toHexColor(colors['editor.background']) ?? toHexColor(theme.bg);
   const fg = toHexColor(colors['editor.foreground']) ?? toHexColor(theme.fg);
   if (bg === undefined || fg === undefined) {
-    clearDerivedChrome();
+    clearDerivedChrome(target);
     return;
   }
 
@@ -109,7 +114,7 @@ export async function applyDerivedChrome(themeName: string, isStale: () => boole
   const away = dark ? '#ffffff' : '#000000';
   const muted = colorUtils.deriveMutedFg(fg, bg);
 
-  const style = document.documentElement.style;
+  const style = target.style;
   const set = (prop: (typeof DERIVED_PROPS)[number], value: string) => style.setProperty(prop, value);
   set('--chrome-bg', bg);
   set('--chrome-bg-raised', mix(bg, away, dark ? 3 : 1));

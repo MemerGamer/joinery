@@ -663,3 +663,19 @@ button:focus-visible,
     background: rgb(21 122 62 / 0.1);
   }
 }
+
+/* Onboarding (components/onboarding/Onboarding.tsx) */
+
+/* The welcome showcase's timer: fills downward, then advances to the next shot. */
+@keyframes onboarding-progress {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+.onboarding-progress {
+  transform-origin: top;
+  animation: onboarding-progress var(--onboarding-shot-ms) linear forwards;
+}

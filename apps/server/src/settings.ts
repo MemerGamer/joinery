@@ -41,6 +41,7 @@ export async function getIntegrations(db: Db): Promise<Integrations> {
     }),
   );
   return {
+    git: { path: Bun.which('git') },
     claude: { path: findClaudeExecutable(), bundled: runtimeLayout().mode !== 'installed' },
     clis: (['gh', 'glab'] as const).map((cli) => ({ cli, path: Bun.which(cli) })),
     hosts: hosts.sort((a, b) => a.host.localeCompare(b.host)),

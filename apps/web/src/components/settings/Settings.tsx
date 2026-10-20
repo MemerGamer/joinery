@@ -5,7 +5,7 @@
  *  - Appearance: the dark and the light diff theme, picked separately,
  *    each over a sample drawn in it (the same two slots ⌘K's `#` tabs fill).
  *  - Repositories: what's registered, its forge, and removing one.
- *  - Integrations: is `claude` there, and can each forge host be asked.
+ *  - Integrations: are `git` and `claude` there, and can each forge host be asked.
  *  - Full Disk Access: the macOS grant for the installed server.
  *  - Data: where it lives and how big, clearing the caches, and the
  *    archived reviews, which nothing else lists, to reopen or delete.
@@ -318,13 +318,13 @@ function ReposPanel(): React.JSX.Element {
 
 // --- Integrations ---
 
-const REASON: Record<NonNullable<Integrations['hosts'][number]['reason']>, { label: string; tone: Tone }> = {
+export const REASON: Record<NonNullable<Integrations['hosts'][number]['reason']>, { label: string; tone: Tone }> = {
   'missing-cli': { label: 'Not installed', tone: 'danger' },
   'not-authenticated': { label: 'Not signed in', tone: 'warning' },
   unreachable: { label: "Can't reach host", tone: 'warning' },
 };
 
-function hostHint(cli: 'gh' | 'glab', host: string, reason: Integrations['hosts'][number]['reason']): string | undefined {
+export function hostHint(cli: 'gh' | 'glab', host: string, reason: Integrations['hosts'][number]['reason']): string | undefined {
   if (reason === 'missing-cli') return cli === 'gh' ? 'brew install gh' : 'brew install glab';
   if (reason === 'not-authenticated') return `${cli} auth login --hostname ${host}`;
   if (reason === 'unreachable') return 'Signed in, but the host did not answer. A VPN?';
@@ -350,6 +350,9 @@ function IntegrationsPanel(): React.JSX.Element {
         error === null && <Empty>Checking…</Empty>
       ) : (
         <ul className={`flex flex-col transition-opacity ${loading ? 'opacity-60' : ''}`}>
+          <Row title={<code>git</code>} detail={data.git.path ?? 'Joinery reads every repository through it'}>
+            {data.git.path !== null ? <Chip tone="success" icon={<Check size={11} strokeWidth={2.5} />}>Installed</Chip> : <Chip tone="danger">Not installed</Chip>}
+          </Row>
           <Row
             title="Claude Code"
             detail={
