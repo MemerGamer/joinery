@@ -527,6 +527,11 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     const run = await generateReadingOrder({ db: deps.db, invoke: deps.invoke, emit: (e) => dispatch(id, e) }, id, {
       cwd,
       files,
+      loadPull: async () => {
+        const repo = await getRepoById(deps.db, review.repoId);
+        const pull = repo === null ? null : await getPullDetailCached(homeDeps, repo, review);
+        return pull === null ? null : { title: pull.title, body: pull.body };
+      },
       ...(body.model === undefined ? {} : { model: body.model }),
     });
     return c.json({ run }, 202);

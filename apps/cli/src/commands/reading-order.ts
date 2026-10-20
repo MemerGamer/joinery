@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { AGENT_MODELS, agentModelSchema } from '@joinery/core';
+import { AGENT_MODELS, READING_ORDER_RULES, agentModelSchema } from '@joinery/core';
 import * as client from '../client.ts';
 import { UsageError, flagString } from '../args.ts';
 import { printLine, printTable } from '../format.ts';
@@ -89,5 +89,16 @@ export const generate: Command = {
     const result = await client.generateReadingOrder(id, model?.data);
     if (maybePrintJson(parsed, result)) return;
     printLine(`started run ${result.run.id} (${result.run.status})`);
+  },
+};
+
+export const rules: Command = {
+  path: 'reading-order rules',
+  summary: 'Print the rules for writing a reading order',
+  usage: 'joinery reading-order rules',
+  async run(argv) {
+    const parsed = parseCommand(argv);
+    if (wantsHelp(parsed)) return printLine(rules.usage);
+    printLine(READING_ORDER_RULES);
   },
 };

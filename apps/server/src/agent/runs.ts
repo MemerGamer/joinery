@@ -29,7 +29,7 @@ import {
   writeReadingOrderPlan,
   type Db,
 } from '../db/index.ts';
-import { generateReadingOrderPlan, ReadingOrderAgentError } from './readingOrder.ts';
+import { generateReadingOrderPlan, ReadingOrderAgentError, type PullContext } from './readingOrder.ts';
 import { runThreadReplyAgent } from './threadReply.ts';
 import type { Invoke } from './tools.ts';
 import type { EngineForCwd } from './worktree.ts';
@@ -47,6 +47,12 @@ export type RunsDeps = {
 export type ReadingOrderContext = {
   readonly cwd: string;
   readonly files: readonly FileEntry[];
+  /**
+   * Fetches the PR's title and description; null when the review has no PR.
+   * Called inside the background run so a cold forge call never delays the
+   * 202. A failure only drops the PR context from the prompt.
+   */
+  readonly loadPull?: () => Promise<PullContext | null>;
   /** The model for the run; Sonnet when absent. */
   readonly model?: AgentModel;
 };
@@ -68,10 +74,12 @@ export async function generateReadingOrder(deps: RunsDeps, reviewId: string, con
   const run = await setRunStatus(deps.db, created.id, 'running');
 
   runInBackground(deps, reviewId, run.id, async (signal) => {
+    const pull = context.loadPull === undefined ? null : await context.loadPull().catch(() => null);
     const plan = await generateReadingOrderPlan({
       cwd: context.cwd,
       abortController: signal,
       files: context.files,
+      ...(pull === null ? {} : { pull }),
       ...(context.model === undefined ? {} : { model: context.model }),
       onMessage: async (message) => {
         const type = typeof (message as { type?: unknown }).type === 'string' ? (message as { type: string }).type : 'unknown';

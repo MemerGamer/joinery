@@ -253,51 +253,40 @@ export const readingOrderSchema = z.object({
 export type ReadingOrder = z.infer<typeof readingOrderSchema>;
 
 /**
- * The shape an agent writes via `joinery reading-order set --file plan.json`.
- * The `.describe()` texts are the writing rules. They reach the embedded
- * agent through the JSON schema it answers in, so they live here, once.
+ * How to write a reading order. The prompt for the embedded agent includes
+ * this verbatim, and `joinery reading-order rules` prints it for external agents.
  */
+export const READING_ORDER_RULES = [
+  "A reviewer's guide to the change, not a neutral tour. Steps render top to bottom and files within a step render in listed order; that order is the reading order.",
+  '',
+  '- Steps: 1 for a trivial change, usually 2 to 6, at most 8. Group by what the files do for the change, one behaviour per step, not by directory or layer: a type and its users, a feature and its wiring. All the tests go together in one step. A mechanical sweep (a rename across many files, a lockfile, generated code) is one `skim` step however many files it touches. A one-file step is only for a file that is a concern on its own. A file changed for two reasons goes in the step for its main change, with a note on the other.',
+  '- Order: open with the heart of the change, the step a reviewer most needs to see (usually a `focus` step). Then the rest in build order so understanding accumulates: definitions and contracts before the code that uses them, callers after. Then mechanical `skim` steps, and the tests step last. Do not sort alphabetically. Typical shapes: for a feature, storage, entry point, logic, callers; for a refactor, the new abstraction first, then each call site.',
+  '- Title: what the group of files does for the change, in sentence case and under 60 characters ("Read path, where parity breaks").',
+  '- Guidance: markdown, 1 to 2 sentences on what to notice. The best ones carry a small verdict ("verified the correlation keys match", "faithful port, skim for shape"). Name the concrete function, field, route, or number.',
+  '- Attention: `focus` marks risky logic, behaviour changes, or something you have a concern about. `skim` marks mechanical changes (renames, wiring, generated code, tests that mirror code). Null is a normal read.',
+  '- File note: optional one-sentence markdown note on a file; null when the guidance already covers it.',
+].join('\n');
+
+/** The shape an agent writes via `joinery reading-order set --file plan.json`. Writing rules: `READING_ORDER_RULES`. */
 export const readingOrderPlanSchema = z.object({
   steps: z
     .array(
       z.object({
-        title: z
-          .string()
-          .min(1)
-          .describe('What this group of files does for the change, in sentence case and under 60 characters ("Read path, where parity breaks").'),
-        guidance: z
-          .string()
-          .default('')
-          .describe(
-            'Markdown, 1 to 2 sentences telling the reviewer what to notice in this step. A verdict is fine ("check the derivation\'s precedence first", "faithful port, skim for shape").',
-          ),
-        attention: stepAttentionSchema
-          .nullable()
-          .default(null)
-          .describe(
-            '"focus" marks risky logic, behaviour changes, or something you have a concern about. "skim" marks mechanical changes (renames, wiring, generated code, tests that mirror code). Null is a normal read.',
-          ),
+        title: z.string().min(1),
+        guidance: z.string().default(''),
+        attention: stepAttentionSchema.nullable().default(null),
         files: z
           .array(
             z.object({
               path: z.string().min(1).describe('Exactly as given in the changed-file list.'),
-              note: z
-                .string()
-                .nullable()
-                .default(null)
-                .describe('Optional one-sentence markdown note on this file. Null when the guidance already covers it.'),
+              note: z.string().nullable().default(null),
             }),
           )
           .min(1),
       }),
     )
-    .min(1)
-    .describe(
-      'Aim for about 3 to 7 steps, however many files changed. Put `focus` steps first, then order the rest so definitions come before their users and tests come last. Sequence the steps as the story of the change so understanding accumulates; do not sort alphabetically. Typical shapes: for a feature, storage, entry point, logic, callers, tests; for a refactor, the new abstraction first, then each call site.',
-    ),
-}).describe(
-  "A reviewer's guide to the change, not a neutral tour. Steps render top to bottom and files within a step render in listed order; that order is the reading order. Group files that are read together (a type and its users, a feature and its wiring, all the tests). A one-file step is only for a file that is a concern on its own. Each step's `guidance` says what to notice, and the best ones carry a small verdict (\"verified the correlation keys match\", \"check the blind spots first\"). Name the concrete function, field, route, or number.",
-);
+    .min(1),
+});
 export type ReadingOrderPlan = z.infer<typeof readingOrderPlanSchema>;
 
 // --- threads ---

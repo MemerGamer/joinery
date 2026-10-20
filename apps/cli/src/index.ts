@@ -19,7 +19,7 @@ const VERSION = runtimeLayout().version;
 
 const groups: Readonly<Record<string, Readonly<Record<string, Command>>>> = {
   repos: { list: repos.reposList, add: repos.reposAdd },
-  'reading-order': { get: readingOrder.get, set: readingOrder.set, generate: readingOrder.generate },
+  'reading-order': { get: readingOrder.get, set: readingOrder.set, generate: readingOrder.generate, rules: readingOrder.rules },
 };
 
 const leaves: Readonly<Record<string, Command>> = {

@@ -32,48 +32,46 @@ this as your task) or manually.
    ```
 2. Read the diffs that matter (`joinery diff <id> <path>`), and use read-only
    `git`/`rg`/`cat` in the review root to understand context around them.
-3. Write a reviewer's guide, not a neutral tour, as an ordered sequence of
-   steps. `steps` render top to bottom and files within a step render in
-   listed order; that order is the reading order. Sequence it as the story of
-   the change so understanding accumulates; don't sort alphabetically.
-   - Risk-first: `focus` steps (risky logic, behaviour changes, anything you
-     have a concern about) come first. Order the rest by dependency:
-     definitions before their users, tests last.
-   - Group: aim for about 3 to 7 steps, however many files changed. Group
-     files that are read together (a type and its users, a feature and its
-     wiring, all the tests). A one-file step is only for a file that is a
-     concern on its own.
-   - Typical shapes: for a feature, storage, entry point, logic, callers,
-     tests; for a refactor, the new abstraction first, then each call site.
-   - Each step's `guidance` says what to notice. The best ones carry a small
-     verdict ("verified the correlation keys match", "check the blind spots
-     first", "faithful port, skim for shape").
+3. Get the writing rules and follow them:
+   ```
+   joinery reading-order rules
+   ```
+   They are the same rules the embedded agent gets: how to group files into
+   steps, how to order them, and what goes in each title, guidance, attention
+   and note.
 
-   Write it to `plan.json`:
+   Write the plan to `plan.json`:
    ```json
    {
      "steps": [
        {
-         "title": "Add the retry policy type",
-         "guidance": "`RetryPolicy` is the new shared type everything else in this change builds on.",
+         "title": "Retries in the HTTP client",
+         "guidance": "The client now retries per `RetryPolicy` instead of a fixed count. Check the backoff arithmetic.",
+         "attention": "focus",
+         "files": [
+           { "path": "apps/cli/src/client.ts", "note": null }
+         ]
+       },
+       {
+         "title": "The retry policy type",
+         "guidance": "`RetryPolicy` is the new shared type the client builds on.",
          "attention": null,
          "files": [
            { "path": "packages/core/src/domain/retry.ts", "note": "The policy shape and its defaults." }
          ]
        },
        {
-         "title": "Wire it into the HTTP client",
-         "guidance": "The client now retries per `RetryPolicy` instead of a fixed count. Check the backoff arithmetic.",
-         "attention": "focus",
+         "title": "Tests",
+         "guidance": "Covers the new backoff schedule.",
+         "attention": "skim",
          "files": [
-           { "path": "apps/cli/src/client.ts", "note": null },
-           { "path": "apps/cli/test/client.test.ts", "note": "Covers the new backoff schedule." }
+           { "path": "apps/cli/test/client.test.ts", "note": null }
          ]
        }
      ]
    }
    ```
-   Rules (from `readingOrderPlanSchema` in `@joinery/core`):
+   Shape (validated by `readingOrderPlanSchema` in `@joinery/core`):
    - `steps`: at least one.
    - each step: non-empty `title`; `guidance` (markdown, 1 to 2 sentences on
      what to notice, defaults to `""` if omitted); `attention` (`"focus"` for
