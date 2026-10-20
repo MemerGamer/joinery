@@ -124,7 +124,9 @@ export class ReviewEngine {
   #lastPinnedHeadSha: string | null = null;
   /** Same for `refs/review/base/<id>` (the last non-empty diff base). */
   #lastPinnedBaseSha: string | null = null;
-  /** The merged-PR base pin (`#pinMergedPrBase`) is attempted once per engine, success or not. */
+  /** The forge reported the review's PR as merged (terminal, so the forge isn't asked again). */
+  #forgeMerged = false;
+  /** The merged-PR base pin (`#pinMergedPrBase`) is attempted once the forge reports a merge. */
   #mergedBaseTried = false;
   /** The review's branch is gone and its tip is already in `baseRef` (see the `head` build in the tick). */
   #merged = false;
@@ -464,6 +466,8 @@ export class ReviewEngine {
     let defaultMoved = false;
     let prMoved = false;
     let branchMoved = false;
+    let mergedNow = false;
+    const wasForgeMerged = this.#forgeMerged;
     try {
       const beforeDefault = await revParse(`refs/remotes/origin/${defaultBranchName}`, { cwd });
       await git(
@@ -491,6 +495,7 @@ export class ReviewEngine {
         const afterPr = await revParse(prRef, { cwd });
         if (beforePr !== afterPr) prMoved = true;
         if (await this.#pinMergedPrBase(review.id, review.prNumber, afterPr, cwd)) prMoved = true;
+        if (this.#forgeMerged && !wasForgeMerged) mergedNow = true;
       }
 
       if (review.branch !== null && (await revParse(`refs/heads/${review.branch}`, { cwd })) === null) {
@@ -515,25 +520,27 @@ export class ReviewEngine {
     // local branch move would be picked up by the git watcher.
     if (defaultMoved) this.#pendingSources.add('remote-default');
     if (prMoved) this.#pendingSources.add('remote-pr');
-    if (branchMoved) this.#pendingSources.add('git');
-    if (defaultMoved || prMoved || branchMoved) this.#scheduleTick();
+    if (branchMoved || mergedNow) this.#pendingSources.add('git');
+    if (defaultMoved || prMoved || branchMoved || mergedNow) this.#scheduleTick();
   }
 
   /**
    * A review opened for an already-merged PR never had a non-empty diff, so
    * no base was pinned and a merge-commit merge (head already inside
-   * `baseRef`) would show nothing. Ask the forge for the merge commit and, when
+   * `baseRef`) would show nothing. Once the forge reports the PR merged, ask the forge for the merge commit and, when
    * head is an ancestor of a 2-parent merge commit, pin the merge-base of its
    * first parent (the base before the merge) and head. Best-effort and
    * attempted once; returns whether a pin was written.
    */
   async #pinMergedPrBase(reviewId: string, prNumber: number, prSha: string | null, cwd: string): Promise<boolean> {
     if (this.#mergedBaseTried || prSha === null) return false;
-    this.#mergedBaseTried = true;
     try {
-      if ((await revParse(`refs/review/base/${reviewId}`, { cwd })) !== null) return false;
+      // Null until the forge says merged; asked again on every poll until then.
       const merged = await this.#forge.viewMergedPrCommits(prNumber, { cwd });
       if (merged === null) return false;
+      this.#forgeMerged = true;
+      this.#mergedBaseTried = true;
+      if ((await revParse(`refs/review/base/${reviewId}`, { cwd })) !== null) return false;
       const { mergeCommit } = merged;
       if ((await revParse(`${mergeCommit}^{commit}`, { cwd })) === null) {
         await git(['fetch', '--no-write-fetch-head', 'origin', mergeCommit], { cwd, timeoutMs: FETCH_TIMEOUT_MS });
@@ -721,7 +728,7 @@ export class ReviewEngine {
         // empty. Fall back to the base pinned while the branch still had
         // changes, so what got merged stays reviewable.
         const branchGone = review.branch !== null && (this.#headSource === 'pinned-sha' || this.#headSource === 'pin');
-        this.#merged = branchGone && mergeBaseSha === headSha;
+        this.#merged = (branchGone || this.#forgeMerged) && mergeBaseSha === headSha;
         if (this.#merged) {
           baseSha = (await revParse(`refs/review/base/${review.id}`, { cwd })) ?? baseSha;
         } else if (mergeBaseSha !== null && mergeBaseSha !== headSha && mergeBaseSha !== this.#lastPinnedBaseSha) {
