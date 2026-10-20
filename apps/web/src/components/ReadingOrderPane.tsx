@@ -28,6 +28,7 @@ export function ReadingOrderPane(): React.JSX.Element {
     cancelRun,
     selectedPath,
     setSelectedPath,
+    expandFileForNavigation,
     codeViewRef,
     generateReadingOrder,
     threadsPanelOpen,
@@ -127,6 +128,7 @@ export function ReadingOrderPane(): React.JSX.Element {
 
   const jumpTo = (path: string, stepId?: string) => {
     if (stepId !== undefined) setCurrentStepId(stepId);
+    expandFileForNavigation(path);
     setSelectedPath(path);
     codeViewRef.current?.scrollTo({ type: 'item', id: path, align: 'start' });
   };

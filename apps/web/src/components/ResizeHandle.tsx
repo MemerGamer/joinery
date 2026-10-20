@@ -23,17 +23,19 @@ export function ResizeHandle({
     <div
       {...handleProps}
       className={[
-        'group absolute inset-y-0 z-10 w-4 cursor-col-resize touch-none select-none outline-none',
-        // Offset so the 16px hit target is centered on the 8px seam itself
-        // (not on the panel's own edge): the visible line then lands dead
-        // center of the gap, and the target overhangs both islands equally.
-        side === 'right' ? '-right-3' : '-left-3',
+        'group absolute inset-y-0 z-10 w-2 cursor-col-resize touch-none select-none outline-none',
+        // Starts 2px outside the panel edge and runs 6px into it, so it
+        // stays clear of the diff's scrollbar, which sits in the seam.
+        side === 'right' ? '-right-0.5' : '-left-0.5',
         className,
       ]
         .filter(Boolean)
         .join(' ')}
     >
-      <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-chrome-border-strong group-active:bg-chrome-accent group-focus-visible:bg-chrome-accent" />
+      {/* Plain line on the panel's own edge: invisible until the handle is hovered or dragged. */}
+      <div
+        className={`absolute inset-y-2 w-px ${side === 'right' ? 'right-0.5' : 'left-0.5'} bg-transparent transition-colors group-hover:bg-chrome-accent group-active:bg-chrome-accent`}
+      />
     </div>
   );
 }

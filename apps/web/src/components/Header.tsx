@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  ArrowUpRight,
   ChevronsDownUp,
   ChevronsUpDown,
   Columns2,
@@ -13,6 +14,7 @@ import { useState } from 'react';
 import { ApiError } from '../lib/apiClient.ts';
 import { goHomebase } from '../lib/router.ts';
 import { useReview } from '../state/ReviewContext.tsx';
+import { useReviewPull } from './ReviewSummaryCard.tsx';
 import { RevisionPicker } from './RevisionPicker.tsx';
 
 /**
@@ -96,6 +98,7 @@ function PanelToggleIcon({
 export function Header({ onOpenPalette }: { onOpenPalette: () => void }): React.JSX.Element {
   const {
     review,
+    fileList,
     reviewState,
     repo,
     leftPanelOpen,
@@ -110,6 +113,7 @@ export function Header({ onOpenPalette }: { onOpenPalette: () => void }): React.
     threadsPanelOpen,
     setThreadsPanelOpen,
   } = useReview();
+  const pull = useReviewPull(review?.id, fileList);
   const threadsShown = rightPanelOpen && threadsPanelOpen;
 
   const repoName = repo?.rootPath.split('/').filter(Boolean).at(-1);
@@ -134,6 +138,21 @@ export function Header({ onOpenPalette }: { onOpenPalette: () => void }): React.
         <span className="truncate font-medium text-chrome-fg">
           {review?.branch ?? review?.pinnedSha?.slice(0, 10) ?? '…'}
         </span>
+        {pull !== null &&
+          (pull.url !== null ? (
+            <a
+              href={pull.url}
+              target="_blank"
+              rel="noreferrer"
+              title="Open pull request in a new window"
+              className="group inline-flex shrink-0 items-center gap-0.5 tabular-nums text-chrome-fg-subtle hover:text-chrome-fg hover:underline"
+            >
+              #{pull.number}
+              <ArrowUpRight size={12} strokeWidth={1.5} aria-hidden className="opacity-0 group-hover:opacity-100" />
+            </a>
+          ) : (
+            <span className="shrink-0 tabular-nums text-chrome-fg-subtle">#{pull.number}</span>
+          ))}
       </div>
 
       {/* Nothing left to start on once the branch has landed. */}
@@ -207,7 +226,12 @@ export function Header({ onOpenPalette }: { onOpenPalette: () => void }): React.
           }}
           className="chrome-icon-btn"
         >
-          <MessageSquare size={15} strokeWidth={1.75} aria-hidden />
+          <MessageSquare
+            size={15}
+            strokeWidth={1.75}
+            fill={threadsShown ? 'currentColor' : 'none'}
+            aria-hidden
+          />
         </button>
       </div>
 

@@ -138,7 +138,10 @@ function ReviewWindowInner(): React.JSX.Element {
             <ResizeHandle side="right" aria-label="Resize file tree panel" {...leftPanel.handleProps} />
           </div>
         )}
-        <div className="min-w-0 flex-1">
+        {/* Side panels sit 10px from the diffs (8px gap + 2px). The 8px scrollbar is pulled into the right seam (-mr-1.5) so it doesn't add to it. */}
+        <div
+          className={`min-w-0 flex-1 ${review.leftPanelOpen ? 'ml-0.5' : ''} ${review.rightPanelOpen ? '-mr-1.5' : '-mr-2'}`}
+        >
           {/* No island here: each file renders as its own card (see FILE_CARD_CSS in ReviewCodeView.tsx). */}
           <ReviewCodeView />
         </div>

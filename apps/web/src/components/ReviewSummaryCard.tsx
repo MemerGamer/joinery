@@ -5,7 +5,7 @@
  * shows the stats only.
  */
 import type { CiStatus, PullDetail, PullState } from '@joinery/core';
-import { ArrowUpRight, ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { callApi } from '../lib/apiClient.ts';
 import { useReview } from '../state/ReviewContext.tsx';
@@ -83,21 +83,6 @@ export function ReviewSummaryCard(): React.JSX.Element | null {
       <div className="flex flex-col gap-1.5 px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">
           <h2 className="min-w-0 truncate text-[15px] font-semibold text-chrome-fg">{title}</h2>
-          {pull !== null &&
-            (pull.url !== null ? (
-              <a
-                href={pull.url}
-                target="_blank"
-                rel="noreferrer"
-                title="Open pull request in a new window"
-                className="group inline-flex shrink-0 items-center gap-0.5 text-body tabular-nums text-chrome-fg-subtle hover:text-chrome-fg hover:underline"
-              >
-                #{pull.number}
-                <ArrowUpRight size={12} strokeWidth={1.5} aria-hidden className="opacity-0 group-hover:opacity-100" />
-              </a>
-            ) : (
-              <span className="shrink-0 text-body tabular-nums text-chrome-fg-subtle">#{pull.number}</span>
-            ))}
           {pull !== null && (
             <span className="ml-auto inline-flex shrink-0 items-center gap-1.5">
               <Chip tone={STATE_TONE[pull.state]}>{STATE_LABEL[pull.state]}</Chip>
