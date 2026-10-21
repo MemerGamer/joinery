@@ -624,7 +624,7 @@ signal means exactly one thing: *run a tick*.
 |---|---|---|
 | Root watch | the attached directory, recursive | you typing, an agent writing files |
 | Git watch | `$GIT_COMMON_DIR`, recursive | commit, checkout, rebase, reset, merge, branch create/delete, fetch, `git add`, **and `worktrees/<name>/{HEAD,index}` for free** |
-| Remote poll | `git fetch --no-write-fetch-head` for the PR ref **and `refs/remotes/origin/<default>`**, only while the review is focused, backed off otherwise | a coworker pushing; the base advancing |
+| Remote poll | one loop per repo (`repoPoller.ts`), not per review: one `git fetch origin` for the whole repo plus every review's PR ref, and one forge call for the repo's open pulls — every 15 s while anything in the repo is watched, every 3 min otherwise, skipped while a git command holds the index lock | a coworker pushing; the base advancing; the PR retargeted, merged, or its CI moving |
 
 The two collapse into one when the attached root is the main clone. An earlier
 draft enumerated specific metadata paths and made a point of the per-worktree
@@ -650,6 +650,25 @@ arbitrary locations*).
 
 The remote poll is the only network path in the engine, and it can never change
 what you are looking at — see *Never auto-switch*, below.
+
+### Stored state — one rule, one writer
+
+A review's base and head are decided in exactly one place
+(`engine/reviewState.ts`): head is the first rung of the ladder that resolves
+(attached worktree, local branch, remote-tracking branch, the PR's fetched head,
+the pinned sha, the review's own pin); base is `merge-base(origin/<baseRef>,
+head)`, where `baseRef` is the PR's target branch as the forge currently
+reports it (the poller moves it when a PR is retargeted), else the repo's
+default branch. When head is already inside the base — merged, often with the
+branch kept — the base before the merge is used: the one the forge reported
+for the merge commit (asked once), else the last non-empty base pinned at
+`refs/review/base/<id>`.
+
+The result (base, head, diff size, blobs, the PR and its CI) is stored in
+`review_state`, and the repo's open pulls in `repo_state`. Both the repo
+poller and a review's live worker write through that same function; Homebase
+and the API only read it. Every change bumps a version and publishes
+`topic.changed` after the write commits (see *Transport*).
 
 ### The tick
 
@@ -828,22 +847,27 @@ review out from under you:
 
 ### Transport
 
-`WS /api/events` pushes `files.changed` (a revision's list), `root.rebound`,
-`remote.moved`,
-`thread.relocated`, and `run.*`. The browser never polls. The client holds the
+`WS /api/events` is topic-based (Bun's native pub/sub). A client `watch`es the
+topics it shows — `home` (anything a Homebase card shows), `repo:<id>` (the
+repo's open pulls), `review:<id>` (one review) — and receives only theirs.
+`topic.changed` carries just a per-topic version: the client re-reads through
+the same API a fresh load uses (TanStack Query invalidation), so a fresh tab
+and a live update can't disagree. A review's topic also carries its live
+events: `files.changed` (a revision's list), `root.rebound`, `remote.moved`,
+`thread.relocated`, `thread.*`, and `run.*`. The browser never polls. The client holds the
 current file list; on reconnect it simply asks for the list again and set-diffs
 it — there is no handshake and no version negotiation. Locally-initiated actions
 (posting a comment, marking viewed) apply optimistically and are reconciled
 against the authoritative row.
 
-`subscribe` carries an optional `revision`, scoping which revision's
-`files.changed` events that connection receives — sending `subscribe` again
-with a different revision both updates the filter and is how a tab switches
-what it's watching, without affecting any other tab. `root.rebound`'s `state`
-is still one global, review-wide snapshot (root binding, divergence, available
-revisions, etc.); its `currentRevision` field reflects the review's *persisted*
-choice, not necessarily what a given tab is looking at — a client that has
-switched locally keeps its own choice rather than adopting the broadcast one.
+Watching `review:<id>` keeps the review's live worker running and sends its
+current file list and state back at once. The worker publishes every
+revision's list to the topic, tagged with its revision, and each tab applies
+only the revision it's showing. `root.rebound`'s `state` is one global,
+review-wide snapshot (root binding, divergence, available revisions, etc.); its
+`currentRevision` field reflects the review's *persisted* choice, not
+necessarily what a given tab is looking at — a client that has switched
+locally keeps its own choice rather than adopting the broadcast one.
 This is what makes two tabs on the same review able to sit on different
 revisions independently: nothing server-side is "the" current revision except
 the one written by the last `POST /revision`, used only as the default the
@@ -1171,7 +1195,7 @@ Bearer token from `data/token` (or `$JOINERY_DATA_DIR/token`). Every CLI command
 | `POST` | `/api/reviews/:id/viewed` | `joinery viewed <id> <path>` |
 | `GET` | `/api/runs/:id` | `joinery run <id>` |
 | `POST` | `/api/runs/:id/cancel` | `joinery run <id> --cancel` |
-| `WS` | `/api/events` | — (per-review events; `subscribeHome` adds `reviews.changed` for Homebase) |
+| `WS` | `/api/events` | — (`watch`/`unwatch` topics: `home`, `repo:<id>`, `review:<id>`) |
 
 `SKILL.md` ships alongside the CLI and documents the two workflows end to end:
 producing a reading order, and answering a thread.

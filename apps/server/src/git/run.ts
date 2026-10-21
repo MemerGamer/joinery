@@ -83,6 +83,9 @@ const READ_ONLY_SUBCOMMANDS = new Set([
   // their metadata, writes nothing — strictly read-only, like `branch`
   // above, just with a machine-readable format and no ref-listing limits.
   'for-each-ref',
+  // The repo poll asks the remote which branch is its default (`--symref
+  // origin HEAD`): a network read, writes nothing.
+  'ls-remote',
 ]);
 
 export type GitCallOptions = {

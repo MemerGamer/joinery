@@ -133,6 +133,7 @@ const pullListItemSchema = z.object({
   changedFiles: z.number().int().nonnegative().optional(),
   statusCheckRollup: statusCheckRollupSchema.optional().default([]),
   reviewRequests: reviewRequestsSchema.optional().default([]),
+  headRefOid: z.string().optional(),
 });
 
 const OPEN_PULLS_LIMIT = 200;
@@ -159,7 +160,7 @@ async function listOpenPulls(options: ForgeOptions & { login: string | null }): 
       '--limit',
       String(OPEN_PULLS_LIMIT),
       '--json',
-      'number,title,headRefName,baseRefName,author,updatedAt,isDraft,additions,deletions,changedFiles,statusCheckRollup,reviewRequests',
+      'number,title,headRefName,headRefOid,baseRefName,author,updatedAt,isDraft,additions,deletions,changedFiles,statusCheckRollup,reviewRequests',
     ],
     options.cwd,
   );
@@ -192,6 +193,7 @@ async function listOpenPulls(options: ForgeOptions & { login: string | null }): 
       deletions: p.deletions ?? null,
       changedFiles: p.changedFiles ?? null,
       ci: deriveCiStatus(p.statusCheckRollup),
+      headSha: p.headRefOid ?? null,
       reviewRequested: deriveReviewRequested(p.reviewRequests, login),
       reviewId: null,
       reviewStatus: null,

@@ -234,11 +234,11 @@ mock.module('../src/lib/apiClient.ts', () => ({
 mock.module('../src/lib/wsClient.ts', () => ({
   eventsClient: {
     connect: () => undefined,
-    subscribe: () => undefined,
-    unsubscribe: () => undefined,
+    watch: () => () => undefined,
     focus: () => undefined,
     blur: () => undefined,
     onEvent: () => () => undefined,
+    onReconnect: () => () => undefined,
     close: () => undefined,
   },
 }));

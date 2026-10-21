@@ -31,6 +31,7 @@
 import {
   applyDelta,
   diffFileLists,
+  reviewTopic,
   isEmptyDelta,
   type AgentRun,
   type FileEntry,
@@ -61,6 +62,7 @@ import { ApiError, callApi } from '../lib/apiClient.ts';
 import { blobPairKey, loadFileDiff, placeholderFileDiff } from '../lib/diffLoader.ts';
 import { toggleReactionLocally } from '../lib/reactions.ts';
 import { localRun } from '../lib/runState.ts';
+import { useWatchTopics } from '../lib/liveQueries.ts';
 import { eventsClient } from '../lib/wsClient.ts';
 
 export type DiffStyle = 'split' | 'unified';
@@ -589,10 +591,10 @@ export function ReviewProvider({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reviewId]);
 
-  // Live updates: subscribe, and stage rather than apply.
+  // Live updates: watch the review's topic, and stage rather than apply.
+  // Watching also sends the current file list and state back at once.
+  useWatchTopics([reviewTopic(reviewId)]);
   useEffect(() => {
-    eventsClient.connect();
-    eventsClient.subscribe(reviewId);
     eventsClient.focus(reviewId);
 
     const unsubscribe = eventsClient.onEvent((event) => {
@@ -600,10 +602,9 @@ export function ReviewProvider({
       switch (event.type) {
         case 'files.changed': {
           setState((s) => {
-            // Another tab may be watching a different revision of this same
-            // review — the server tags every list with its revision rather
-            // than filtering perfectly on its own, so this tab only ever
-            // applies updates for the revision it's actually showing.
+            // The worker publishes every revision's list to the review's
+            // topic, and another tab may be showing a different one: this
+            // tab only applies updates for the revision it's actually showing.
             if (s.reviewState !== null && event.list.revision !== s.reviewState.currentRevision) return s;
             const delta = diffFileLists(s.fileList, event.list.files);
             if (isEmptyDelta(delta)) return s;
@@ -714,20 +715,10 @@ export function ReviewProvider({
 
     return () => {
       unsubscribe();
-      eventsClient.unsubscribe(reviewId);
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('blur', onBlur);
     };
   }, [reviewId]);
-
-  // Keep this connection's revision filter in sync with what this tab is
-  // actually showing — re-sent as an upsert (see `EventsClient.subscribe`)
-  // whenever it changes, including the first time it becomes known after
-  // `load()` resolves. Independent of the mount/unmount effect above so it
-  // doesn't tear down and recreate the subscription on every switch.
-  useEffect(() => {
-    if (revision !== undefined) eventsClient.subscribe(reviewId, revision);
-  }, [reviewId, revision]);
 
   // Re-derive annotations whenever the thread list (or the draft) changes —
   // but touch only the paths that could actually be affected: the ones with

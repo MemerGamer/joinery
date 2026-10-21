@@ -104,6 +104,7 @@ const pullListItemSchema = z.object({
   draft: z.boolean().default(false),
   reviewers: z.array(userSchema).catch([]).default([]),
   head_pipeline: pipelineSchema,
+  sha: z.string().nullable().optional(),
 });
 
 // GitLab's list endpoint caps pages at 100; one page is enough for a review queue.
@@ -185,6 +186,7 @@ async function listOpenPulls(options: ForgeOptions & { login: string | null }): 
       deletions: null,
       changedFiles: detail === null ? null : changedFilesOf(detail.changes_count),
       ci: deriveCiStatus((detail?.head_pipeline ?? p.head_pipeline)?.status),
+      headSha: p.sha ?? null,
       reviewRequested: login === null ? reviewers.length > 0 : reviewers.includes(login),
       reviewId: null,
       reviewStatus: null,

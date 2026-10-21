@@ -1,68 +1,26 @@
 /**
- * Composes `ReviewSummary` for `GET /api/reviews`: the DB aggregate
- * (`summarizeReviews`) plus per-review git stats plus the matching PR from
- * the forge cache. Lives at the top level (not `db/` or `git/`) because it
- * depends on both and belongs to neither.
- *
- * Git stats and `me` sit behind persisted stale-while-revalidate caches
- * (`storedCache.ts`), like pulls: the list answers from the last known
- * values and checks git/the forge behind them, pushing `reviews.changed` when
- * something moved.
- *
- * One review failing to resolve (a deleted branch, forge unavailable, a git
- * error) never fails the whole list — each review's enrichment is wrapped so
- * a failure degrades to the DB-only summary rather than 500ing the endpoint.
+ * Composes `ReviewSummary` for `GET /api/reviews` and the pull lists for
+ * Homebase/Explore — reads only. The DB aggregate (`summarizeReviews`) plus
+ * what the engine stored: each review's `review_state` (diff size, head
+ * commit, its PR) and each repo's `repo_state` (open pulls). Nothing here
+ * runs git or asks the forge; the repo pollers keep that state current and
+ * announce changes on the `home` topic.
  */
 import type { CiStatus, Repo, Review, ReviewSummary } from '@joinery/core';
-import { getRepoById, listRepos, listViewedForReviews, summarizeReviews } from './db/index.ts';
-import { computeReviewGitStats } from './git/reviewStats.ts';
+import {
+  getRepoState,
+  listRepos,
+  listReviewStates,
+  listViewedForReviews,
+  summarizeReviews,
+  type Db,
+  type StoredReviewState,
+} from './db/index.ts';
 import { getMe, type Me } from './git/me.ts';
-import { getPullsCached } from './pullsCache.ts';
+import { forgeFor, type ListOpenPullsResult } from './git/forge/index.ts';
 import { createStoredCache, type StoredCacheDeps } from './storedCache.ts';
-import { forgeFor, type ListOpenPullsResult, type PullSummary } from './git/forge/index.ts';
 
 export type HomebaseDeps = StoredCacheDeps;
-
-/**
- * What a Homebase card needs from `ReviewGitStats`, and all that's stored:
- * the file list shrinks to `path -> newBlob`, enough to count which viewed
- * marks still match the current file.
- */
-type HomeReviewStats = {
-  readonly headSha: string;
-  readonly subject: string | null;
-  readonly authorName: string | null;
-  readonly committedAt: number | null;
-  readonly additions: number;
-  readonly deletions: number;
-  readonly blobByPath: Readonly<Record<string, string | null>>;
-};
-
-async function loadHomeReviewStats(repo: Repo, review: Review): Promise<HomeReviewStats | null> {
-  const stats = await computeReviewGitStats(repo, review);
-  if (stats === null) return null;
-  return {
-    headSha: stats.headSha,
-    subject: stats.subject,
-    authorName: stats.authorName,
-    committedAt: stats.committedAt,
-    additions: stats.additions,
-    deletions: stats.deletions,
-    blobByPath: Object.fromEntries(stats.files.map((f) => [f.path, f.newBlob])),
-  };
-}
-
-/**
- * Rechecked at most every 5 s per review: a recheck is two `rev-parse`/
- * `merge-base` spawns, and only a moved head/base costs the full rebuild
- * (`computeReviewGitStats` keeps its own sha-keyed cache).
- */
-const reviewStatsCache = createStoredCache<HomeReviewStats | null>({
-  namespace: 'reviewStats',
-  version: 1,
-  staleAfterMs: 5_000,
-  concurrency: 4,
-});
 
 /** `getMe` resolves once per process; this only spares a restart the wait on the forge login lookup. */
 const meCache = createStoredCache<Me>({
@@ -98,116 +56,65 @@ export async function getMeCached(deps: HomebaseDeps): Promise<Me> {
   });
 }
 
-/** Reviews are independent I/O (git spawns, `gh` calls) — cap concurrency rather than fire a hundred at once. */
-const CONCURRENCY = 4;
-
-async function mapLimit<T, R>(
-  items: readonly T[],
-  limit: number,
-  fn: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let cursor = 0;
-  async function worker(): Promise<void> {
-    for (;;) {
-      const index = cursor++;
-      const item = items[index];
-      if (item === undefined) return;
-      results[index] = await fn(item, index);
-    }
-  }
-  const workers = Array.from({ length: Math.min(limit, items.length) }, () => worker());
-  await Promise.all(workers);
-  return results;
-}
-
-/** The PR matching `review`, by `prNumber` first, else `headRefName === review.branch`. */
-function findMatchingPull(review: Review, pulls: readonly PullSummary[]): PullSummary | null {
-  if (review.prNumber !== null) {
-    const byNumber = pulls.find((p) => p.number === review.prNumber);
-    if (byNumber !== undefined) return byNumber;
-  }
-  if (review.branch !== null) {
-    const byBranch = pulls.find((p) => p.headRefName === review.branch);
-    if (byBranch !== undefined) return byBranch;
-  }
-  return null;
-}
-
 /**
- * Build the full `ReviewSummary[]` for `reviews`: one `summarizeReviews`
- * call for every id, repos loaded once, then per review (bounded concurrency)
- * git stats + the matching PR. `options.refresh` bypasses the `gh` cache.
+ * The repo's open pulls as the poller last stored them. Before its first
+ * poll lands this is an empty, available list; the poller's `repo:<id>`
+ * event then makes the screen re-read.
  */
-export async function buildReviewSummaries(
-  deps: HomebaseDeps,
-  reviews: readonly Review[],
-  options: { readonly refresh: boolean },
-): Promise<ReviewSummary[]> {
-  if (reviews.length === 0) return [];
+export async function getStoredPulls(db: Db, repo: Repo): Promise<ListOpenPullsResult> {
+  const stored = await getRepoState(db, repo.id);
+  if (stored === null) return { available: true, pulls: [] };
+  try {
+    return JSON.parse(stored.pulls) as ListOpenPullsResult;
+  } catch {
+    return { available: true, pulls: [] };
+  }
+}
 
-  const [baseSummaries, repos, viewedByReview] = await Promise.all([
-    summarizeReviews(deps.db, reviews.map((r) => r.id)),
-    listRepos(deps.db),
-    listViewedForReviews(
-      deps.db,
-      reviews.map((r) => r.id),
-    ),
+/** CI ran on the forge's head; it only describes the review while that's still the review's head. */
+function ciOf(state: StoredReviewState): CiStatus | null {
+  const pull = state.pull;
+  if (pull === null) return null;
+  if (state.pullHeadSha !== null && state.pullHeadSha !== state.headSha) return null;
+  return pull.ci;
+}
+
+/** Build the full `ReviewSummary[]` for `reviews`: the DB aggregate plus each review's stored engine state. */
+export async function buildReviewSummaries(db: Db, reviews: readonly Review[]): Promise<ReviewSummary[]> {
+  if (reviews.length === 0) return [];
+  const ids = reviews.map((r) => r.id);
+  const [baseSummaries, states, viewedByReview] = await Promise.all([
+    summarizeReviews(db, ids),
+    listReviewStates(db, ids),
+    listViewedForReviews(db, ids),
   ]);
   const baseById = new Map(baseSummaries.map((s) => [s.reviewId, s]));
-  const repoById = new Map(repos.map((r) => [r.id, r]));
 
-  // One `getPullsCached` call per repo, shared by every review in it, memoized here.
-  const pullsByRepo = new Map<string, Promise<ListOpenPullsResult>>();
-  const pullsFor = (repo: Repo): Promise<ListOpenPullsResult> => {
-    let pending = pullsByRepo.get(repo.id);
-    if (pending === undefined) {
-      pending = getPullsCached(deps, repo, { refresh: options.refresh }).catch(
-        (): ListOpenPullsResult => ({ available: false, pulls: [] }),
-      );
-      pullsByRepo.set(repo.id, pending);
-    }
-    return pending;
-  };
-
-  return mapLimit(reviews, CONCURRENCY, async (review) => {
+  return reviews.map((review) => {
     const base = baseById.get(review.id) ?? emptySummary(review.id);
-    try {
-      const repo = repoById.get(review.repoId) ?? (await getRepoById(deps.db, review.repoId));
-      if (repo === null || repo === undefined) return base;
+    const state = states.get(review.id);
+    if (state === undefined) return { ...base, title: review.branch };
 
-      const [gitStats, pullsResult] = await Promise.all([
-        reviewStatsCache.get(deps, review.id, () => loadHomeReviewStats(repo, review)),
-        pullsFor(repo),
-      ]);
-      const pull = findMatchingPull(review, pullsResult.pulls);
-
-      const viewedRows = viewedByReview.get(review.id) ?? [];
-      const viewedFiles =
-        gitStats === null
-          ? base.viewedFiles
-          : viewedRows.filter((v) => gitStats.blobByPath[v.path] === v.blobSha).length;
-
-      const ci: CiStatus | null = pull?.ci ?? null;
-
-      return {
-        ...base,
-        title: pull?.title ?? review.branch ?? gitStats?.subject ?? null,
-        // The git name first, so a PR and a local branch by the same person get the same avatar.
-        authorName: gitStats?.authorName ?? pull?.authorLogin ?? null,
-        filesTotal: gitStats === null ? null : Object.keys(gitStats.blobByPath).length,
-        additions: gitStats === null ? null : gitStats.additions,
-        deletions: gitStats === null ? null : gitStats.deletions,
-        headSha: gitStats?.headSha ?? null,
-        headCommittedAt: gitStats?.committedAt ?? null,
-        ci,
-        draft: pull?.isDraft ?? false,
-        viewedFiles,
-      };
-    } catch {
-      // Any unexpected failure (git, gh, db) falls back to the DB-only summary.
-      return base;
-    }
+    // A viewed mark counts only while it's for the file's current blob.
+    const viewedFiles = (viewedByReview.get(review.id) ?? []).filter(
+      (v) => state.blobByPath[v.path] === v.blobSha,
+    ).length;
+    const pull = state.pull;
+    return {
+      ...base,
+      title: pull?.title ?? review.branch ?? state.subject,
+      // The git name first, so a PR and a local branch by the same person get the same avatar.
+      authorName: state.authorName ?? pull?.authorLogin ?? null,
+      filesTotal: state.filesTotal,
+      additions: state.additions,
+      deletions: state.deletions,
+      headSha: state.headSha,
+      headCommittedAt: state.committedAt,
+      ci: ciOf(state),
+      draft: pull?.state === 'draft',
+      viewedFiles,
+      done: state.filesTotal > 0 && viewedFiles >= state.filesTotal && base.openThreads === 0,
+    };
   });
 }
 
@@ -230,5 +137,6 @@ function emptySummary(reviewId: string): ReviewSummary {
     ci: null,
     draft: false,
     unreadAgentReplies: 0,
+    done: false,
   };
 }

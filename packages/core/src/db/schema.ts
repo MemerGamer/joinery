@@ -221,6 +221,53 @@ export const cacheEntry = sqliteTable('cache_entry', {
   fetchedAt: integer('fetched_at').notNull(),
 });
 
+/**
+ * What the engine last worked out for a review's `head` revision: the base
+ * and head commits, the diff's size and blobs, and the review's PR as the
+ * forge reports it. Written only by the engine (`engine/reviewState.ts`);
+ * Homebase and the API read it and never derive any of it themselves.
+ * `version` goes up on every change, and a `review:<id>` event carries it.
+ */
+export const reviewState = sqliteTable('review_state', {
+  reviewId: text('review_id')
+    .primaryKey()
+    .references(() => review.id, { onDelete: 'cascade' }),
+  version: integer('version').notNull(),
+  headSha: text('head_sha').notNull(),
+  baseSha: text('base_sha').notNull(),
+  /** `HeadSource`: which rung of the head ladder answered. */
+  headSource: text('head_source').notNull(),
+  merged: integer('merged', { mode: 'boolean' }).notNull(),
+  filesTotal: integer('files_total').notNull(),
+  additions: integer('additions').notNull(),
+  deletions: integer('deletions').notNull(),
+  /** JSON `{ [path]: newBlob }`, enough to count which viewed marks still match. */
+  blobByPath: text('blob_by_path').notNull(),
+  subject: text('subject'),
+  authorName: text('author_name'),
+  committedAt: integer('committed_at'),
+  /** JSON `PullDetail` as the forge last reported it; null when the review has no PR. */
+  pull: text('pull'),
+  /** The forge's head commit for the PR, so CI is only shown for the head it ran on. */
+  pullHeadSha: text('pull_head_sha'),
+  /** The forge's `updatedAt` for the PR, so the full detail is only re-read when it changed. */
+  pullUpdatedAt: text('pull_updated_at'),
+  /** For a merged PR: the base before the merge, asked of the forge once. */
+  mergedBaseSha: text('merged_base_sha'),
+  updatedAt: integer('updated_at').notNull().default(now),
+});
+
+/** The repo's open pulls as the engine last polled them (`engine/repoPoller.ts`). */
+export const repoState = sqliteTable('repo_state', {
+  repoId: text('repo_id')
+    .primaryKey()
+    .references(() => repo.id, { onDelete: 'cascade' }),
+  version: integer('version').notNull(),
+  /** JSON `ListOpenPullsResult`. */
+  pulls: text('pulls').notNull(),
+  polledAt: integer('polled_at').notNull().default(now),
+});
+
 export const agentRun = sqliteTable(
   'agent_run',
   {
@@ -273,6 +320,8 @@ export const schema = {
   agentRun,
   agentEvent,
   cacheEntry,
+  reviewState,
+  repoState,
 };
 
 export type RepoRow = typeof repo.$inferSelect;

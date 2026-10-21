@@ -40,7 +40,7 @@ function ReviewWindowInner(): React.JSX.Element {
   const [helpOpen, setHelpOpen] = useState(false);
   const closeHelp = useCallback(() => setHelpOpen(false), []);
   const shortcuts = useReviewShortcuts();
-  const pull = useReviewPull(review.review?.id, review.fileList);
+  const pull = useReviewPull(review.review?.id);
 
   // Tab title: `#123 Title` for a PR, else the branch (or pinned sha).
   const tabTitle =

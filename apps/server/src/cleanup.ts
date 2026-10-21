@@ -34,11 +34,13 @@ export async function deleteReviewFully(deps: CleanupDeps, review: Review): Prom
   const repo = await getRepoById(deps.db, review.repoId);
   await releaseReview(deps, review, repo?.rootPath ?? null);
   await deleteReview(deps.db, review.id);
+  deps.registry.bus.changed('home');
 }
 
 export async function deleteRepoFully(deps: CleanupDeps, repoId: string): Promise<void> {
   const repo = await getRepoById(deps.db, repoId);
   if (repo === null) return;
+  deps.registry.pollers.remove(repoId);
   for (const review of await listReviews(deps.db, { repoId })) {
     await releaseReview(deps, review, repo.rootPath);
   }
@@ -50,4 +52,5 @@ export async function deleteRepoFully(deps: CleanupDeps, repoId: string): Promis
     }
   }
   await deleteRepo(deps.db, repoId);
+  deps.registry.bus.changed('home');
 }

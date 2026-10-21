@@ -190,13 +190,15 @@ export type LiveServer = {
  * `ws.test.ts`'s module comment). Never binds the app's real port (7317);
  * always closes the server (via the caller's `stop()` in test teardown).
  */
-export function startLiveServer(fixture: Pick<HttpFixture, 'created' | 'token'>): LiveServer {
+export function startLiveServer(fixture: Pick<HttpFixture, 'created' | 'token' | 'registry'>): LiveServer {
   const server = Bun.serve({
     hostname: '127.0.0.1',
     port: 0,
     fetch: fixture.created.app.fetch,
     websocket: fixture.created.websocket,
   });
+  // Topic events publish through the server, as in `start.ts`.
+  fixture.registry.bus.attach(server);
   const port = server.port;
   if (port === undefined) throw new Error('Bun.serve did not report a port for the ephemeral (port: 0) listener');
   return {

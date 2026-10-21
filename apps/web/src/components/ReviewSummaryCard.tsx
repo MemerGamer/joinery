@@ -6,8 +6,10 @@
  */
 import type { CiStatus, PullDetail, PullState } from '@joinery/core';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
 import { callApi } from '../lib/apiClient.ts';
+import { queryKeys } from '../lib/liveQueries.ts';
 import { useReview } from '../state/ReviewContext.tsx';
 import { Chip, CiIcon, DiffStat, type Tone } from './home/primitives.tsx';
 import { Markdown } from './Markdown.tsx';
@@ -33,32 +35,22 @@ const STATE_TONE: Record<PullState, Tone> = {
 };
 
 /**
- * The review's PR, fetched once and again whenever the file list refreshes.
- * Never forces a refresh: in the working revision the file list moves on every
- * save, and the server's few-minute cache keeps that from becoming a `gh` call each time.
+ * The review's PR as the server's engine last stored it. Kept live by the
+ * review window watching `review:<id>`: when the poller sees the PR change
+ * (title, CI, merged, retargeted), the query re-reads.
  */
-export function useReviewPull(reviewId: string | undefined, refreshKey: unknown): PullDetail | null {
-  const [pull, setPull] = useState<PullDetail | null>(null);
-
-  useEffect(() => {
-    if (reviewId === undefined) return;
-    let cancelled = false;
-    callApi('getReviewPull', { params: [reviewId], query: {} })
-      .then((res) => {
-        if (!cancelled) setPull(res.pull);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [reviewId, refreshKey]);
-
-  return pull;
+export function useReviewPull(reviewId: string | undefined): PullDetail | null {
+  const query = useQuery({
+    queryKey: queryKeys.reviewPull(reviewId ?? ''),
+    queryFn: async () => (await callApi('getReviewPull', { params: [reviewId ?? ''], query: {} })).pull,
+    enabled: reviewId !== undefined,
+  });
+  return query.data ?? null;
 }
 
 export function ReviewSummaryCard(): React.JSX.Element | null {
   const { review, fileList } = useReview();
-  const pull = useReviewPull(review?.id, fileList);
+  const pull = useReviewPull(review?.id);
   const [descriptionOpen, setDescriptionOpen] = useState(false);
 
   const totals = useMemo(() => {

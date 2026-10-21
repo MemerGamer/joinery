@@ -48,6 +48,7 @@ import {
   getRepoById,
   getRepoByPath,
   getReview,
+  getReviewState,
   getRun,
   getThreadWithComments,
   listEvents,
@@ -69,10 +70,8 @@ import {
   type Db,
 } from '../db/index.ts';
 import { listDirs } from '../fs/dirs.ts';
-import { buildReviewSummaries, getMeCached } from '../homebase.ts';
-import { getPullsCached } from '../pullsCache.ts';
+import { buildReviewSummaries, getMeCached, getStoredPulls } from '../homebase.ts';
 import { searchPullsCached } from '../pullSearchCache.ts';
-import { getPullDetailCached } from '../pullCache.ts';
 import type { StoredCacheDeps } from '../storedCache.ts';
 import {
   canonicalizePath,
@@ -143,8 +142,9 @@ async function requireThread(deps: RoutesDeps, threadId: string): Promise<Thread
 export function buildRoutes(deps: RoutesDeps): Hono {
   const app = new Hono();
   const dispatch = (reviewId: string, event: ServerEvent): void => deps.registry.dispatch(reviewId, event);
-  // A background git/`gh` refresh that changed what Homebase shows tells it to refetch.
-  const homeDeps: StoredCacheDeps = { db: deps.db, onUpdated: () => deps.registry.notifyHome(null) };
+  const { bus, pollers } = deps.registry;
+  // A background `me` refresh that changed what Homebase shows tells it to re-read.
+  const homeDeps: StoredCacheDeps = { db: deps.db, onUpdated: () => bus.changed('home') };
 
   // --- repos ---
 
@@ -190,6 +190,8 @@ export function buildRoutes(deps: RoutesDeps): Hono {
       remoteName: identity.name,
       defaultBranch: branch,
     });
+    pollers.ensure(repo.id);
+    bus.changed('home');
     return c.json({ repo }, 201);
   });
 
@@ -302,7 +304,10 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     const repo = await getRepoById(deps.db, id);
     if (repo === null) throw notFound(`repo ${id} not found`);
     const query = parseQuery(listPullsQuerySchema, c);
-    const result = await getPullsCached(homeDeps, repo, { refresh: query.refresh === 'true' });
+    // Answered from what the repo poller stored; `refresh` polls now, and
+    // the `repo:<id>` event tells the screen when the new list landed.
+    if (query.refresh === 'true') pollers.kick(repo.id);
+    const result = await getStoredPulls(deps.db, repo);
     const pulls = await Promise.all(
       result.pulls.map(async (pull) => {
         const existing = await findReviewByBranch(deps.db, repo.id, pull.headRefName);
@@ -343,7 +348,8 @@ export function buildRoutes(deps: RoutesDeps): Hono {
   app.get('/api/reviews', async (c) => {
     const query = parseQuery(listReviewsQuerySchema, c);
     const reviews = await listReviews(deps.db, query.status === undefined ? undefined : { status: query.status });
-    const summaries = await buildReviewSummaries(homeDeps, reviews, { refresh: query.refresh === 'true' });
+    if (query.refresh === 'true') pollers.kickAll();
+    const summaries = await buildReviewSummaries(deps.db, reviews);
     return c.json({ reviews, summaries });
   });
 
@@ -366,10 +372,19 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     // Fork PRs are out of scope; same-repo PRs only.
     let branch = body.branch;
     let base = body.base;
-    if (branch === undefined && body.sha === undefined) {
-      if (body.prNumber === undefined) {
-        throw badRequest('one of branch or sha (or prNumber, resolved via the forge) is required');
+    if (branch === undefined && body.sha === undefined && body.prNumber === undefined) {
+      throw badRequest('one of branch or sha (or prNumber, resolved via the forge) is required');
+    }
+    // An open PR's head and target branch come from the pulls the repo poller
+    // stored; only one it hasn't seen (an old PR from search) asks the forge.
+    if (body.prNumber !== undefined && body.sha === undefined && (branch === undefined || base === undefined)) {
+      const known = (await getStoredPulls(deps.db, repo)).pulls.find((p) => p.number === body.prNumber);
+      if (known !== undefined) {
+        branch ??= known.headRefName;
+        base ??= known.baseRefName;
       }
+    }
+    if (branch === undefined && body.sha === undefined && body.prNumber !== undefined) {
       const forge = forgeFor(repo);
       const resolved = await forge.resolvePr(body.prNumber, { cwd: repo.rootPath });
       if (resolved === null) {
@@ -396,6 +411,9 @@ export function buildRoutes(deps: RoutesDeps): Hono {
         prNumber: body.prNumber ?? null,
         status: body.status,
       });
+      // The repo's poller picks the new review up (PR, target branch, CI) now.
+      pollers.ensure(repo.id);
+      bus.changed('home');
     }
 
     const engine = await requireEngine(deps, review.id);
@@ -430,7 +448,8 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     const repo = await getRepoById(deps.db, review.repoId);
     if (repo === null) throw notFound(`repo ${review.repoId} not found`);
     const query = parseQuery(reviewPullQuerySchema, c);
-    const pull = await getPullDetailCached(homeDeps, repo, review, { refresh: query.refresh === 'true' });
+    if (query.refresh === 'true') pollers.kick(repo.id);
+    const pull = (await getReviewState(deps.db, id))?.pull ?? null;
     return c.json({ pull });
   });
 
@@ -528,8 +547,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
       cwd,
       files,
       loadPull: async () => {
-        const repo = await getRepoById(deps.db, review.repoId);
-        const pull = repo === null ? null : await getPullDetailCached(homeDeps, repo, review);
+        const pull = (await getReviewState(deps.db, id))?.pull ?? null;
         return pull === null ? null : { title: pull.title, body: pull.body };
       },
       ...(body.model === undefined ? {} : { model: body.model }),
@@ -760,6 +778,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     await requireReview(deps, id);
     const body = await parseBody(setReviewStatusBodySchema, c);
     const review = await setStatus(deps.db, id, body.status);
+    bus.changed('home');
     return c.json({ review });
   });
 
@@ -776,6 +795,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     } else {
       await unmarkViewed(deps.db, id, body.path, blobSha);
     }
+    bus.changed('home');
     return c.json({ ok: true as const });
   });
 
@@ -788,6 +808,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
       if (body.viewed) await markViewed(deps.db, id, file.path, file.newBlob);
       else await unmarkViewed(deps.db, id, file.path, file.newBlob);
     }
+    bus.changed('home');
     return c.json({ ok: true as const });
   });
 

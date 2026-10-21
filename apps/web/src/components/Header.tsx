@@ -98,7 +98,6 @@ function PanelToggleIcon({
 export function Header({ onOpenPalette }: { onOpenPalette: () => void }): React.JSX.Element {
   const {
     review,
-    fileList,
     reviewState,
     repo,
     leftPanelOpen,
@@ -113,7 +112,7 @@ export function Header({ onOpenPalette }: { onOpenPalette: () => void }): React.
     threadsPanelOpen,
     setThreadsPanelOpen,
   } = useReview();
-  const pull = useReviewPull(review?.id, fileList);
+  const pull = useReviewPull(review?.id);
   const threadsShown = rightPanelOpen && threadsPanelOpen;
 
   const repoName = repo?.rootPath.split('/').filter(Boolean).at(-1);

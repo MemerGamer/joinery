@@ -1,17 +1,29 @@
 /**
- * Homebase / Explore data: repos, reviews (+ their summaries), and open
- * pulls per repo, held in a module-level store rather than React state so
- * navigating between the two screens reuses the last snapshot instead of
- * refetching. `useSyncExternalStore` is the only React-facing surface;
- * everything else here is plain module state shared by every component that
- * calls `useHomeData()`.
+ * Homebase / Explore data: repos, reviews (+ their summaries), and open pulls
+ * per repo — TanStack Query queries over the API, kept live by watching the
+ * `home` and `repo:<id>` topics (`lib/liveQueries.ts`). The query cache
+ * outlives any one screen, so navigating between Homebase and Explore reuses
+ * the last answer instead of refetching.
+ *
+ * Everything shown here is what the server's engine stored; nothing is
+ * derived on this side (a review's "done" bucket included).
  */
-import type { Branch, Me, Pull, Repo, ResponseOf, Review, ReviewSummary } from '@joinery/core';
-import { useEffect, useSyncExternalStore } from 'react';
+import {
+  repoTopic,
+  type Branch,
+  type Me,
+  type Pull,
+  type Repo,
+  type ResponseOf,
+  type Review,
+  type ReviewSummary,
+} from '@joinery/core';
+import { useQueries, useQuery } from '@tanstack/react-query';
+import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import { ApiError, callApi } from '../lib/apiClient.ts';
 import type { ForgeNotice } from '../lib/forgeNotice.ts';
+import { queryClient, queryKeys, useWatchTopics } from '../lib/liveQueries.ts';
 import { goReview } from '../lib/router.ts';
-import { eventsClient } from '../lib/wsClient.ts';
 
 export type Bucket = 'attention' | 'done';
 
@@ -39,7 +51,7 @@ export interface HomeSnapshot {
   loading: boolean;
   /** True while a later refresh is in flight. */
   refreshing: boolean;
-  /** Last load error message; cleared on success. */
+  /** Last load or action error message; cleared on the next success. */
   error: string | null;
   lastLoadedAt: number | null;
 }
@@ -64,9 +76,13 @@ export interface HomeActions {
   listDirs(path?: string): Promise<ListDirsResult>;
 }
 
-const AUTO_REFRESH_THROTTLE_MS = 30_000;
-/** Coalesces a burst of `reviews.changed` (one action often sends several) into one refetch. */
-const LIVE_REFRESH_DEBOUNCE_MS = 250;
+type ReviewsResponse = ResponseOf<'listReviews'>;
+
+interface RepoPulls {
+  available: boolean;
+  pulls: Pull[];
+  notice: ForgeNotice | null;
+}
 
 function defaultSummary(reviewId: string): ReviewSummary {
   return {
@@ -87,166 +103,81 @@ function defaultSummary(reviewId: string): ReviewSummary {
     ci: null,
     draft: false,
     unreadAgentReplies: 0,
+    done: false,
   };
-}
-
-function bucketOf(summary: ReviewSummary): Bucket {
-  const done =
-    summary.filesTotal !== null &&
-    summary.filesTotal > 0 &&
-    summary.viewedFiles >= summary.filesTotal &&
-    summary.openThreads === 0;
-  return done ? 'done' : 'attention';
 }
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback;
 }
 
-let snapshot: HomeSnapshot = {
-  repos: [],
-  reviews: [],
-  drafts: [],
-  pullsByRepo: new Map(),
-  pullsAvailable: new Map(),
-  pullsNotice: new Map(),
-  me: null,
-  // True from the start: the first `useHomeData()` mount kicks off a load
-  // almost immediately, and there is no data to show in the meantime either
-  // way — screens key their initial skeleton off this.
-  loading: true,
-  refreshing: false,
-  error: null,
-  lastLoadedAt: null,
-};
+// --- action errors: the one bit of state that isn't a query ---
 
-const listeners = new Set<() => void>();
-let inFlight: Promise<void> | null = null;
-let windowListenersRegistered = false;
-let liveUpdatesRegistered = false;
+let actionError: string | null = null;
+const errorListeners = new Set<() => void>();
 
-function setSnapshot(next: HomeSnapshot): void {
-  snapshot = next;
-  for (const listener of listeners) listener();
+function setActionError(next: string | null): void {
+  if (next === actionError) return;
+  actionError = next;
+  for (const listener of errorListeners) listener();
 }
 
-function patch(partial: Partial<HomeSnapshot>): void {
-  setSnapshot({ ...snapshot, ...partial });
-}
-
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
+function subscribeActionError(listener: () => void): () => void {
+  errorListeners.add(listener);
   return () => {
-    listeners.delete(listener);
+    errorListeners.delete(listener);
   };
 }
 
-function getSnapshot(): HomeSnapshot {
-  return snapshot;
-}
+const getActionError = (): string | null => actionError;
 
-async function doLoad(force: boolean): Promise<void> {
-  const isFirstLoad = snapshot.lastLoadedAt === null;
-  patch(isFirstLoad ? { loading: true, error: null } : { refreshing: true, error: null });
+// --- queries ---
 
+async function loadPulls(repo: Repo, refresh: boolean): Promise<RepoPulls> {
   try {
-    const refreshQuery = force ? ({ refresh: 'true' } as const) : {};
-    // Only the pulls wait on the repo list; everything else goes out at once.
-    const reposPromise = callApi('listRepos');
-    const pullsPromise = reposPromise.then((res) =>
-      Promise.all(
-        res.repos.map(async (repo) => {
-          try {
-            const pulls = await callApi('listPulls', { params: [repo.id], query: refreshQuery });
-            const notice: ForgeNotice | null =
-              pulls.unavailableReason === undefined
-                ? null
-                : { reason: pulls.unavailableReason, host: pulls.unavailableHost ?? null, forge: repo.forge };
-            return { repoId: repo.id, available: pulls.available, pulls: pulls.pulls, notice };
-          } catch {
-            return { repoId: repo.id, available: false, pulls: [] as Pull[], notice: null };
-          }
-        }),
-      ),
-    );
-    const [reposRes, meRes, reviewsRes, pullsResults] = await Promise.all([
-      reposPromise,
-      callApi('me'),
-      callApi('listReviews', { query: refreshQuery }),
-      pullsPromise,
-    ]);
-    const repos = reposRes.repos;
-
-    const repoById = new Map(repos.map((r) => [r.id, r] as const));
-    const summaryByReviewId = new Map(reviewsRes.summaries.map((s) => [s.reviewId, s] as const));
-    const reviews: HomeReview[] = [];
-    const drafts: HomeReview[] = [];
-    for (const review of reviewsRes.reviews) {
-      if (review.status === 'archived') continue;
-      const repo = repoById.get(review.repoId);
-      if (repo === undefined) continue;
-      const summary = summaryByReviewId.get(review.id) ?? defaultSummary(review.id);
-      const hr: HomeReview = { review, summary, repo, bucket: bucketOf(summary) };
-      if (review.status === 'draft') drafts.push(hr);
-      else reviews.push(hr);
-    }
-
-    const pullsByRepo = new Map<string, Pull[]>();
-    const pullsAvailable = new Map<string, boolean>();
-    const pullsNotice = new Map<string, ForgeNotice>();
-    for (const r of pullsResults) {
-      pullsByRepo.set(r.repoId, r.pulls);
-      pullsAvailable.set(r.repoId, r.available);
-      if (r.notice !== null) pullsNotice.set(r.repoId, r.notice);
-    }
-
-    setSnapshot({
-      repos,
-      reviews,
-      drafts,
-      pullsByRepo,
-      pullsAvailable,
-      pullsNotice,
-      me: meRes,
-      loading: false,
-      refreshing: false,
-      error: null,
-      lastLoadedAt: Date.now(),
-    });
-  } catch (err) {
-    patch({ loading: false, refreshing: false, error: errorMessage(err, 'Failed to load') });
+    const res = await callApi('listPulls', { params: [repo.id], query: refresh ? { refresh: 'true' } : {} });
+    const notice: ForgeNotice | null =
+      res.unavailableReason === undefined
+        ? null
+        : { reason: res.unavailableReason, host: res.unavailableHost ?? null, forge: repo.forge };
+    return { available: res.available, pulls: res.pulls, notice };
+  } catch {
+    return { available: false, pulls: [], notice: null };
   }
 }
+
+function invalidateHome(): Promise<void> {
+  return queryClient.invalidateQueries({ queryKey: queryKeys.home });
+}
+
+// --- actions ---
 
 /**
- * A refresh asked for while a load is in flight runs once more after it
- * (forced if any asker forced), rather than joining it: the in-flight load
- * may have read the server before the change that prompted the ask — e.g. a
- * `reviews.changed` from a background git/`gh` refresh landing while a slow
- * `listPulls` is still pending — and that change would otherwise be lost.
+ * Re-read everything Homebase shows. `force` also asks the server to re-poll
+ * every repo now (git fetch + forge); what that finds arrives as `home` /
+ * `repo:<id>` events a moment later.
  */
-let rerun: { force: boolean } | null = null;
-
 async function refresh(options?: { force?: boolean }): Promise<void> {
-  const force = options?.force ?? false;
-  if (inFlight !== null) {
-    rerun = { force: force || (rerun?.force ?? false) };
-    await inFlight;
-    return;
-  }
-  const promise = (async () => {
-    let next: { force: boolean } | null = { force };
-    while (next !== null) {
-      rerun = null;
-      await doLoad(next.force);
-      next = rerun;
+  if (options?.force === true) {
+    try {
+      await callApi('listReviews', { query: { refresh: 'true' } });
+    } catch (err) {
+      setActionError(errorMessage(err, 'Failed to refresh'));
     }
-  })();
-  inFlight = promise;
+  }
+  await invalidateHome();
+}
+
+async function createAndOpen(body: Parameters<typeof callApi<'createReview'>>[1], failure: string): Promise<void> {
   try {
-    await promise;
+    const detail = await callApi('createReview', body);
+    setActionError(null);
+    goReview(detail.review.id);
+  } catch (err) {
+    setActionError(errorMessage(err, failure));
+    throw err;
   } finally {
-    inFlight = null;
+    void invalidateHome();
   }
 }
 
@@ -255,29 +186,15 @@ async function openPull(repoId: string, pull: Pull): Promise<void> {
     goReview(pull.reviewId);
     return;
   }
-  try {
-    const detail = await callApi('createReview', {
-      body: { repoId, branch: pull.headRefName, base: pull.baseRefName, prNumber: pull.number, status: 'draft' },
-    });
-    goReview(detail.review.id);
-    void refresh();
-  } catch (err) {
-    patch({ error: errorMessage(err, 'Failed to open pull request') });
-    void refresh();
-    throw err;
-  }
+  // The server reads the PR's head and target branch itself; the number is all it needs.
+  await createAndOpen(
+    { body: { repoId, branch: pull.headRefName, prNumber: pull.number, status: 'draft' } },
+    'Failed to open pull request',
+  );
 }
 
 async function openPullNumber(repoId: string, prNumber: number): Promise<void> {
-  try {
-    const detail = await callApi('createReview', { body: { repoId, prNumber, status: 'draft' } });
-    goReview(detail.review.id);
-    void refresh();
-  } catch (err) {
-    patch({ error: errorMessage(err, 'Failed to open pull request') });
-    void refresh();
-    throw err;
-  }
+  await createAndOpen({ body: { repoId, prNumber, status: 'draft' } }, 'Failed to open pull request');
 }
 
 async function openBranch(repoId: string, branch: Branch | string): Promise<void> {
@@ -287,63 +204,55 @@ async function openBranch(repoId: string, branch: Branch | string): Promise<void
     goReview(reviewId);
     return;
   }
-  try {
-    const detail = await callApi('createReview', { body: { repoId, branch: name, status: 'draft' } });
-    goReview(detail.review.id);
-    void refresh();
-  } catch (err) {
-    patch({ error: errorMessage(err, 'Failed to open branch') });
-    void refresh();
-    throw err;
-  }
+  await createAndOpen({ body: { repoId, branch: name, status: 'draft' } }, 'Failed to open branch');
+}
+
+/** Patch the cached reviews list in place (an optimistic update the next re-read reconciles). */
+function patchReviews(update: (res: ReviewsResponse) => ReviewsResponse): void {
+  queryClient.setQueryData<ReviewsResponse>(queryKeys.reviews, (res) => (res === undefined ? res : update(res)));
 }
 
 async function archiveReview(id: string): Promise<void> {
-  // Optimistic: drop it from the snapshot immediately, then let `refresh`
-  // reconcile with the server either way (including undoing this if the
-  // request actually failed).
-  patch({
-    reviews: snapshot.reviews.filter((r) => r.review.id !== id),
-    drafts: snapshot.drafts.filter((r) => r.review.id !== id),
-  });
+  // Optimistic: drop it at once; the re-read below reconciles either way
+  // (including undoing this if the request failed).
+  patchReviews((res) => ({ ...res, reviews: res.reviews.filter((r) => r.id !== id) }));
   try {
     await callApi('setReviewStatus', { params: [id], body: { status: 'archived' } });
   } catch (err) {
-    patch({ error: errorMessage(err, 'Failed to archive review') });
+    setActionError(errorMessage(err, 'Failed to archive review'));
   }
-  await refresh();
+  await invalidateHome();
 }
 
 async function unarchiveReview(id: string): Promise<void> {
   try {
     await callApi('setReviewStatus', { params: [id], body: { status: 'open' } });
   } catch (err) {
-    patch({ error: errorMessage(err, 'Failed to unarchive review') });
+    setActionError(errorMessage(err, 'Failed to unarchive review'));
   }
-  await refresh();
+  await invalidateHome();
 }
 
 async function generateReadingOrder(id: string): Promise<void> {
-  patch({
-    reviews: snapshot.reviews.map((r) =>
-      r.review.id === id ? { ...r, summary: { ...r.summary, agentRunning: true } } : r,
-    ),
-  });
+  patchReviews((res) => ({
+    ...res,
+    summaries: res.summaries.map((s) => (s.reviewId === id ? { ...s, agentRunning: true } : s)),
+  }));
   try {
     await callApi('generateReadingOrder', { params: [id], body: {} });
   } catch (err) {
-    patch({ error: errorMessage(err, 'Failed to generate reading order') });
+    setActionError(errorMessage(err, 'Failed to generate reading order'));
   }
-  await refresh();
+  await invalidateHome();
 }
 
 async function addRepo(path: string): Promise<Repo> {
   try {
     const res = await callApi('addRepo', { body: { path } });
-    await refresh();
+    await invalidateHome();
     return res.repo;
   } catch (err) {
-    patch({ error: errorMessage(err, 'Failed to add repository') });
+    setActionError(errorMessage(err, 'Failed to add repository'));
     throw err;
   }
 }
@@ -361,70 +270,12 @@ async function addRepos(paths: string[]): Promise<AddReposResult> {
       });
     }
   }
-  await refresh();
+  await invalidateHome();
   return result;
 }
 
 function listDirs(path?: string): Promise<ListDirsResult> {
   return callApi('listDirs', { query: path === undefined ? {} : { path } });
-}
-
-function shouldSkipAutoRefresh(): boolean {
-  return snapshot.lastLoadedAt !== null && Date.now() - snapshot.lastLoadedAt < AUTO_REFRESH_THROTTLE_MS;
-}
-
-function onWindowRefocus(): void {
-  if (shouldSkipAutoRefresh()) return;
-  void refresh();
-}
-
-let liveRefreshTimer: ReturnType<typeof setTimeout> | null = null;
-let liveMounts = 0;
-
-/**
- * Live updates while a Homebase/Explore screen is mounted: the server sends
- * `reviews.changed` whenever something a card shows changes (a thread, a
- * run starting or ending, a review created or archived, ...), and the store
- * refetches. Subscribed only while mounted, so an open review window
- * doesn't trigger background Homebase refetches on every comment; coming
- * back refetches once to catch up. Returns the unmount half.
- */
-function mountLiveUpdates(): () => void {
-  if (!liveUpdatesRegistered) {
-    liveUpdatesRegistered = true;
-    eventsClient.onEvent((event) => {
-      if (event.type !== 'reviews.changed' || liveMounts === 0) return;
-      if (liveRefreshTimer !== null) clearTimeout(liveRefreshTimer);
-      liveRefreshTimer = setTimeout(() => {
-        liveRefreshTimer = null;
-        void refresh();
-      }, LIVE_REFRESH_DEBOUNCE_MS);
-    });
-  }
-  liveMounts += 1;
-  if (liveMounts === 1) {
-    eventsClient.connect();
-    eventsClient.subscribeHome();
-    if (snapshot.lastLoadedAt !== null) void refresh();
-  }
-  return () => {
-    liveMounts -= 1;
-    if (liveMounts === 0) eventsClient.unsubscribeHome();
-  };
-}
-
-/**
- * Registered once, ever, the first time any component mounts `useHomeData`
- * — not per-component and never torn down, since the store outlives any one
- * screen.
- */
-function ensureWindowListeners(): void {
-  if (windowListenersRegistered) return;
-  windowListenersRegistered = true;
-  window.addEventListener('focus', onWindowRefocus);
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') onWindowRefocus();
-  });
 }
 
 const actions: HomeActions = {
@@ -441,19 +292,66 @@ const actions: HomeActions = {
 };
 
 export function useHomeData(): HomeSnapshot & HomeActions {
-  const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const reposQuery = useQuery({ queryKey: queryKeys.repos, queryFn: () => callApi('listRepos') });
+  const meQuery = useQuery({ queryKey: queryKeys.me, queryFn: () => callApi('me') });
+  const reviewsQuery = useQuery({ queryKey: queryKeys.reviews, queryFn: () => callApi('listReviews') });
+  const repos = useMemo(() => reposQuery.data?.repos ?? [], [reposQuery.data]);
+  const combinePulls = useCallback(
+    (results: ReadonlyArray<{ data: RepoPulls | undefined; isFetching: boolean }>) => {
+      const pullsByRepo = new Map<string, Pull[]>();
+      const pullsAvailable = new Map<string, boolean>();
+      const pullsNotice = new Map<string, ForgeNotice>();
+      repos.forEach((repo, i) => {
+        const data = results[i]?.data;
+        if (data === undefined) return;
+        pullsByRepo.set(repo.id, data.pulls);
+        pullsAvailable.set(repo.id, data.available);
+        if (data.notice !== null) pullsNotice.set(repo.id, data.notice);
+      });
+      return { pullsByRepo, pullsAvailable, pullsNotice, fetching: results.some((r) => r.isFetching) };
+    },
+    [repos],
+  );
+  const { fetching: pullsFetching, ...pulls } = useQueries({
+    queries: repos.map((repo) => ({ queryKey: queryKeys.pulls(repo.id), queryFn: () => loadPulls(repo, false) })),
+    combine: combinePulls,
+  });
+  const error = useSyncExternalStore(subscribeActionError, getActionError, getActionError);
 
-  useEffect(() => {
-    ensureWindowListeners();
-    // Lazily kick off the first load on first mount; StrictMode's
-    // double-invoke re-enters this with `inFlight` already set, so the
-    // second call is a no-op rather than a second fetch.
-    if (snapshot.lastLoadedAt === null && inFlight === null) {
-      void refresh();
+  useWatchTopics(['home', ...repos.map((r) => repoTopic(r.id))]);
+
+  const lists = useMemo(() => {
+    const reviews: HomeReview[] = [];
+    const drafts: HomeReview[] = [];
+    const res = reviewsQuery.data;
+    if (res === undefined) return { reviews, drafts };
+    const repoById = new Map(repos.map((r) => [r.id, r] as const));
+    const summaryByReviewId = new Map(res.summaries.map((s) => [s.reviewId, s] as const));
+    for (const review of res.reviews) {
+      if (review.status === 'archived') continue;
+      const repo = repoById.get(review.repoId);
+      if (repo === undefined) continue;
+      const summary = summaryByReviewId.get(review.id) ?? defaultSummary(review.id);
+      const hr: HomeReview = { review, summary, repo, bucket: summary.done ? 'done' : 'attention' };
+      if (review.status === 'draft') drafts.push(hr);
+      else reviews.push(hr);
     }
-  }, []);
+    return { reviews, drafts };
+  }, [reviewsQuery.data, repos]);
 
-  useEffect(() => mountLiveUpdates(), []);
+  const loading = reposQuery.isPending || reviewsQuery.isPending;
+  const fetching = reposQuery.isFetching || reviewsQuery.isFetching || pullsFetching;
+  const queryError = reposQuery.error ?? reviewsQuery.error;
 
-  return { ...state, ...actions };
+  return {
+    repos,
+    ...lists,
+    ...pulls,
+    me: meQuery.data ?? null,
+    loading,
+    refreshing: !loading && fetching,
+    error: error ?? (queryError === null ? null : errorMessage(queryError, 'Failed to load')),
+    lastLoadedAt: reviewsQuery.dataUpdatedAt === 0 ? null : reviewsQuery.dataUpdatedAt,
+    ...actions,
+  };
 }

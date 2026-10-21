@@ -1,16 +1,19 @@
 /**
- * `WS /api/events`. Accepts the `clientMessage`
- * union, pushes the `ServerEvent` union. The browser never polls: on
- * `subscribe` the server immediately sends the current file list, and
- * reconnecting is "send me the list" again — no handshake, no version
- * negotiation.
+ * `WS /api/events`. A connection `watch`es the topics it shows (`home`,
+ * `repo:<id>`, `review:<id>`) and gets only their events; Bun's native topic
+ * pub/sub does the fan-out (`engine/bus.ts` publishes). The browser never
+ * polls: watching `review:<id>` sends the review's current file list and
+ * state back at once, and reconnecting is "watch again".
  */
 import { createBunWebSocket } from 'hono/bun';
 import type { Hono } from 'hono';
-import { clientMessageSchema, type Revision, type ServerEvent } from '@joinery/core';
+import type { ServerWebSocket } from 'bun';
+import { clientMessageSchema, type ServerEvent, type Topic } from '@joinery/core';
 import type { EngineRegistry } from '../engine/index.ts';
 
 export type { BunWebSocketHandler } from 'hono/bun';
+
+const REVIEW_PREFIX = 'review:';
 
 /** Auth is applied by the caller's blanket `/api/*` middleware; this only wires the upgrade. */
 export function mountWebSocket(app: Hono, registry: EngineRegistry) {
@@ -19,17 +22,9 @@ export function mountWebSocket(app: Hono, registry: EngineRegistry) {
   app.get(
     '/api/events',
     upgradeWebSocket(() => {
-      // One connection may subscribe to several reviews; each has its own
-      // unsubscribe function and last-known-focus state.
-      const unsubscribers = new Map<string, () => void>();
-      // Which revision each subscribed review is filtered to on this
-      // connection — lets two tabs on the same review each watch a different
-      // revision without a `files.changed` for one leaking into the other.
-      // `undefined` means "no filter, forward everything" (a client that
-      // never sent a revision).
-      const subscribedRevision = new Map<string, Revision | undefined>();
-      let focusedReviewId: string | null = null;
-      let unsubscribeHome: (() => void) | null = null;
+      // What this connection watches, and for `review:<id>` the release
+      // that lets the review's live worker go once nobody watches it.
+      const watching = new Map<Topic, (() => void) | null>();
 
       const send = (ws: { send: (data: string) => void }, event: ServerEvent): void => {
         ws.send(JSON.stringify(event));
@@ -46,65 +41,54 @@ export function mountWebSocket(app: Hono, registry: EngineRegistry) {
           const result = clientMessageSchema.safeParse(parsed);
           if (!result.success) return;
           const message = result.data;
+          const raw = ws.raw as ServerWebSocket<unknown> | undefined;
 
           switch (message.type) {
-            case 'subscribe': {
-              // Update (or set) this connection's revision filter for the
-              // review even if already subscribed — this is also how a tab
-              // switches what it's watching without a fresh subscription.
-              subscribedRevision.set(message.reviewId, message.revision);
-              if (!unsubscribers.has(message.reviewId)) {
-                const unsubscribe = await registry.subscribe(message.reviewId, (event) => {
-                  if (event.type === 'files.changed' && event.reviewId === message.reviewId) {
-                    const wanted = subscribedRevision.get(message.reviewId);
-                    if (wanted !== undefined && event.list.revision !== wanted) return;
-                  }
-                  send(ws, event);
-                });
-                if (unsubscribe === null) return; // review doesn't exist; silently ignore
-                unsubscribers.set(message.reviewId, unsubscribe);
+            case 'watch': {
+              const { topic } = message;
+              if (watching.has(topic)) break;
+              watching.set(topic, null);
+              if (!topic.startsWith(REVIEW_PREFIX)) {
+                raw?.subscribe(topic);
+                break;
               }
-              const engine = await registry.get(message.reviewId);
-              if (engine !== null) {
-                send(ws, { type: 'files.changed', reviewId: message.reviewId, list: engine.getFileList(message.revision) });
-                send(ws, { type: 'root.rebound', reviewId: message.reviewId, state: await engine.getState() });
+              const reviewId = topic.slice(REVIEW_PREFIX.length);
+              const watched = await registry.watch(reviewId);
+              if (watched === null) break; // review doesn't exist; nothing will be published
+              // Unwatched (or closed) while the worker was starting.
+              if (!watching.has(topic)) {
+                watched.release();
+                break;
               }
+              watching.set(topic, watched.release);
+              // Joined only now: the worker's first tick (above) is already
+              // in the snapshot sent next, so it isn't delivered twice.
+              raw?.subscribe(topic);
+              send(ws, { type: 'files.changed', reviewId, list: watched.engine.getFileList() });
+              send(ws, { type: 'root.rebound', reviewId, state: await watched.engine.getState() });
               break;
             }
-            case 'unsubscribe': {
-              unsubscribers.get(message.reviewId)?.();
-              unsubscribers.delete(message.reviewId);
-              subscribedRevision.delete(message.reviewId);
+            case 'unwatch': {
+              const release = watching.get(message.topic);
+              if (release === undefined) break;
+              release?.();
+              watching.delete(message.topic);
+              raw?.unsubscribe(message.topic);
               break;
             }
             case 'focus': {
-              focusedReviewId = message.reviewId;
               await registry.focus(message.reviewId);
               break;
             }
-            case 'blur': {
-              if (focusedReviewId === message.reviewId) focusedReviewId = null;
-              await registry.blur(message.reviewId);
-              break;
-            }
-            case 'subscribeHome': {
-              unsubscribeHome ??= registry.subscribeHome((event) => send(ws, event));
-              break;
-            }
-            case 'unsubscribeHome': {
-              unsubscribeHome?.();
-              unsubscribeHome = null;
-              break;
-            }
+            case 'blur':
             case 'ping':
               break;
           }
         },
         onClose() {
-          for (const unsubscribe of unsubscribers.values()) unsubscribe();
-          unsubscribers.clear();
-          unsubscribeHome?.();
-          if (focusedReviewId !== null) void registry.blur(focusedReviewId);
+          // Bun drops the socket's topic subscriptions itself.
+          for (const release of watching.values()) release?.();
+          watching.clear();
         },
       };
     }),

@@ -1,9 +1,17 @@
 /**
- * One engine actor per review.
+ * One live worker per open review.
  *
- * Owns the two mutable layers: root binding and the file list. Runs
- * a serialized, debounced tick on any filesystem/git signal, ignoring event
- * payloads entirely — every signal means exactly one thing: run a tick.
+ * Owns what only a watcher on disk can know: the root binding, the
+ * uncommitted `working` revision, and warm file lists for every revision, kept
+ * in memory for the diff view. Runs a serialized, debounced tick on any
+ * filesystem/git signal, ignoring event payloads entirely — every signal means
+ * exactly one thing: run a tick.
+ *
+ * It decides nothing about base and head itself: `reviewState.ts` holds that
+ * rule, and the repo poller (`repoPoller.ts`) does all fetching and forge
+ * calls, then tells this worker (`notifyRemoteChange`) when the review's
+ * stored state moved. When a local commit moves head before the next poll,
+ * this worker stores the new state through the same `refreshReviewState`.
  */
 import { watch, type FSWatcher } from 'node:fs';
 import { resolve } from 'node:path';
@@ -27,49 +35,50 @@ import {
   CatFile,
   detectInProgressOperation,
   divergence,
-  forgeFor,
   getFileContents,
   git,
   gitCommonDir,
   gitOrThrow,
   baseMergeBase,
-  pinReviewBaseRef,
-  pinReviewRef,
   revParse,
-  type Forge,
 } from '../git/index.ts';
 import {
   adoptBranch,
   findReviewByBranch,
   getReview,
+  getReviewState,
   getThreadWithComments,
   listThreadsByReview,
   renamePaths,
-  setPrNumber,
   updateAnchors,
   type Db,
   type Rename,
   type ThreadAnchorUpdate,
 } from '../db/index.ts';
 import { relocate } from './anchor.ts';
+import {
+  forgeFactsOf,
+  pinRange,
+  pullFactsOf,
+  refreshReviewState,
+  resolveBase,
+  resolvePrRange,
+  resolveReviewRange,
+  type ForgeFacts,
+  type ReviewRange,
+} from './reviewState.ts';
 import { resolveRoot } from './root.ts';
 
-const FOCUSED_POLL_MS = 15_000;
-const BLURRED_POLL_MS = 120_000;
 const DEBOUNCE_MS = 150;
 const DEBOUNCE_CEILING_MS = 1_000;
-// PR discovery hits the forge API, not a local ref — polled far
-// less often than the local remote-tracking fetch.
-const PR_DETECT_POLL_MS = 300_000;
-// A fetch that hangs (dead network, an SSH host prompt nobody can answer)
-// is killed rather than left holding the poll.
-const FETCH_TIMEOUT_MS = 60_000;
 
 export type ReviewEngineParams = {
   readonly db: Db;
   readonly repo: Repo;
   readonly review: Review;
   readonly emit: (event: ServerEvent) => void;
+  /** This worker stored a new `review_state` version (after commit). */
+  readonly onStateChanged?: (reviewId: string) => void;
 };
 
 /**
@@ -105,9 +114,9 @@ function isUnderOrEqual(child: string, parent: string): boolean {
 export class ReviewEngine {
   readonly #db: Db;
   readonly #repo: Repo;
-  readonly #forge: Forge;
   #review: Review;
   readonly #emit: (event: ServerEvent) => void;
+  readonly #onStateChanged: (reviewId: string) => void;
   readonly #catFile: CatFile;
   #gitCommonDir: string | null = null;
 
@@ -116,19 +125,7 @@ export class ReviewEngine {
   #operationInProgress: GitOperation | null = null;
   /** Which rung of the fallback ladder last resolved `head`; null until the first tick resolves it. */
   #headSource: HeadSource | null = null;
-  /**
-   * The sha last written to `refs/review/<id>` (the head pin), so the tick
-   * can skip `update-ref` when `head` didn't move rather than writing it
-   * every tick.
-   */
-  #lastPinnedHeadSha: string | null = null;
-  /** Same for `refs/review/base/<id>` (the last non-empty diff base). */
-  #lastPinnedBaseSha: string | null = null;
-  /** The forge reported the review's PR as merged (terminal, so the forge isn't asked again). */
-  #forgeMerged = false;
-  /** The merged-PR base pin (`#pinMergedPrBase`) is attempted once the forge reports a merge. */
-  #mergedBaseTried = false;
-  /** The review's branch is gone and its tip is already in `baseRef` (see the `head` build in the tick). */
+  /** Head is already inside the base and the diff shows what was merged (`reviewState.ts`). */
   #merged = false;
   /** One cached snapshot per revision — kept warm proactively so a revision switch is a cache read, not a recompute. */
   #snapshots: Record<Revision, FileList>;
@@ -166,22 +163,15 @@ export class ReviewEngine {
   #debounceTimer: ReturnType<typeof setTimeout> | null = null;
   #firstSignalAt: number | null = null;
 
-  #pollTimer: ReturnType<typeof setInterval> | null = null;
-  /** A poll still fetching when the next interval fires is skipped, not stacked. */
-  #polling = false;
-  /** Whether a remote poll has been started yet. The first focus polls at once instead of waiting a full interval. */
-  #everPolled = false;
-  #lastPrCheckAt: number | null = null;
-  #focused = false;
   #disposed = false;
   #subscriberCount = 0;
 
   private constructor(params: ReviewEngineParams) {
     this.#db = params.db;
     this.#repo = params.repo;
-    this.#forge = forgeFor(params.repo);
     this.#review = params.review;
     this.#emit = params.emit;
+    this.#onStateChanged = params.onStateChanged ?? (() => {});
     this.#catFile = new CatFile(params.repo.rootPath);
     const placeholder = (revision: Revision): FileList => ({
       reviewId: params.review.id,
@@ -281,15 +271,20 @@ export class ReviewEngine {
     return this.#disposed;
   }
 
+  /** The window came back into focus: re-check disk now (the registry also re-polls the repo). */
   focus(): void {
-    this.#focused = true;
-    this.#restartPoll();
     this.#scheduleTick();
   }
 
-  blur(): void {
-    this.#focused = false;
-    this.#restartPoll();
+  /**
+   * The repo poller fetched, or the review's stored state or row moved
+   * (target branch, PR, merged): every revision's base or head may have.
+   */
+  notifyRemoteChange(): void {
+    this.#pendingSources.add('git');
+    this.#pendingSources.add('remote-default');
+    this.#pendingSources.add('remote-pr');
+    this.#scheduleTick();
   }
 
   /** Call after any HTTP-side mutation that should be reflected promptly. */
@@ -305,7 +300,6 @@ export class ReviewEngine {
     this.#rootWatcher?.close();
     this.#gitWatcher?.close();
     if (this.#debounceTimer !== null) clearTimeout(this.#debounceTimer);
-    if (this.#pollTimer !== null) clearInterval(this.#pollTimer);
     this.#catFile.close();
   }
 
@@ -419,200 +413,6 @@ export class ReviewEngine {
     }
   }
 
-  // --- remote poll ---
-
-  #restartPoll(): void {
-    if (this.#pollTimer !== null) clearInterval(this.#pollTimer);
-    if (this.#disposed) return;
-    const interval = this.#focused ? FOCUSED_POLL_MS : BLURRED_POLL_MS;
-    this.#pollTimer = setInterval(() => this.#pollOnce(), interval);
-    // A review opened for a PR whose ref was never fetched (e.g. an old PR
-    // from Explore search) has nothing to diff until the first poll, so the
-    // first focus polls straight away.
-    if (this.#focused && !this.#everPolled) this.#pollOnce();
-  }
-
-  #pollOnce(): void {
-    if (this.#polling) return;
-    this.#polling = true;
-    this.#everPolled = true;
-    this.#remotePoll()
-      .catch((err: unknown) => {
-        console.error(`[engine ${this.#review.id}] remote poll failed:`, err);
-      })
-      .finally(() => {
-        this.#polling = false;
-      });
-  }
-
-  /**
-   * `git fetch --no-write-fetch-head` for the PR ref,
-   * `refs/remotes/origin/<default>` — the second is not optional:
-   * without it the base never advances and the diff silently drifts — and,
-   * when the review's branch has no local ref (rung b of the `head`
-   * ladder is dead), `refs/remotes/origin/<branch>` too, so rung c has
-   * something fresh to resolve against instead of whatever was fetched once
-   * and never touched again.
-   *
-   * Every refspec is forced (`+`), like git's own default refspec: without
-   * it a force-push (a rebased PR, above all) is rejected as non-fast-forward
-   * and the ref stays at the old commit for good.
-   */
-  async #remotePoll(): Promise<void> {
-    if (this.#disposed) return;
-    const review = this.#review;
-    const cwd = this.#attachedPath ?? this.#repo.rootPath;
-    const defaultBranchName = this.#repo.defaultBranch;
-    let defaultMoved = false;
-    let prMoved = false;
-    let branchMoved = false;
-    let mergedNow = false;
-    const wasForgeMerged = this.#forgeMerged;
-    try {
-      const beforeDefault = await revParse(`refs/remotes/origin/${defaultBranchName}`, { cwd });
-      await git(
-        [
-          'fetch',
-          '--no-write-fetch-head',
-          'origin',
-          `+refs/heads/${defaultBranchName}:refs/remotes/origin/${defaultBranchName}`,
-        ],
-        { cwd, timeoutMs: FETCH_TIMEOUT_MS },
-      );
-      const afterDefault = await revParse(`refs/remotes/origin/${defaultBranchName}`, { cwd });
-      if (beforeDefault !== afterDefault) defaultMoved = true;
-
-      if (review.prNumber !== null) {
-        const prRef = `refs/review/pr/${review.id}`;
-        const beforePr = await revParse(prRef, { cwd });
-        const pullHead = this.#forge.pullHeadRef(review.prNumber);
-        if (pullHead !== null) {
-          await git(['fetch', '--no-write-fetch-head', 'origin', `+${pullHead}:${prRef}`], {
-            cwd,
-            timeoutMs: FETCH_TIMEOUT_MS,
-          });
-        }
-        const afterPr = await revParse(prRef, { cwd });
-        if (beforePr !== afterPr) prMoved = true;
-        if (await this.#pinMergedPrBase(review.id, review.prNumber, afterPr, cwd)) prMoved = true;
-        if (this.#forgeMerged && !wasForgeMerged) mergedNow = true;
-      }
-
-      if (review.branch !== null && (await revParse(`refs/heads/${review.branch}`, { cwd })) === null) {
-        const remoteBranchRef = `refs/remotes/origin/${review.branch}`;
-        const beforeBranch = await revParse(remoteBranchRef, { cwd });
-        await git(
-          ['fetch', '--no-write-fetch-head', 'origin', `+refs/heads/${review.branch}:${remoteBranchRef}`],
-          { cwd, timeoutMs: FETCH_TIMEOUT_MS },
-        );
-        const afterBranch = await revParse(remoteBranchRef, { cwd });
-        if (beforeBranch !== afterBranch) branchMoved = true;
-      }
-    } catch {
-      return;
-    }
-    if (review.prNumber === null && review.branch !== null) {
-      await this.#detectPr(review.branch, cwd);
-    }
-    // `defaultMoved` invalidates every revision's shared merge-base; `prMoved`
-    // only invalidates the `pr` snapshot; `branchMoved` is a `head` input
-    // (rung c of the ladder), so it's marked as a `git` signal exactly like a
-    // local branch move would be picked up by the git watcher.
-    if (defaultMoved) this.#pendingSources.add('remote-default');
-    if (prMoved) this.#pendingSources.add('remote-pr');
-    if (branchMoved || mergedNow) this.#pendingSources.add('git');
-    if (defaultMoved || prMoved || branchMoved || mergedNow) this.#scheduleTick();
-  }
-
-  /**
-   * A review opened for an already-merged PR never had a non-empty diff, so
-   * no base was pinned and a merge-commit merge (head already inside
-   * `baseRef`) would show nothing. Once the forge reports the PR merged, ask the forge for the merge commit and, when
-   * head is an ancestor of a 2-parent merge commit, pin the merge-base of its
-   * first parent (the base before the merge) and head. Best-effort and
-   * attempted once; returns whether a pin was written.
-   */
-  async #pinMergedPrBase(reviewId: string, prNumber: number, prSha: string | null, cwd: string): Promise<boolean> {
-    if (this.#mergedBaseTried || prSha === null) return false;
-    try {
-      // Null until the forge says merged; asked again on every poll until then.
-      const merged = await this.#forge.viewMergedPrCommits(prNumber, { cwd });
-      if (merged === null) return false;
-      this.#forgeMerged = true;
-      this.#mergedBaseTried = true;
-      if ((await revParse(`refs/review/base/${reviewId}`, { cwd })) !== null) return false;
-      const { mergeCommit } = merged;
-      if ((await revParse(`${mergeCommit}^{commit}`, { cwd })) === null) {
-        await git(['fetch', '--no-write-fetch-head', 'origin', mergeCommit], { cwd, timeoutMs: FETCH_TIMEOUT_MS });
-      }
-      const parents = await git(['rev-list', '--parents', '-n', '1', mergeCommit], { cwd });
-      const fields = new TextDecoder().decode(parents.stdout).trim().split(/\s+/);
-      // `<commit> <parent1> <parent2>`: anything but a two-parent merge is a squash/rebase.
-      if (parents.exitCode !== 0 || fields.length !== 3) return false;
-      if ((await git(['merge-base', '--is-ancestor', prSha, mergeCommit], { cwd })).exitCode !== 0) return false;
-      const firstParent = fields[1];
-      if (firstParent === undefined) return false;
-      const base = (await baseMergeBase(firstParent, prSha, { cwd })) ?? firstParent;
-      await pinReviewBaseRef(reviewId, base, { cwd: this.#repo.rootPath });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Discover a PR for `branch` via the forge — checked at
-   * most once per `PR_DETECT_POLL_MS`, and never again once found, since
-   * `#remotePoll` only calls this while `review.prNumber` is still null.
-   */
-  async #detectPr(branch: string, cwd: string): Promise<void> {
-    const now = Date.now();
-    if (this.#lastPrCheckAt !== null && now - this.#lastPrCheckAt < PR_DETECT_POLL_MS) return;
-    this.#lastPrCheckAt = now;
-    const prNumber = await this.#forge.findOpenPrNumberForBranch(branch, { cwd });
-    if (prNumber === null || this.#disposed) return;
-    this.#review = await setPrNumber(this.#db, this.#review.id, prNumber);
-    this.#pendingSources.add('remote-pr');
-    this.#scheduleTick();
-  }
-
-  /**
-   * The `head` fallback ladder: try each rung in priority order and stop
-   * at the first that resolves, rather than the old single `refs/heads/
-   * <branch>` lookup that went dark for a branch that only ever existed on
-   * the remote (or that has since been deleted locally). Which rung answered
-   * is returned alongside the sha — never just the sha — because collapsing
-   * "resolved via the remote-tracking ref" and "resolved via the local
-   * branch" into one anonymous `head` is exactly the silent revision-meaning
-   * flip that must never happen.
-   *
-   *   a. attached worktree      -> HEAD
-   *   b. local branch tip       -> refs/heads/<branch>
-   *   c. remote-tracking tip    -> refs/remotes/origin/<branch>
-   *   d. the PR's head          -> refs/review/pr/<id> (PR reviews only)
-   *   e. the review's pinned sha
-   *   f. the review's own pin   -> refs/review/<id>
-   */
-  async #resolveHeadTarget(cwd: string): Promise<{ sha: string; source: HeadSource } | null> {
-    const review = this.#review;
-    const rungs: ReadonlyArray<{ ref: string; source: HeadSource } | null> = [
-      this.#attachedPath !== null ? { ref: 'HEAD', source: 'worktree' } : null,
-      review.branch !== null ? { ref: `refs/heads/${review.branch}`, source: 'local' } : null,
-      review.branch !== null ? { ref: `refs/remotes/origin/${review.branch}`, source: 'remote' } : null,
-      // A closed or merged PR's branch is usually deleted; the forge keeps
-      // the PR's head ref, which the remote poll fetches into this ref.
-      review.prNumber !== null ? { ref: `refs/review/pr/${review.id}`, source: 'pin' } : null,
-      review.pinnedSha !== null ? { ref: review.pinnedSha, source: 'pinned-sha' } : null,
-      { ref: `refs/review/${review.id}`, source: 'pin' },
-    ];
-    for (const rung of rungs) {
-      if (rung === null) continue;
-      const sha = await revParse(rung.ref, { cwd });
-      if (sha !== null) return { sha, source: rung.source };
-    }
-    return null;
-  }
-
   // --- the tick ---
 
   async #tickOnce(): Promise<void> {
@@ -671,6 +471,9 @@ export class ReviewEngine {
     // the base is the one case that must invalidate every revision even
     // though only one detector fired, because `merge-base(baseRef, ...)` is
     // shared across all three.
+    // What the forge last said (merged, the pre-merge base), as the repo poller stored it.
+    const forge: ForgeFacts = forgeFactsOf(pullFactsOf(await getReviewState(this.#db, review.id)));
+
     for (const rev of available) {
       const needsRebuild =
         rootChanged ||
@@ -679,71 +482,41 @@ export class ReviewEngine {
         (rev === 'working' && sources.has('root')) ||
         (rev === 'head' && sources.has('git')) ||
         // `head` falls back to the fetched PR ref once the branch is gone
-        // (rung d of the ladder), and the merged-PR base pin lands with it.
+        // (rung d of the ladder), and the forge's merged facts land with it.
         (rev === 'head' && review.prNumber !== null && sources.has('remote-pr')) ||
         (rev === 'pr' && sources.has('remote-pr'));
       if (!needsRebuild) continue;
 
-      // Resolve the ref to a commit, once, before anything reads it.
+      // Resolve the range to commits, once, before anything reads it.
       //
-      // Everything downstream has to agree on a single commit even if the ref
+      // Everything downstream has to agree on a single commit even if a ref
       // moves mid-tick, and `headSha` is what a later tick compares against to
       // decide whether head actually moved — a ref *name* would always compare
-      // equal to itself, so storing one silently disables that check.
-      let headSha: string | null;
+      // equal to itself, so storing one silently disables that check. The
+      // rule itself lives in `reviewState.ts`, shared with the repo poller.
+      let headSha: string;
+      let baseSha: string;
+      let headRange: ReviewRange | null = null;
       if (rev === 'head') {
-        // The fallback ladder: only give up on `head` (and `continue`,
-        // holding the last snapshot) once every rung below has come back
-        // empty.
-        const resolved = await this.#resolveHeadTarget(cwd);
-        if (resolved === null) continue;
-        headSha = resolved.sha;
-        this.#headSource = resolved.source;
-        // Keep `refs/review/<id>` pinned to the resolved commit so it
-        // survives the local branch being deleted later. Cheap:
-        // `update-ref` only runs when the sha actually moved, not every tick.
-        if (headSha !== this.#lastPinnedHeadSha) {
-          try {
-            await pinReviewRef(review.id, headSha, { cwd: this.#repo.rootPath });
-            this.#lastPinnedHeadSha = headSha;
-          } catch {
-            // Best-effort keepalive; a failed pin must not crash the tick.
-          }
-        }
+        // Only give up on `head` (and `continue`, holding the last snapshot)
+        // once every rung of the ladder has come back empty.
+        headRange = await resolveReviewRange({ repo: this.#repo, review, attachedPath: this.#attachedPath, forge });
+        if (headRange === null) continue;
+        headSha = headRange.headSha;
+        baseSha = headRange.baseSha;
+        this.#headSource = headRange.headSource;
+        this.#merged = headRange.merged;
+        await pinRange(this.#repo, review.id, headRange);
+      } else if (rev === 'pr') {
+        const prRange = await resolvePrRange({ review, cwd, forge });
+        if (prRange === null) continue;
+        headSha = prRange.headSha;
+        baseSha = prRange.baseSha;
       } else {
-        const targetRef = rev === 'pr' ? `refs/review/pr/${review.id}` : 'HEAD';
-        headSha = await revParse(targetRef, { cwd });
-        if (headSha === null) continue;
-      }
-
-      // No merge base means `baseRef` is unknown to this repo (a deleted or
-      // never-fetched branch): fall back to head, i.e. an empty diff, rather
-      // than showing the whole history as changed.
-      const mergeBaseSha = await baseMergeBase(review.baseRef, headSha, { cwd });
-      let baseSha = mergeBaseSha ?? headSha;
-
-      if (rev === 'head') {
-        // Merged: the branch no longer resolves and its tip is already in
-        // `baseRef`, so the merge-base is head itself and the diff would be
-        // empty. Fall back to the base pinned while the branch still had
-        // changes, so what got merged stays reviewable.
-        const branchGone = review.branch !== null && (this.#headSource === 'pinned-sha' || this.#headSource === 'pin');
-        this.#merged = (branchGone || this.#forgeMerged) && mergeBaseSha === headSha;
-        if (this.#merged) {
-          baseSha = (await revParse(`refs/review/base/${review.id}`, { cwd })) ?? baseSha;
-        } else if (mergeBaseSha !== null && mergeBaseSha !== headSha && mergeBaseSha !== this.#lastPinnedBaseSha) {
-          try {
-            await pinReviewBaseRef(review.id, mergeBaseSha, { cwd: this.#repo.rootPath });
-            this.#lastPinnedBaseSha = mergeBaseSha;
-          } catch {
-            // Best-effort, like the head pin above.
-          }
-        }
-      } else if (rev === 'pr' && mergeBaseSha === headSha) {
-        // The PR head is already inside `baseRef`: it was merged. Diff from
-        // the pinned base (set while it was open, or by `#pinMergedPrBase`)
-        // so the PR still shows what it changed.
-        baseSha = (await revParse(`refs/review/base/${review.id}`, { cwd })) ?? baseSha;
+        const resolved = await revParse('HEAD', { cwd });
+        if (resolved === null) continue;
+        headSha = resolved;
+        baseSha = (await resolveBase(review, headSha, cwd, forge)).baseSha;
       }
 
       // Build the file list (includes the one `hash-object` spawn for working).
@@ -759,6 +532,17 @@ export class ReviewEngine {
 
       this.#built.add(rev);
       const previous = this.#snapshots[rev];
+
+      // A local commit moves head before the next repo poll: store it now,
+      // from the list just built, so Homebase sees it at once too.
+      if (headRange !== null) {
+        await refreshReviewState(
+          { db: this.#db, onChanged: this.#onStateChanged },
+          this.#repo,
+          review,
+          { attachedPath: this.#attachedPath, built: { range: headRange, files: newFiles } },
+        );
+      }
 
       // The early-out: list identical -> stop. Zero UI work.
       const delta = diffFileLists(previous.files, newFiles);

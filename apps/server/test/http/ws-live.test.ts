@@ -173,13 +173,13 @@ async function createSecondReview(fixture: HttpFixture & { repo: { id: string } 
   });
 }
 
-describe('WS /api/events: subscribe', () => {
+describe('WS /api/events: watch', () => {
   test('sends files.changed then root.rebound for an existing review, and forwards later engine events', async () => {
     const fixture = await setupHttpWithReview();
     const server = startLiveServer(fixture);
     const client = await connect(server.wsUrl());
     try {
-      client.send({ type: 'subscribe', reviewId: fixture.review.id });
+      client.send({ type: 'watch', topic: `review:${fixture.review.id}` });
 
       const first = expectEventType((await client.next()) as ServerEvent, 'files.changed');
       expect(first.reviewId).toBe(fixture.review.id);
@@ -198,23 +198,17 @@ describe('WS /api/events: subscribe', () => {
     }
   });
 
-  test('subscribing again re-sends the current list (an upsert, not a no-op — it is how a tab switches revision)', async () => {
+  test('watching a topic already watched is a no-op', async () => {
     const fixture = await setupHttpWithReview();
     const server = startLiveServer(fixture);
     const client = await connect(server.wsUrl());
     try {
-      client.send({ type: 'subscribe', reviewId: fixture.review.id });
+      client.send({ type: 'watch', topic: `review:${fixture.review.id}` });
       await client.next(); // files.changed
       await client.next(); // root.rebound
 
-      client.send({ type: 'subscribe', reviewId: fixture.review.id });
-      // A repeat subscribe re-pushes rather than no-oping: it's the same
-      // message a tab sends to switch which revision it's watching, and the
-      // server can't tell "same revision again" from "a different one"
-      // without doing exactly this push (cheap — a cache read, not a tick).
-      const msg1 = (await client.next()) as ServerEvent;
-      const msg2 = (await client.next()) as ServerEvent;
-      expect([msg1.type, msg2.type].sort()).toEqual(['files.changed', 'root.rebound']);
+      client.send({ type: 'watch', topic: `review:${fixture.review.id}` });
+      await client.expectSilence();
     } finally {
       client.close();
       server.stop();
@@ -222,16 +216,16 @@ describe('WS /api/events: subscribe', () => {
     }
   });
 
-  test('subscribing to an unknown review id is silently ignored, and the connection keeps working', async () => {
+  test('watching an unknown review id is silently ignored, and the connection keeps working', async () => {
     const fixture = await setupHttpWithReview();
     const server = startLiveServer(fixture);
     const client = await connect(server.wsUrl());
     try {
-      client.send({ type: 'subscribe', reviewId: 'no-such-review' });
+      client.send({ type: 'watch', topic: `review:${'no-such-review'}` });
       await client.expectSilence();
 
       // The connection is still alive and can subscribe to a real review.
-      client.send({ type: 'subscribe', reviewId: fixture.review.id });
+      client.send({ type: 'watch', topic: `review:${fixture.review.id}` });
       const msg = (await client.next()) as ServerEvent;
       expect(msg.type).toBe('files.changed');
     } finally {
@@ -251,7 +245,7 @@ describe('WS /api/events: malformed messages are dropped, never crash the connec
       client.sendRaw('this is not json');
       await client.expectSilence();
 
-      client.send({ type: 'subscribe', reviewId: fixture.review.id });
+      client.send({ type: 'watch', topic: `review:${fixture.review.id}` });
       const msg = (await client.next()) as ServerEvent;
       expect(msg.type).toBe('files.changed');
     } finally {
@@ -267,10 +261,10 @@ describe('WS /api/events: malformed messages are dropped, never crash the connec
     const client = await connect(server.wsUrl());
     try {
       client.send({ type: 'bogus-type' });
-      client.send({ type: 'subscribe' }); // missing reviewId
+      client.send({ type: 'watch' }); // missing topic
       await client.expectSilence();
 
-      client.send({ type: 'subscribe', reviewId: fixture.review.id });
+      client.send({ type: 'watch', topic: `review:${fixture.review.id}` });
       const msg = (await client.next()) as ServerEvent;
       expect(msg.type).toBe('files.changed');
     } finally {
@@ -289,7 +283,7 @@ describe('WS /api/events: malformed messages are dropped, never crash the connec
       await client.expectSilence();
       expect(client.ws.readyState).toBe(WebSocket.OPEN);
 
-      client.send({ type: 'subscribe', reviewId: fixture.review.id });
+      client.send({ type: 'watch', topic: `review:${fixture.review.id}` });
       const msg = (await client.next()) as ServerEvent;
       expect(msg.type).toBe('files.changed');
     } finally {
@@ -309,7 +303,7 @@ describe('WS /api/events: malformed messages are dropped, never crash the connec
       bad.send({ type: 'nope' });
       bad.sendRaw(new Uint8Array([9, 9, 9]));
 
-      good.send({ type: 'subscribe', reviewId: fixture.review.id });
+      good.send({ type: 'watch', topic: `review:${fixture.review.id}` });
       const msg = (await good.next()) as ServerEvent;
       expect(msg.type).toBe('files.changed');
     } finally {
@@ -321,17 +315,17 @@ describe('WS /api/events: malformed messages are dropped, never crash the connec
   });
 });
 
-describe('WS /api/events: unsubscribe', () => {
-  test('detaches the listener; further events for that review are not forwarded', async () => {
+describe('WS /api/events: unwatch', () => {
+  test('stops forwarding; further events for that review are not sent', async () => {
     const fixture = await setupHttpWithReview();
     const server = startLiveServer(fixture);
     const client = await connect(server.wsUrl());
     try {
-      client.send({ type: 'subscribe', reviewId: fixture.review.id });
+      client.send({ type: 'watch', topic: `review:${fixture.review.id}` });
       await client.next(); // files.changed
       await client.next(); // root.rebound
 
-      client.send({ type: 'unsubscribe', reviewId: fixture.review.id });
+      client.send({ type: 'unwatch', topic: `review:${fixture.review.id}` });
 
       // 'unsubscribe' travels over the real socket asynchronously; wait for
       // it to actually land (subscriberCount back to 0) before dispatching,
@@ -354,25 +348,19 @@ describe('WS /api/events: unsubscribe', () => {
 });
 
 describe('WS /api/events: focus / blur / ping dispatch to the registry', () => {
-  test('focus and blur are forwarded to EngineRegistry with the message reviewId, and ping is a no-op', async () => {
+  test('focus is forwarded to EngineRegistry with the message reviewId; blur and ping are no-ops', async () => {
     const fixture = await setupHttpWithReview();
     const focusCalls: string[] = [];
-    const blurCalls: string[] = [];
     const originalFocus = fixture.registry.focus.bind(fixture.registry);
-    const originalBlur = fixture.registry.blur.bind(fixture.registry);
     fixture.registry.focus = async (reviewId: string) => {
       focusCalls.push(reviewId);
       await originalFocus(reviewId);
-    };
-    fixture.registry.blur = async (reviewId: string) => {
-      blurCalls.push(reviewId);
-      await originalBlur(reviewId);
     };
 
     const server = startLiveServer(fixture);
     const client = await connect(server.wsUrl());
     try {
-      client.send({ type: 'subscribe', reviewId: fixture.review.id });
+      client.send({ type: 'watch', topic: `review:${fixture.review.id}` });
       await client.next();
       await client.next();
 
@@ -380,48 +368,17 @@ describe('WS /api/events: focus / blur / ping dispatch to the registry', () => {
       client.send({ type: 'ping' });
       client.send({ type: 'blur', reviewId: fixture.review.id });
 
-      // Dispatch is async (awaits registry.focus/blur inside onMessage); poll briefly rather than sleep long.
+      // Dispatch is async (awaits registry.focus inside onMessage); poll briefly rather than sleep long.
       const deadline = Date.now() + 2000;
-      while ((focusCalls.length === 0 || blurCalls.length === 0) && Date.now() < deadline) {
+      while (focusCalls.length === 0 && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
 
       expect(focusCalls).toEqual([fixture.review.id]);
-      expect(blurCalls).toEqual([fixture.review.id]);
 
-      // ping produced no message and did not disturb the connection.
+      // ping and blur produced no message and did not disturb the connection.
       await client.expectSilence();
       expect(client.ws.readyState).toBe(WebSocket.OPEN);
-    } finally {
-      client.close();
-      server.stop();
-      await fixture.cleanup();
-    }
-  });
-
-  test('blur is still forwarded even when the review was never focused (matches onMessage: unconditional registry.blur call)', async () => {
-    const fixture = await setupHttpWithReview();
-    const blurCalls: string[] = [];
-    const originalBlur = fixture.registry.blur.bind(fixture.registry);
-    fixture.registry.blur = async (reviewId: string) => {
-      blurCalls.push(reviewId);
-      await originalBlur(reviewId);
-    };
-
-    const server = startLiveServer(fixture);
-    const client = await connect(server.wsUrl());
-    try {
-      client.send({ type: 'subscribe', reviewId: fixture.review.id });
-      await client.next();
-      await client.next();
-
-      client.send({ type: 'blur', reviewId: fixture.review.id });
-
-      const deadline = Date.now() + 2000;
-      while (blurCalls.length === 0 && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-      expect(blurCalls).toEqual([fixture.review.id]);
     } finally {
       client.close();
       server.stop();
@@ -431,19 +388,13 @@ describe('WS /api/events: focus / blur / ping dispatch to the registry', () => {
 });
 
 describe('WS /api/events: onClose cleanup', () => {
-  test('closing unsubscribes the connection and blurs its focused review, with no leaked subscriber state', async () => {
+  test('closing releases every review the connection watched, with no leaked subscriber state', async () => {
     const fixture = await setupHttpWithReview();
-    const blurCalls: string[] = [];
-    const originalBlur = fixture.registry.blur.bind(fixture.registry);
-    fixture.registry.blur = async (reviewId: string) => {
-      blurCalls.push(reviewId);
-      await originalBlur(reviewId);
-    };
 
     const server = startLiveServer(fixture);
     const client = await connect(server.wsUrl());
     try {
-      client.send({ type: 'subscribe', reviewId: fixture.review.id });
+      client.send({ type: 'watch', topic: `review:${fixture.review.id}` });
       await client.next();
       await client.next();
       client.send({ type: 'focus', reviewId: fixture.review.id });
@@ -466,14 +417,13 @@ describe('WS /api/events: onClose cleanup', () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
       expect(engine?.subscriberCount).toBe(0);
-      expect(blurCalls).toEqual([fixture.review.id]); // onClose auto-blurs the focused review
     } finally {
       server.stop();
       await fixture.cleanup();
     }
   });
 
-  test('repeated connect/subscribe/disconnect cycles do not leak subscriber entries', async () => {
+  test('repeated connect/watch/disconnect cycles do not leak subscriber entries', async () => {
     const fixture = await setupHttpWithReview();
     const server = startLiveServer(fixture);
     try {
@@ -482,7 +432,7 @@ describe('WS /api/events: onClose cleanup', () => {
 
       for (let i = 0; i < 5; i++) {
         const client = await connect(server.wsUrl());
-        client.send({ type: 'subscribe', reviewId: fixture.review.id });
+        client.send({ type: 'watch', topic: `review:${fixture.review.id}` });
         await client.next();
         await client.next();
         client.close();
@@ -526,12 +476,12 @@ describe('WS /api/events: auth on the real upgrade', () => {
     }
   });
 
-  test('a connection with the correct ?token= opens and can subscribe', async () => {
+  test('a connection with the correct ?token= opens and can watch', async () => {
     const fixture = await setupHttpWithReview();
     const server = startLiveServer(fixture);
     const client = await connect(server.wsUrl({ token: fixture.token }));
     try {
-      client.send({ type: 'subscribe', reviewId: fixture.review.id });
+      client.send({ type: 'watch', topic: `review:${fixture.review.id}` });
       const msg = (await client.next()) as ServerEvent;
       expect(msg.type).toBe('files.changed');
     } finally {
@@ -543,18 +493,18 @@ describe('WS /api/events: auth on the real upgrade', () => {
 });
 
 describe('WS /api/events: fan-out isolation', () => {
-  test('two clients subscribed to different reviews each receive only their own review events', async () => {
+  test('two clients watching different reviews each receive only their own review events', async () => {
     const fixture = await setupHttpWithReview();
     const review2 = await createSecondReview(fixture);
     const server = startLiveServer(fixture);
     const clientA = await connect(server.wsUrl());
     const clientB = await connect(server.wsUrl());
     try {
-      clientA.send({ type: 'subscribe', reviewId: fixture.review.id });
+      clientA.send({ type: 'watch', topic: `review:${fixture.review.id}` });
       await clientA.next(); // files.changed
       await clientA.next(); // root.rebound
 
-      clientB.send({ type: 'subscribe', reviewId: review2.id });
+      clientB.send({ type: 'watch', topic: `review:${review2.id}` });
       await clientB.next(); // files.changed
       await clientB.next(); // root.rebound
 

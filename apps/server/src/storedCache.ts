@@ -1,12 +1,13 @@
 /**
  * Stale-while-revalidate, persisted in `cache_entry` so it survives
- * restarts — for anything Homebase shows that comes from git or `gh`. The
- * screen should never wait on either when any earlier answer exists.
+ * restarts — for the few answers that aren't review or repo state (who `me`
+ * is). Review and repo state is the engine's (`engine/reviewState.ts`,
+ * `engine/repoPoller.ts`), stored in its own tables and never cached here.
  *
  * - Fresh (younger than `staleAfterMs`): answered from memory.
  * - Stale, or only on disk: answered at once, and one background load is
  *   started; when it lands with a different value, `onUpdated` fires so the
- *   caller can push `reviews.changed` and screens refetch.
+ *   caller can publish `topic.changed` and screens re-read.
  * - Nothing stored yet, or `refresh: true`: waits for the load.
  * - Loads are deduped per key (a `refresh` joins one already in flight) and
  *   capped at `concurrency` per cache, so a hundred stale reviews don't
@@ -17,6 +18,7 @@
  *   old rows unreachable instead of misread; `startCacheEntryPrune` deletes
  *   them, along with rows for reviews/repos nobody asks about anymore.
  */
+import PQueue from 'p-queue';
 import { getCacheEntry, pruneCacheEntries, putCacheEntry, type Db } from './db/index.ts';
 
 export type StoredCacheDeps = {
@@ -48,26 +50,6 @@ type Entry<T> = {
   json: string;
 };
 
-/**
- * At most `max` tasks at once. A finishing task hands its slot straight to
- * the next waiter, so a caller arriving in between can't take it too.
- */
-function limiter(max: number): <R>(task: () => Promise<R>) => Promise<R> {
-  let active = 0;
-  const waiting: Array<() => void> = [];
-  return async (task) => {
-    if (active >= max) await new Promise<void>((resolve) => waiting.push(resolve));
-    else active += 1;
-    try {
-      return await task();
-    } finally {
-      const next = waiting.shift();
-      if (next !== undefined) next();
-      else active -= 1;
-    }
-  };
-}
-
 /** Every cache made by `createStoredCache`, so the settings page's "Clear caches" can reach them all. */
 const allCaches = new Set<StoredCache<unknown>>();
 
@@ -79,7 +61,7 @@ export function clearAllStoredCaches(): void {
 export function createStoredCache<T>(options: StoredCacheOptions<T>): StoredCache<T> {
   const memory = new Map<string, Entry<T>>();
   const inFlight = new Map<string, Promise<T>>();
-  const limit = limiter(options.concurrency ?? Number.POSITIVE_INFINITY);
+  const queue = new PQueue({ concurrency: options.concurrency ?? Number.POSITIVE_INFINITY });
   const storageKey = (key: string) => `${options.namespace}@${String(options.version)}:${key}`;
 
   /** The memory entry, else the stored row (loaded into memory), else null. */
@@ -104,7 +86,7 @@ export function createStoredCache<T>(options: StoredCacheOptions<T>): StoredCach
     const existing = inFlight.get(key);
     if (existing !== undefined) return existing;
 
-    const promise = limit(async () => {
+    const promise = queue.add(async () => {
       const value = await load();
       const fetchedAt = Date.now();
       const previous = memory.get(key);

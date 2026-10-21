@@ -118,6 +118,11 @@ export async function setPrNumber(db: Db, id: string, prNumber: number | null): 
   return update(db, id, { prNumber });
 }
 
+/** The PR's current target branch, as the forge reports it (a retargeted PR moves the review's base). */
+export async function setBaseRef(db: Db, id: string, baseRef: string): Promise<Review> {
+  return update(db, id, { baseRef });
+}
+
 export async function setLastSeenPrSha(db: Db, id: string, lastSeenPrSha: string | null): Promise<Review> {
   return update(db, id, { lastSeenPrSha });
 }

@@ -1,12 +1,20 @@
 /**
  * The WS contract (Transport).
  *
- * The server sends the *current* file list; the client set-diffs it against the
- * one it holds. There is no delta protocol, no snapshot handshake, and no
- * version negotiation — reconnect is "send me the list".
+ * Clients `watch` the topics they show and receive only those topics' events:
+ *
+ *   home          — anything a Homebase card shows (`topic.changed`)
+ *   repo:<id>     — the repo's open pulls (`topic.changed`)
+ *   review:<id>   — one review: its live file list and state, threads, runs,
+ *                   and `topic.changed` when the engine's stored state moved
+ *
+ * `topic.changed` carries no data: the client re-reads through the same API a
+ * fresh load uses. The review window's live events still carry their payload
+ * (the *current* file list, which the client set-diffs against the one it
+ * holds). Reconnect is "watch again".
  */
 import { z } from 'zod';
-import { divergenceSchema, fileListSchema, revisionSchema, reviewStateSchema } from './domain/files.ts';
+import { divergenceSchema, fileListSchema, reviewStateSchema } from './domain/files.ts';
 import { agentRunSchema, threadSchema } from './domain/review.ts';
 
 export const serverEventSchema = z.discriminatedUnion('type', [
@@ -74,36 +82,41 @@ export const serverEventSchema = z.discriminatedUnion('type', [
     reason: z.string(),
   }),
   /**
-   * Something Homebase shows changed (a review created, archived, commented
-   * on, run, ...) — sent to connections that sent `subscribeHome`. Carries
-   * no data: Homebase just refetches its summaries. `reviewId` is set when
-   * the change is known to concern one review.
+   * What `topic` covers changed. Carries no data: the client re-reads it.
+   * `version` only ever grows per topic (until the server restarts), so a
+   * client can skip one older than an event it already handled.
    */
   z.object({
-    type: z.literal('reviews.changed'),
-    reviewId: z.string().nullable(),
+    type: z.literal('topic.changed'),
+    topic: z.string(),
+    version: z.number().int(),
   }),
 ]);
 export type ServerEvent = z.infer<typeof serverEventSchema>;
 export type ServerEventType = ServerEvent['type'];
 
+/** `home`, `repo:<id>` or `review:<id>`. */
+export const topicSchema = z.union([
+  z.literal('home'),
+  z.string().regex(/^repo:.+$/),
+  z.string().regex(/^review:.+$/),
+]);
+export type Topic = z.infer<typeof topicSchema>;
+
+export const reviewTopic = (reviewId: string): Topic => `review:${reviewId}`;
+export const repoTopic = (repoId: string): Topic => `repo:${repoId}`;
+
 export const clientMessageSchema = z.discriminatedUnion('type', [
   /**
-   * Start receiving events for a review, and get its file list back. `revision`
-   * scopes which revision this connection cares about: `files.changed` for any
-   * other revision is filtered out server-side, so two tabs on the same review
-   * can each watch a different revision independently. Sending `subscribe`
-   * again for a review already subscribed to just updates the revision filter
-   * (used when switching what this tab is looking at).
+   * Start receiving `topic`'s events. Watching `review:<id>` also keeps the
+   * review's live worker running and sends its current file list and state
+   * back at once. Watching again is a no-op.
    */
-  z.object({ type: z.literal('subscribe'), reviewId: z.string(), revision: revisionSchema.optional() }),
-  z.object({ type: z.literal('unsubscribe'), reviewId: z.string() }),
-  /** Window focus: the engine ticks and refetches the remote. */
+  z.object({ type: z.literal('watch'), topic: topicSchema }),
+  z.object({ type: z.literal('unwatch'), topic: topicSchema }),
+  /** The review's window gained focus: the engine re-polls its repo now. */
   z.object({ type: z.literal('focus'), reviewId: z.string() }),
   z.object({ type: z.literal('blur'), reviewId: z.string() }),
   z.object({ type: z.literal('ping') }),
-  /** Start/stop receiving `reviews.changed` (Homebase's live refresh). */
-  z.object({ type: z.literal('subscribeHome') }),
-  z.object({ type: z.literal('unsubscribeHome') }),
 ]);
 export type ClientMessage = z.infer<typeof clientMessageSchema>;

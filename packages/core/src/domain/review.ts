@@ -91,11 +91,13 @@ export const reviewSummarySchema = z.object({
   headSha: z.string().nullable(),
   /** Committer date of `head`, unix seconds. */
   headCommittedAt: z.number().int().nullable(),
-  /** From the PR when one is known. */
+  /** From the PR when one is known, and only while the PR's head is the review's head (CI ran on what's shown). */
   ci: ciStatusSchema.nullable(),
   draft: z.boolean(),
   /** Agent comments created after the review was last opened (never opened → all of them). */
   unreadAgentReplies: z.number().int().nonnegative(),
+  /** Every file viewed at its current blob and no open threads: Homebase files it under "done". */
+  done: z.boolean(),
 });
 export type ReviewSummary = z.infer<typeof reviewSummarySchema>;
 
@@ -172,6 +174,8 @@ export const pullSchema = z.object({
   changedFiles: z.number().int().nonnegative().nullable(),
   /** Roll-up of `statusCheckRollup`; null when the PR has no checks. */
   ci: ciStatusSchema.nullable(),
+  /** The PR's head commit as the forge reports it (what `ci` ran on); null when not reported. */
+  headSha: z.string().nullable(),
   /** True when the local `gh` login is a requested reviewer (or, login unknown, when anyone is). */
   reviewRequested: z.boolean(),
   /** An existing review at `(repo, headRefName)`; filled by the server from the DB. */

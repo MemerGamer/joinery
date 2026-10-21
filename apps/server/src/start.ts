@@ -51,6 +51,10 @@ export async function startServer(): Promise<void> {
     );
   }
 
+  // Topics publish through the server; polling starts once they can.
+  registry.bus.attach(server);
+  await registry.pollers.start();
+
   console.log(`joinery ${layout.version} listening on http://${host}:${String(port)}`);
   console.log(`data dir: ${paths.root}`);
 

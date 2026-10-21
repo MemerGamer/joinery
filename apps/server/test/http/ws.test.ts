@@ -13,7 +13,7 @@
  * `fetch(req, server)` for a real connection — plain `app.fetch(request)`
  * (used everywhere else in this suite) leaves `c.env` without a `server`
  * and the upgrade throws `TypeError: c.env is not an Object` before
- * `onMessage` is ever reached. That dispatch — subscribe/unsubscribe/
+ * `onMessage` is ever reached. That dispatch — watch/unwatch/
  * focus/blur/ping through the registry, malformed-message resilience,
  * onClose cleanup, auth on a real upgrade, and fan-out isolation — is
  * covered in `ws-live.test.ts`, which stands up a throwaway `Bun.serve` on
@@ -60,8 +60,15 @@ describe('ws.ts: GET /api/events upgrade route is behind /api/* auth', () => {
 });
 
 describe('ws.ts: clientMessageSchema parses exactly what onMessage dispatches on', () => {
-  test('subscribe/unsubscribe/focus/blur all require a reviewId string', () => {
-    for (const type of ['subscribe', 'unsubscribe', 'focus', 'blur'] as const) {
+  test('watch/unwatch require a known topic; focus/blur require a reviewId string', () => {
+    for (const type of ['watch', 'unwatch'] as const) {
+      for (const topic of ['home', 'repo:r1', 'review:r1']) {
+        expect(clientMessageSchema.safeParse({ type, topic }).success).toBe(true);
+      }
+      expect(clientMessageSchema.safeParse({ type }).success).toBe(false);
+      expect(clientMessageSchema.safeParse({ type, topic: 'elsewhere' }).success).toBe(false);
+    }
+    for (const type of ['focus', 'blur'] as const) {
       expect(clientMessageSchema.safeParse({ type, reviewId: 'r1' }).success).toBe(true);
       expect(clientMessageSchema.safeParse({ type }).success).toBe(false);
       expect(clientMessageSchema.safeParse({ type, reviewId: 42 }).success).toBe(false);
@@ -97,7 +104,7 @@ describe('ws.ts: clientMessageSchema parses exactly what onMessage dispatches on
   });
 });
 
-// The onMessage/onClose dispatch itself (subscribe pushing files.changed/
-// root.rebound, unsubscribe detaching, focus/blur calling into
+// The onMessage/onClose dispatch itself (watching a review pushing
+// files.changed/root.rebound, unwatch detaching, focus calling into
 // EngineRegistry, malformed messages being dropped without closing the
 // connection, and onClose cleanup) is covered for real in ws-live.test.ts.

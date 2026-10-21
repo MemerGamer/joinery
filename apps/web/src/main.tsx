@@ -1,7 +1,9 @@
+import { QueryClientProvider } from '@tanstack/react-query';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App.tsx';
 import { setAuthToken } from './lib/apiClient.ts';
+import { queryClient } from './lib/liveQueries.ts';
 import './styles/index.css';
 
 declare global {
@@ -22,6 +24,8 @@ if (container === null) throw new Error('#root element missing');
 
 createRoot(container).render(
   <StrictMode>
-    <App />
+    <QueryClientProvider client={queryClient}>
+      <App />
+    </QueryClientProvider>
   </StrictMode>,
 );

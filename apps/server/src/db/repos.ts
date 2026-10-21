@@ -118,6 +118,11 @@ export async function getRepoByPath(db: Db, rootPath: string): Promise<Repo | nu
   return row === undefined ? null : withForge(db, toRepo(row));
 }
 
+/** The remote's default branch moved (renamed `master` → `main`, ...): branch-only reviews diff against the new one. */
+export async function setDefaultBranch(db: Db, id: string, defaultBranch: string): Promise<void> {
+  await db.update(repo).set({ defaultBranch }).where(eq(repo.id, id));
+}
+
 /** Delete a repo row; its reviews and agent worktree rows cascade. Disk and git cleanup is the caller's. */
 export async function deleteRepo(db: Db, id: string): Promise<void> {
   await db.delete(repo).where(eq(repo.id, id));
