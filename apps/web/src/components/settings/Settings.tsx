@@ -5,7 +5,8 @@
  *  - Appearance: the dark and the light diff theme, picked separately,
  *    each over a sample drawn in it (the same two slots ⌘K's `#` tabs fill).
  *  - Repositories: what's registered, its forge, and removing one.
- *  - Integrations: are `git` and `claude` there, and can each forge host be asked.
+ *  - Integrations: are `git` and `claude` there, can each forge host be asked,
+ *    and which language server answers hover/peek in diffs.
  *  - Full Disk Access: the macOS grant for the installed server.
  *  - Data: where it lives and how big, clearing the caches, and the
  *    archived reviews, which nothing else lists, to reopen or delete.
@@ -331,6 +332,11 @@ export function hostHint(cli: 'gh' | 'glab', host: string, reason: Integrations[
   return undefined;
 }
 
+const LSP_LABEL: Record<Integrations['lsp'][number]['language'], { title: string; install: string }> = {
+  typescript: { title: 'TypeScript language server', install: 'npm i -g tsrs, or a repo’s own typescript@7' },
+  php: { title: 'PHP language server', install: 'brew install phpantom-lsp' },
+};
+
 function IntegrationsPanel(): React.JSX.Element {
   const { data, error, loading, reload } = useLoad(() => callApi('integrations'));
   return (
@@ -368,6 +374,19 @@ function IntegrationsPanel(): React.JSX.Element {
           {data.clis.map((c) => (
             <Row key={c.cli} title={<code>{c.cli}</code>} detail={c.path ?? (c.cli === 'gh' ? 'Needed for GitHub pull requests' : 'Needed for GitLab merge requests')}>
               {c.path !== null ? <Chip tone="success" icon={<Check size={11} strokeWidth={2.5} />}>Installed</Chip> : <Chip>Not installed</Chip>}
+            </Row>
+          ))}
+          {data.lsp.map((l) => (
+            <Row
+              key={l.language}
+              title={LSP_LABEL[l.language].title}
+              detail={
+                l.path !== null
+                  ? `${l.server ?? ''} · ${l.path}`
+                  : `Hover and peek definition in diffs: ${LSP_LABEL[l.language].install}`
+              }
+            >
+              {l.path !== null ? <Chip tone="success" icon={<Check size={11} strokeWidth={2.5} />}>Installed</Chip> : <Chip>Not installed</Chip>}
             </Row>
           ))}
           {data.hosts.map((h) => (

@@ -27,6 +27,10 @@ const poolOptions = {
 
 const highlighterOptions = {
   theme: DEFAULT_DIFF_THEME,
+  // Marks every token with its character offset (`data-char`), which is what
+  // makes `onTokenEnter`/`onTokenClick` fire: hover and peek (CodeIntel.tsx).
+  // Pool-owned like the theme, so it has to be set here, not per CodeView.
+  useTokenTransformer: true,
   lineDiffType: 'word-alt' as LineDiffTypes,
   tokenizeMaxLineLength: 3000,
 };
