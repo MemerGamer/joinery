@@ -189,11 +189,11 @@ function useRead<T>(read: () => Promise<T>): { data: T | null; loading: boolean;
 const SHOT_MS = 10_000;
 
 /**
- * Screenshots from the seeded demo (scripts/demo), cropped to the part each
- * one is about, in both modes: the shot matches the app's light/dark. Each
- * sentence of `body` gets its own line.
+ * Screenshots of a seeded demo instance, cropped to the part each one is
+ * about, in both modes (`public/onboarding/<name>-<light|dark>.jpg`): the
+ * shot matches the app's light/dark. Each sentence of `body` gets its own line.
  */
-const SHOTS: { title: string; body: string[]; name: string; ext: 'jpg' | 'png' }[] = [
+const SHOTS: { title: string; body: string[]; name: string }[] = [
   {
     title: 'Review code in an order\nthat makes sense',
     body: [
@@ -201,7 +201,6 @@ const SHOTS: { title: string; body: string[]; name: string; ext: 'jpg' | 'png' }
       'Focus and Skim badges and short notes tell you where to spend your attention.',
     ],
     name: 'review',
-    ext: 'jpg',
   },
   {
     title: 'Chat about changes locally',
@@ -210,7 +209,6 @@ const SHOTS: { title: string; body: string[]; name: string; ext: 'jpg' | 'png' }
       'Claude Code replies in the thread, and nothing is sent upstream.',
     ],
     name: 'thread',
-    ext: 'jpg',
   },
   {
     title: 'Keep up with work',
@@ -219,7 +217,6 @@ const SHOTS: { title: string; body: string[]; name: string; ext: 'jpg' | 'png' }
       'Filters and sorting keep it down to what matters today.',
     ],
     name: 'homebase',
-    ext: 'png',
   },
 ];
 
@@ -227,8 +224,6 @@ function WelcomeStep(): React.JSX.Element {
   const { chromeMode } = useTheme();
   const [shot, setShot] = useState(0);
   const [paused, setPaused] = useState(false);
-  // Shots whose file for this mode failed to load; they fall back to the dark one.
-  const [missing, setMissing] = useState<ReadonlySet<string>>(new Set());
 
   return (
     <>
@@ -301,10 +296,7 @@ function WelcomeStep(): React.JSX.Element {
           {SHOTS.map((s, i) => (
             <img
               key={s.name}
-              src={`/onboarding/${s.name}-${missing.has(s.name) ? 'dark' : chromeMode}.${s.ext}`}
-              onError={() => {
-                if (chromeMode !== 'dark') setMissing((prev) => new Set(prev).add(s.name));
-              }}
+              src={`/onboarding/${s.name}-${chromeMode}.jpg`}
               alt={i === shot ? s.title : ''}
               aria-hidden={i !== shot}
               draggable={false}

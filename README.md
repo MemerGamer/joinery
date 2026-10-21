@@ -41,7 +41,10 @@ One row per branch across your registered repos, covering both local branches
 and open PRs. Each row shows size, viewed progress, and what is waiting on you.
 
 <p align="center">
-  <img src="docs/media/homebase.png" alt="Homebase dashboard" width="860" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/homebase-dark.jpg" />
+    <img src="docs/media/homebase-light.jpg" alt="Homebase dashboard" width="860" />
+  </picture>
 </p>
 
 ### Review page
@@ -50,7 +53,10 @@ Three panes: the changed files, the diffs with inline threads, and the reading
 order. Mark files as viewed as you go.
 
 <p align="center">
-  <img src="docs/media/review.png" alt="Review page with file tree, diff and reading order" width="860" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/review-dark.png" />
+    <img src="docs/media/review-light.png" alt="Review page with file tree, diff and reading order" width="860" />
+  </picture>
 </p>
 
 ### Agent threads
@@ -59,7 +65,10 @@ Comment on a line, then ask Claude Code to answer. Replies land in the same
 thread, and you can reply back or resolve it.
 
 <p align="center">
-  <img src="docs/media/thread.png" alt="Comment thread with agent replies and the Ask model picker" width="860" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/thread-dark.png" />
+    <img src="docs/media/thread-light.png" alt="Comment thread with agent replies and the Ask model picker" width="860" />
+  </picture>
 </p>
 
 ### Explore
@@ -67,7 +76,10 @@ thread, and you can reply back or resolve it.
 Search every branch and PR across your repos.
 
 <p align="center">
-  <img src="docs/media/explore.png" alt="Explore section" width="860" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/explore-dark.png" />
+    <img src="docs/media/explore-light.png" alt="Explore section" width="860" />
+  </picture>
 </p>
 
 ## Install
@@ -113,15 +125,6 @@ Your data lives in `~/.joinery/data`, so keep it if you plan to reinstall.
 bun install
 bun run dev      # server + web
 bun run check    # typecheck + tests
-```
-
-To try Joinery against a seeded demo instance (fake repos, no network or Claude
-calls) or to regenerate the README media, see
-[scripts/demo/README.md](scripts/demo/README.md):
-
-```sh
-bun scripts/demo/seed.ts      # build the demo data
-bun scripts/demo/capture.ts   # regenerate docs/media
 ```
 
 ## Releasing
