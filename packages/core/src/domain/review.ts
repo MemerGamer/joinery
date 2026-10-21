@@ -96,7 +96,7 @@ export const reviewSummarySchema = z.object({
   draft: z.boolean(),
   /** Agent comments created after the review was last opened (never opened → all of them). */
   unreadAgentReplies: z.number().int().nonnegative(),
-  /** Every file viewed at its current blob and no open threads: Homebase files it under "done". */
+  /** Homebase files it under "done" (Cleared): its PR is merged or closed, or every file is viewed at its current blob with no open threads. */
   done: z.boolean(),
 });
 export type ReviewSummary = z.infer<typeof reviewSummarySchema>;

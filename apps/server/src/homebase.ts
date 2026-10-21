@@ -113,7 +113,11 @@ export async function buildReviewSummaries(db: Db, reviews: readonly Review[]): 
       ci: ciOf(state),
       draft: pull?.state === 'draft',
       viewedFiles,
-      done: state.filesTotal > 0 && viewedFiles >= state.filesTotal && base.openThreads === 0,
+      // A merged or closed PR is over: cleared whatever is left unviewed or open on it.
+      done:
+        pull?.state === 'merged' ||
+        pull?.state === 'closed' ||
+        (state.filesTotal > 0 && viewedFiles >= state.filesTotal && base.openThreads === 0),
     };
   });
 }

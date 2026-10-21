@@ -186,8 +186,12 @@ body,
    * with the content. `overscroll-behavior` alone stops the *chaining* of
    * scroll into the document; `overflow: hidden` on top of it removes the
    * document's own scroll position entirely, since it should never move.
+   *
+   * Vertical only: horizontal overscroll on the document is what drives the
+   * browser's two-finger swipe back/forward, which stays on. (A wide diff
+   * scrolled to its left edge then swipes back, as on any web page.)
    */
-  overscroll-behavior: none;
+  overscroll-behavior-y: none;
   overflow: hidden;
 }
 
