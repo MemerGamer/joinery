@@ -11,6 +11,7 @@ import {
   filePatchSchema,
 } from './domain/diff.ts';
 import { fileListSchema, revisionSchema, reviewStateSchema } from './domain/files.ts';
+import { lspDefinitionSchema, lspHoverSchema, lspLanguageSchema, lspPositionQuerySchema, lspServerIdSchema } from './domain/lsp.ts';
 import {
   agentRunSchema,
   branchSchema,
@@ -204,6 +205,10 @@ export const integrationsSchema = z.object({
       repos: z.number().int().nonnegative(),
       reason: forgeUnavailableReasonSchema.exclude(['unsupported-host']).nullable(),
     }),
+  ),
+  /** The language server hover/peek would start per language; null server when none is installed. */
+  lsp: z.array(
+    z.object({ language: lspLanguageSchema, server: lspServerIdSchema.nullable(), path: z.string().nullable() }),
   ),
 });
 export type Integrations = z.infer<typeof integrationsSchema>;
@@ -486,6 +491,20 @@ export const api = {
     body: undefined,
     query: z.object({ path: z.string().min(1), rev: revisionSchema.optional() }),
     response: z.object({ contents: fileContentsSchema }),
+  }),
+  getHover: def({
+    method: 'GET',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/lsp/hover`,
+    body: undefined,
+    query: lspPositionQuerySchema,
+    response: z.object({ hover: lspHoverSchema.nullable() }),
+  }),
+  getDefinition: def({
+    method: 'GET',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/lsp/definition`,
+    body: undefined,
+    query: lspPositionQuerySchema,
+    response: z.object({ definition: lspDefinitionSchema.nullable() }),
   }),
   getReadingOrder: def({
     method: 'GET',

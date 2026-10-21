@@ -19,6 +19,7 @@ import {
   searchPullsQuerySchema,
   versionQuerySchema,
   listReviewsQuerySchema,
+  lspPositionQuerySchema,
   markViewedBodySchema,
   readingOrderPlanSchema,
   replyBodySchema,
@@ -94,6 +95,7 @@ import { projectThreads } from '../engine/threadProjection.ts';
 import { cancelRun, generateReadingOrder, requestThreadReply } from '../agent/runs.ts';
 import type { Invoke } from '../agent/tools.ts';
 import { resolveRunCwd } from '../agent/worktree.ts';
+import { lsp, type LspTarget } from '../lsp/index.ts';
 import { badRequest, conflict, notFound, pathError } from './errors.ts';
 import { parseBody, parseQuery } from './validate.ts';
 
@@ -511,6 +513,57 @@ export function buildRoutes(deps: RoutesDeps): Hono {
       catFile: engine.getCatFile(),
     });
     return c.json({ contents });
+  });
+
+  // --- language intelligence ---
+
+  /**
+   * Where a hover/peek lands: the head side of the review's current revision.
+   * The text handed to the language server is that side's blob (the disk for
+   * `working`), so a `head`/`pr` review isn't answered from a different file.
+   */
+  async function lspTarget(id: string, query: z.infer<typeof lspPositionQuerySchema>, signal: AbortSignal) {
+    const engine = await requireEngine(deps, id);
+    const renderCtx = engine.getRenderContext();
+    const files = engine.getFileList().files;
+    const entry = files.find((f) => f.path === query.path);
+    if (entry === undefined) throw notFound(`no diff entry for path "${query.path}"`);
+    const target: LspTarget | null =
+      entry.binary || entry.newBlob === NULL_BLOB
+        ? null
+        : {
+            root: renderCtx.cwd,
+            path: entry.path,
+            contentKey: entry.newBlob,
+            loadText: async () =>
+              (
+                await getFileContents({
+                  cwd: renderCtx.cwd,
+                  revision: renderCtx.revision,
+                  path: entry.path,
+                  oldBlob: NULL_BLOB,
+                  newBlob: entry.newBlob,
+                  catFile: engine.getCatFile(),
+                })
+              ).newContents,
+            line: query.line,
+            character: query.character,
+            signal,
+          };
+    const changed = new Set(files.filter((f) => f.status !== 'deleted').map((f) => f.path));
+    return { target, inReview: (path: string) => changed.has(path) };
+  }
+
+  app.get('/api/reviews/:id/lsp/hover', async (c) => {
+    const query = parseQuery(lspPositionQuerySchema, c);
+    const { target } = await lspTarget(c.req.param('id'), query, c.req.raw.signal);
+    return c.json({ hover: target === null ? null : await lsp.hover(target) });
+  });
+
+  app.get('/api/reviews/:id/lsp/definition', async (c) => {
+    const query = parseQuery(lspPositionQuerySchema, c);
+    const { target, inReview } = await lspTarget(c.req.param('id'), query, c.req.raw.signal);
+    return c.json({ definition: target === null ? null : await lsp.definition(target, inReview) });
   });
 
   // --- reading order ---
