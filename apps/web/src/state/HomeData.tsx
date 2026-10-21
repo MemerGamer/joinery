@@ -111,6 +111,9 @@ function errorMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback;
 }
 
+/** Set once the first full snapshot is in; the query cache outlives every screen, and so does this. */
+let everLoaded = false;
+
 // --- action errors: the one bit of state that isn't a query ---
 
 let actionError: string | null = null;
@@ -297,7 +300,7 @@ export function useHomeData(): HomeSnapshot & HomeActions {
   const reviewsQuery = useQuery({ queryKey: queryKeys.reviews, queryFn: () => callApi('listReviews') });
   const repos = useMemo(() => reposQuery.data?.repos ?? [], [reposQuery.data]);
   const combinePulls = useCallback(
-    (results: ReadonlyArray<{ data: RepoPulls | undefined; isFetching: boolean }>) => {
+    (results: ReadonlyArray<{ data: RepoPulls | undefined; isFetching: boolean; isPending: boolean }>) => {
       const pullsByRepo = new Map<string, Pull[]>();
       const pullsAvailable = new Map<string, boolean>();
       const pullsNotice = new Map<string, ForgeNotice>();
@@ -308,11 +311,17 @@ export function useHomeData(): HomeSnapshot & HomeActions {
         pullsAvailable.set(repo.id, data.available);
         if (data.notice !== null) pullsNotice.set(repo.id, data.notice);
       });
-      return { pullsByRepo, pullsAvailable, pullsNotice, fetching: results.some((r) => r.isFetching) };
+      return {
+        pullsByRepo,
+        pullsAvailable,
+        pullsNotice,
+        fetching: results.some((r) => r.isFetching),
+        pending: results.some((r) => r.isPending),
+      };
     },
     [repos],
   );
-  const { fetching: pullsFetching, ...pulls } = useQueries({
+  const { fetching: pullsFetching, pending: pullsPending, ...pulls } = useQueries({
     queries: repos.map((repo) => ({ queryKey: queryKeys.pulls(repo.id), queryFn: () => loadPulls(repo, false) })),
     combine: combinePulls,
   });
@@ -339,7 +348,13 @@ export function useHomeData(): HomeSnapshot & HomeActions {
     return { reviews, drafts };
   }, [reviewsQuery.data, repos]);
 
-  const loading = reposQuery.isPending || reviewsQuery.isPending;
+  // The first load shows everything at once, as one snapshot: Homebase only
+  // counts as loaded once repos, reviews, `me` and every repo's pulls are in,
+  // so it never renders (or starts onboarding) from a half-loaded state.
+  // After that, a repo added later loads its pulls without blanking the screen.
+  const complete = !reposQuery.isPending && !reviewsQuery.isPending && !meQuery.isPending && !pullsPending;
+  if (complete) everLoaded = true;
+  const loading = !everLoaded && !complete;
   const fetching = reposQuery.isFetching || reviewsQuery.isFetching || pullsFetching;
   const queryError = reposQuery.error ?? reviewsQuery.error;
 
@@ -351,7 +366,7 @@ export function useHomeData(): HomeSnapshot & HomeActions {
     loading,
     refreshing: !loading && fetching,
     error: error ?? (queryError === null ? null : errorMessage(queryError, 'Failed to load')),
-    lastLoadedAt: reviewsQuery.dataUpdatedAt === 0 ? null : reviewsQuery.dataUpdatedAt,
+    lastLoadedAt: everLoaded ? reviewsQuery.dataUpdatedAt : null,
     ...actions,
   };
 }

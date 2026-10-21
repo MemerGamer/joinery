@@ -8,6 +8,7 @@ import { ReviewProvider, useReview } from '../state/ReviewContext.tsx';
 import { useReviewShortcuts } from '../state/useReviewShortcuts.ts';
 import { useGlobalKeymap } from '../lib/keymap.ts';
 import { useResizableWidth } from '../lib/useResizableWidth.ts';
+import { useScrollbarWidth } from '../lib/scrollbarWidth.ts';
 import { goHomebase } from '../lib/router.ts';
 import { CommandPalette } from './CommandPalette.tsx';
 import { DivergenceBanner } from './DivergenceBanner.tsx';
@@ -41,6 +42,7 @@ function ReviewWindowInner(): React.JSX.Element {
   const closeHelp = useCallback(() => setHelpOpen(false), []);
   const shortcuts = useReviewShortcuts();
   const pull = useReviewPull(review.review?.id);
+  const scrollbarWidth = useScrollbarWidth();
 
   // Tab title: `#123 Title` for a PR, else the branch (or pinned sha).
   const tabTitle =
@@ -138,9 +140,16 @@ function ReviewWindowInner(): React.JSX.Element {
             <ResizeHandle side="right" aria-label="Resize file tree panel" {...leftPanel.handleProps} />
           </div>
         )}
-        {/* Side panels sit 10px from the diffs (8px gap + 2px). The 8px scrollbar is pulled into the right seam (-mr-1.5) so it doesn't add to it. */}
+        {/*
+         * Side panels sit 10px from the diffs (8px gap + 2px). The diff
+         * pane's scrollbar is pulled into the right seam so it doesn't add to
+         * it — by its measured width, since an overlay scrollbar (a trackpad
+         * alone on macOS) takes no room and pulling 8px anyway would collapse
+         * the seam to 2px.
+         */}
         <div
-          className={`min-w-0 flex-1 ${review.leftPanelOpen ? 'ml-0.5' : ''} ${review.rightPanelOpen ? '-mr-1.5' : '-mr-2'}`}
+          className={`min-w-0 flex-1 ${review.leftPanelOpen ? 'ml-0.5' : ''}`}
+          style={{ marginRight: review.rightPanelOpen ? 2 - scrollbarWidth : -scrollbarWidth }}
         >
           {/* No island here: each file renders as its own card (see FILE_CARD_CSS in ReviewCodeView.tsx). */}
           <ReviewCodeView />
