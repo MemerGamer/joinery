@@ -1,12 +1,13 @@
 /**
  * Comment markdown rendering: `react-markdown` + `remark-gfm`, with
- * fenced code blocks highlighted through Pierre's shared Shiki highlighter
- * instance rather than pulling in a second highlighter.
+ * fenced code blocks highlighted through Pierre's shared highlighter (the
+ * diff's own, see lib/workerPool.tsx) rather than pulling in a second one.
  */
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { getSharedHighlighter } from '@pierre/diffs';
 import { useEffect, useState, type ReactNode } from 'react';
+import { PREFERRED_HIGHLIGHTER } from '../lib/workerPool.tsx';
 import { useTheme } from '../state/ThemeContext.tsx';
 
 function CodeBlock({
@@ -24,7 +25,7 @@ function CodeBlock({
 
   useEffect(() => {
     let cancelled = false;
-    getSharedHighlighter({ themes: [theme], langs: [lang] })
+    getSharedHighlighter({ themes: [theme], langs: [lang], preferredHighlighter: PREFERRED_HIGHLIGHTER })
       .then((highlighter) => {
         if (cancelled) return;
         try {

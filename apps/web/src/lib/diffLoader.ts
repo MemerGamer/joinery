@@ -41,6 +41,8 @@ export function placeholderFileDiff(entry: FileEntry): FileDiffMetadata {
     isPartial: true,
     deletionLines: [],
     additionLines: [],
+    deletionCharacterCount: 0,
+    additionCharacterCount: 0,
     cacheKey: `${blobPairKey(entry)}:loading`,
   };
 }
@@ -72,6 +74,8 @@ export async function loadFileDiff(
         isPartial: false,
         deletionLines: [],
         additionLines: [],
+        deletionCharacterCount: 0,
+        additionCharacterCount: 0,
         cacheKey,
       } satisfies FileDiffMetadata;
     }
@@ -93,6 +97,8 @@ export async function loadFileDiff(
       isPartial: false,
       deletionLines: [],
       additionLines: [],
+      deletionCharacterCount: 0,
+      additionCharacterCount: 0,
       cacheKey,
     };
     fileDiff.cacheKey = cacheKey;

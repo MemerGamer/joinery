@@ -8,16 +8,12 @@
  * the token events drive hover and peek-definition (CodeIntel.tsx).
  */
 import { CodeView } from '@pierre/diffs/react';
-import type { CodeViewReactOptions } from '@pierre/diffs/react';
-import type {
-  DiffLineAnnotation,
-  LineAnnotation,
-  SelectedLineRange,
-  CodeViewItem,
-} from '@pierre/diffs';
+import type { CodeViewAnnotationArgs, CodeViewReactOptions } from '@pierre/diffs/react';
+import type { SelectedLineRange, CodeViewItem } from '@pierre/diffs';
 import { Check, ChevronDown, ChevronRight } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { makeLoadDiffFiles } from '../lib/diffLoader.ts';
+import { PREFERRED_HIGHLIGHTER } from '../lib/workerPool.tsx';
 import {
   DRAFT_THREAD_ID,
   pathAtScrollTop,
@@ -196,6 +192,8 @@ export function ReviewCodeView(): React.JSX.Element {
       // this, flipping the app to light on a dark-mode machine leaves the
       // diff's own chrome (gutters, scrollbars, form controls) dark.
       themeType: chromeMode,
+      // The pool's choice, for anything rendered before the pool is up.
+      preferredHighlighter: PREFERRED_HIGHLIGHTER,
       hunkSeparators: 'line-info',
       // Must agree with the CSS custom properties set on the host element
       // below — see the DIFF_* constants above for why.
@@ -361,10 +359,7 @@ export function ReviewCodeView(): React.JSX.Element {
             )}
           </button>
         )}
-        renderAnnotation={(
-          annotation: LineAnnotation<ThreadAnnotationMeta> | DiffLineAnnotation<ThreadAnnotationMeta>,
-          item: CodeViewItem<ThreadAnnotationMeta>,
-        ) => {
+        renderAnnotation={(...[annotation]: CodeViewAnnotationArgs<ThreadAnnotationMeta>) => {
           const meta = annotation.metadata;
           if (meta === undefined) return null;
           if (meta.threadId === DRAFT_THREAD_ID) {
@@ -380,7 +375,6 @@ export function ReviewCodeView(): React.JSX.Element {
           }
           const thread = threads.find((t) => t.id === meta.threadId);
           if (thread === undefined) return null;
-          void item;
           return <ThreadArticle thread={thread} onChanged={() => void reloadThreads()} />;
         }}
       />

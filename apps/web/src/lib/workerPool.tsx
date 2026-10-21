@@ -7,7 +7,7 @@
  * through `setCoordinatedRenderOptions`, a single debounced action.
  */
 import { WorkerPoolContextProvider, useWorkerPool } from '@pierre/diffs/react';
-import type { LineDiffTypes } from '@pierre/diffs';
+import type { HighlighterTypes, LineDiffTypes } from '@pierre/diffs';
 import { type ReactNode, useMemo, useRef } from 'react';
 import { DEFAULT_DIFF_THEME } from './themes.ts';
 
@@ -15,6 +15,16 @@ import { DEFAULT_DIFF_THEME } from './themes.ts';
 // makes this an ES module worker instead of the default (broken) 'iife'.
 const workerFactory = (): Worker =>
   new Worker(new URL('@pierre/diffs/worker/worker.js', import.meta.url), { type: 'module' });
+
+/**
+ * `@pierre/highlights` (hand-written WebAssembly lexers, Zed themes) rather
+ * than Shiki: Pierre's benchmarks put large-file HTML at up to ~300× Shiki's
+ * speed at a third of the memory, and every theme in the picker exists in its
+ * catalog. Beta upstream, and 80 languages against Shiki's 200+, so anything
+ * else renders plain. Only one highlighter type can be live on the main
+ * thread at a time, so everything that highlights takes it from here.
+ */
+export const PREFERRED_HIGHLIGHTER: HighlighterTypes = 'highlights';
 
 const poolSize = Math.max(1, (navigator.hardwareConcurrency || 4) - 1);
 
@@ -31,6 +41,7 @@ const highlighterOptions = {
   // makes `onTokenEnter`/`onTokenClick` fire: hover and peek (CodeIntel.tsx).
   // Pool-owned like the theme, so it has to be set here, not per CodeView.
   useTokenTransformer: true,
+  preferredHighlighter: PREFERRED_HIGHLIGHTER,
   lineDiffType: 'word-alt' as LineDiffTypes,
   tokenizeMaxLineLength: 3000,
 };

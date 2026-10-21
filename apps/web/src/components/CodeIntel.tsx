@@ -26,6 +26,7 @@ import { ArrowUpRight, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { callApi } from '../lib/apiClient.ts';
+import { PREFERRED_HIGHLIGHTER } from '../lib/workerPool.tsx';
 import { useReview } from '../state/ReviewContext.tsx';
 import { useTheme } from '../state/ThemeContext.tsx';
 import { Markdown } from './Markdown.tsx';
@@ -72,8 +73,11 @@ type HeadPosition = { line: number; character: number };
 
 /** Where a token sits on the head side, or null when it only exists in the base. */
 function headPosition(props: TokenProps): HeadPosition | null {
-  // Middle of the token: robust to a server that is strict about name boundaries.
-  const character = props.lineCharStart + Math.floor((props.lineCharEnd - props.lineCharStart - 1) / 2);
+  // Middle of the name, robust to a server strict about name boundaries. The
+  // highlighter may fold surrounding whitespace into a token (`"const "`).
+  const lead = props.tokenText.length - props.tokenText.trimStart().length;
+  const name = props.tokenText.trim().length;
+  const character = props.lineCharStart + lead + Math.floor((name - 1) / 2);
   if (props.side !== 'deletions') return { line: props.lineNumber, character };
   const row = props.tokenElement.closest('[data-line]');
   if (row?.getAttribute('data-line-type')?.startsWith('context') !== true) return null;
@@ -450,6 +454,7 @@ function PeekWindow({
               diffIndicators: 'none',
               hunkSeparators: 'simple',
               themeType: chromeMode,
+              preferredHighlighter: PREFERRED_HIGHLIGHTER,
               overflow: 'scroll',
               unsafeCSS: ':host { --diffs-bg: var(--chrome-bg-raised); }',
             }}
