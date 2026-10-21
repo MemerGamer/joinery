@@ -101,8 +101,17 @@ describe('engine tick', () => {
     const workingList = engine.getFileList();
     events.length = 0;
 
+    const headBefore = engine.getFileList('head').headSha;
     gitCommit(ctx.repoDir, 'commit the change');
-    await engine.tick();
+    // The commit reaches the engine through its file watcher, and how soon
+    // that event lands varies by machine (slow on CI): tick until it has,
+    // rather than assuming it already did.
+    const deadline = Date.now() + 5000;
+    do {
+      await engine.tick();
+      if (engine.getFileList('head').headSha !== headBefore) break;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    } while (Date.now() < deadline);
 
     // `working` file list (path/blob identity) is unchanged post-commit.
     expect(engine.getFileList('working').files.map((f) => f.newBlob)).toEqual(
