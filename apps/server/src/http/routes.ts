@@ -18,6 +18,7 @@ import {
   listPullsQuerySchema,
   searchPullsQuerySchema,
   versionQuerySchema,
+  installableServerSchema,
   listReviewsQuerySchema,
   lspPositionQuerySchema,
   markViewedBodySchema,
@@ -95,8 +96,8 @@ import { projectThreads } from '../engine/threadProjection.ts';
 import { cancelRun, generateReadingOrder, requestThreadReply } from '../agent/runs.ts';
 import type { Invoke } from '../agent/tools.ts';
 import { resolveRunCwd } from '../agent/worktree.ts';
-import { lsp, type LspTarget } from '../lsp/index.ts';
-import { badRequest, conflict, notFound, pathError } from './errors.ts';
+import { installServer, lsp, removeServer, type LspTarget } from '../lsp/index.ts';
+import { badRequest, conflict, internal, notFound, pathError } from './errors.ts';
 import { parseBody, parseQuery } from './validate.ts';
 
 export type RoutesDeps = {
@@ -114,6 +115,12 @@ const threadsQuerySchema = z.object({
 });
 const reviewPullQuerySchema = z.object({ refresh: z.enum(['true', 'false']).optional() });
 const resolveBodySchema = z.object({ resolved: z.boolean().default(true) });
+
+function parseServer(raw: string) {
+  const parsed = installableServerSchema.safeParse(raw);
+  if (!parsed.success) throw badRequest(`"${raw}" is not a language server Joinery can install`, 'One of: tsrs, phpantom.');
+  return parsed.data;
+}
 
 async function requireEngine(deps: RoutesDeps, reviewId: string) {
   const engine = await deps.registry.get(reviewId);
@@ -216,6 +223,29 @@ export function buildRoutes(deps: RoutesDeps): Hono {
 
   app.post('/api/settings/full-disk-access/open', async (c) => {
     await openFullDiskAccess();
+    return c.json({ ok: true as const });
+  });
+
+  // Downloads into the data directory (lsp/install.ts); the language's
+  // sessions are reset so the next hover picks the new server up.
+  app.post('/api/settings/lsp/:server/install', async (c) => {
+    const server = parseServer(c.req.param('server'));
+    try {
+      const installed = await installServer(server);
+      await lsp.reset(server === 'tsrs' ? 'typescript' : 'php');
+      return c.json({ server, ...installed });
+    } catch (err) {
+      throw internal(
+        `could not install ${server}: ${err instanceof Error ? err.message : String(err)}`,
+        'Check the network, or install it yourself with the command shown.',
+      );
+    }
+  });
+
+  app.post('/api/settings/lsp/:server/remove', async (c) => {
+    const server = parseServer(c.req.param('server'));
+    await lsp.reset(server === 'tsrs' ? 'typescript' : 'php');
+    await removeServer(server);
     return c.json({ ok: true as const });
   });
 

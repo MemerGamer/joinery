@@ -24,6 +24,7 @@ import { isCancelled, LspClient } from './client.ts';
 import { languageOf, resolveServer, type ServerSpec } from './servers.ts';
 
 export { installedServers, languageOf } from './servers.ts';
+export { installServer, removeServer } from './install.ts';
 
 const IDLE_MS = 10 * 60_000;
 const RETRY_MS = 60_000;
@@ -126,6 +127,19 @@ class LspManager {
       inReview: repoPath !== null && inReview(repoPath),
       server: spec.id,
     };
+  }
+
+  /**
+   * Forget every session for `language`, running or remembered as missing,
+   * so the next hover picks a server again (after an install or removal).
+   */
+  async reset(language: LspLanguage): Promise<void> {
+    const prefix = `${language}\0`;
+    await Promise.all(
+      Array.from(this.#sessions.values())
+        .filter((s) => s.key.startsWith(prefix))
+        .map((s) => this.#stop(s)),
+    );
   }
 
   /** Every running server, stopped; for shutdown. */

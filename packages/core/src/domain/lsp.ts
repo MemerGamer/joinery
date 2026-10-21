@@ -21,6 +21,10 @@ export const lspServerIdSchema = z.enum([
 ]);
 export type LspServerId = z.infer<typeof lspServerIdSchema>;
 
+/** The servers Settings can install itself, into Joinery's data directory. */
+export const installableServerSchema = lspServerIdSchema.extract(['tsrs', 'phpantom']);
+export type InstallableServer = z.infer<typeof installableServerSchema>;
+
 export const lspPositionQuerySchema = z.object({
   path: z.string().min(1),
   line: z.coerce.number().int().positive(),

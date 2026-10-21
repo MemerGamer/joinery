@@ -337,6 +337,74 @@ const LSP_LABEL: Record<Integrations['lsp'][number]['language'], { title: string
   php: { title: 'PHP language server', install: 'brew install phpantom-lsp' },
 };
 
+const SERVER_NAME: Record<NonNullable<Integrations['lsp'][number]['installable']>, string> = {
+  tsrs: 'tsrs',
+  phpantom: 'PHPantom',
+};
+
+/**
+ * One language's hover/peek server. When none is found and this platform has
+ * a build, "Install" downloads it into Joinery's data directory (checksum
+ * verified, nothing outside it); a copy the user installed themselves always
+ * takes precedence over that one.
+ */
+function LanguageServerRow({ row, onChanged }: { row: Integrations['lsp'][number]; onChanged: () => void }): React.JSX.Element {
+  const [busy, setBusy] = useState<'install' | 'remove' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const label = LSP_LABEL[row.language];
+  const { installable, managed } = row;
+
+  const run = async (action: 'install' | 'remove', server: NonNullable<typeof row.installable>) => {
+    setBusy(action);
+    setError(null);
+    try {
+      await callApi(action === 'install' ? 'installLanguageServer' : 'removeLanguageServer', { params: [server] });
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const detail =
+    error ??
+    (row.path === null
+      ? `Hover and peek definition in diffs${installable !== null ? '' : `: ${label.install}`}`
+      : managed?.inUse === true
+        ? `${SERVER_NAME[managed.server]} ${managed.version} · installed by Joinery`
+        : `${row.server ?? ''} · ${row.path}`);
+
+  return (
+    <Row title={label.title} detail={error !== null ? <span className="text-chrome-danger">{detail}</span> : detail}>
+      {row.path !== null && <Chip tone="success" icon={<Check size={11} strokeWidth={2.5} />}>Installed</Chip>}
+      {row.path === null && installable === null && <Chip>Not installed</Chip>}
+      {row.path === null && installable !== null && (
+        <button
+          type="button"
+          onClick={() => void run('install', installable)}
+          disabled={busy !== null}
+          title={`Or yourself: ${label.install}`}
+          className="chrome-btn"
+        >
+          {busy === 'install' ? 'Installing…' : `Install ${SERVER_NAME[installable]}`}
+        </button>
+      )}
+      {managed !== null && (
+        <button
+          type="button"
+          onClick={() => void run('remove', managed.server)}
+          disabled={busy !== null}
+          title={`Delete Joinery's copy of ${SERVER_NAME[managed.server]} ${managed.version}`}
+          className="chrome-btn"
+        >
+          {busy === 'remove' ? 'Removing…' : 'Remove'}
+        </button>
+      )}
+    </Row>
+  );
+}
+
 function IntegrationsPanel(): React.JSX.Element {
   const { data, error, loading, reload } = useLoad(() => callApi('integrations'));
   return (
@@ -377,17 +445,7 @@ function IntegrationsPanel(): React.JSX.Element {
             </Row>
           ))}
           {data.lsp.map((l) => (
-            <Row
-              key={l.language}
-              title={LSP_LABEL[l.language].title}
-              detail={
-                l.path !== null
-                  ? `${l.server ?? ''} · ${l.path}`
-                  : `Hover and peek definition in diffs: ${LSP_LABEL[l.language].install}`
-              }
-            >
-              {l.path !== null ? <Chip tone="success" icon={<Check size={11} strokeWidth={2.5} />}>Installed</Chip> : <Chip>Not installed</Chip>}
-            </Row>
+            <LanguageServerRow key={l.language} row={l} onChanged={reload} />
           ))}
           {data.hosts.map((h) => (
             <Row

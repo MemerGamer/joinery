@@ -11,7 +11,14 @@ import {
   filePatchSchema,
 } from './domain/diff.ts';
 import { fileListSchema, revisionSchema, reviewStateSchema } from './domain/files.ts';
-import { lspDefinitionSchema, lspHoverSchema, lspLanguageSchema, lspPositionQuerySchema, lspServerIdSchema } from './domain/lsp.ts';
+import {
+  installableServerSchema,
+  lspDefinitionSchema,
+  lspHoverSchema,
+  lspLanguageSchema,
+  lspPositionQuerySchema,
+  lspServerIdSchema,
+} from './domain/lsp.ts';
 import {
   agentRunSchema,
   branchSchema,
@@ -206,9 +213,21 @@ export const integrationsSchema = z.object({
       reason: forgeUnavailableReasonSchema.exclude(['unsupported-host']).nullable(),
     }),
   ),
-  /** The language server hover/peek would start per language; null server when none is installed. */
+  /**
+   * The language server hover/peek would start per language (null server when
+   * none is installed); which one Settings can install here (null when this
+   * platform has no build); and the copy Settings installed, if any.
+   */
   lsp: z.array(
-    z.object({ language: lspLanguageSchema, server: lspServerIdSchema.nullable(), path: z.string().nullable() }),
+    z.object({
+      language: lspLanguageSchema,
+      server: lspServerIdSchema.nullable(),
+      path: z.string().nullable(),
+      installable: installableServerSchema.nullable(),
+      managed: z
+        .object({ server: installableServerSchema, version: z.string(), inUse: z.boolean() })
+        .nullable(),
+    }),
   ),
 });
 export type Integrations = z.infer<typeof integrationsSchema>;
@@ -341,6 +360,20 @@ export const api = {
     response: noContent,
   }),
   /** Restart the LaunchAgent, e.g. so a new Full Disk Access grant applies. The server answers, then goes away. */
+  installLanguageServer: def({
+    method: 'POST',
+    path: (server: string) => `/api/settings/lsp/${encodeURIComponent(server)}/install`,
+    body: undefined,
+    query: undefined,
+    response: z.object({ server: installableServerSchema, version: z.string(), path: z.string() }),
+  }),
+  removeLanguageServer: def({
+    method: 'POST',
+    path: (server: string) => `/api/settings/lsp/${encodeURIComponent(server)}/remove`,
+    body: undefined,
+    query: undefined,
+    response: z.object({ ok: z.literal(true) }),
+  }),
   restartServer: def({
     method: 'POST',
     path: () => '/api/settings/restart',

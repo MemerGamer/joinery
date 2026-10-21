@@ -17,8 +17,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { extname, join } from 'node:path';
-import type { LspLanguage, LspServerId } from '@joinery/core';
+import type { Integrations, LspLanguage, LspServerId } from '@joinery/core';
 import { resolveDataPaths } from '../db/paths.ts';
+import { installableFor, managedBinary, managedBinaryFor, managedVersion } from './install.ts';
 
 export type ServerSpec = {
   readonly id: LspServerId;
@@ -44,8 +45,13 @@ export function languageOf(path: string): { language: LspLanguage; languageId: s
   return LANGUAGE_IDS[extname(path).toLowerCase()] ?? null;
 }
 
-/** PATH first, then where installers usually put things (a LaunchAgent's PATH is short). */
+/**
+ * PATH first, then where installers usually put things (a LaunchAgent's PATH
+ * is short), then the copy Settings installed (install.ts) — the user's own
+ * install always wins over Joinery's.
+ */
 export function findExecutable(name: string): string | null {
+  const managed = managedBinaryFor(name);
   return (
     Bun.which(name) ??
     [
@@ -59,7 +65,7 @@ export function findExecutable(name: string): string | null {
     ]
       .map((dir) => join(dir, name))
       .find((candidate) => existsSync(candidate)) ??
-    null
+    (managed !== null && existsSync(managed) ? managed : null)
   );
 }
 
@@ -166,8 +172,8 @@ export async function resolveServer(language: LspLanguage, root: string): Promis
   return language === 'php' ? resolvePhp() : resolveTypescript(root);
 }
 
-/** For Settings → Integrations: what this machine would start, repo-local copies aside. */
-export async function installedServers(): Promise<{ language: LspLanguage; server: LspServerId | null; path: string | null }[]> {
+/** For Settings → Integrations: what this machine would start (repo-local copies aside), and what it could install. */
+export async function installedServers(): Promise<Integrations['lsp']> {
   const ts =
     (['tsrs', 'tsgo', 'typescript-language-server'] as const)
       .map((id) => ({ id, path: findExecutable(id) }))
@@ -182,8 +188,23 @@ export async function installedServers(): Promise<{ language: LspLanguage; serve
     )
       .map(([id, bins]) => ({ id, path: bins.map(findExecutable).find((p) => p !== null) ?? null }))
       .find((s) => s.path !== null) ?? null;
-  return [
-    { language: 'typescript', server: ts?.id ?? null, path: ts?.path ?? null },
-    { language: 'php', server: php?.id ?? null, path: php?.path ?? null },
-  ];
+  return Promise.all(
+    ([
+      ['typescript', ts],
+      ['php', php],
+    ] as const).map(async ([language, found]) => {
+      const installable = installableFor(language);
+      const version = installable === null ? null : await managedVersion(installable);
+      return {
+        language,
+        server: found?.id ?? null,
+        path: found?.path ?? null,
+        installable,
+        managed:
+          installable === null || version === null
+            ? null
+            : { server: installable, version, inUse: found?.path === managedBinary(installable) },
+      };
+    }),
+  );
 }
