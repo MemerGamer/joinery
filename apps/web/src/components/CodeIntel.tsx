@@ -35,6 +35,8 @@ const HOVER_DELAY_MS = 300;
 /** Grace to move the pointer from the token onto the popover. */
 const CLOSE_DELAY_MS = 150;
 const CACHE_LIMIT = 2_000;
+/** How long the line a jump lands on stays highlighted. */
+const JUMP_HIGHLIGHT_MS = 1_600;
 const SUPPORTED = /\.(?:[cm]?[jt]sx?|php)$/i;
 /** A token worth asking about has a letter, `_` or `$` in it — not `(`, `=>`, `42`. */
 const NAME_LIKE = /[\p{L}_$]/u;
@@ -276,11 +278,27 @@ export function useCodeIntel(): {
       const shown = item.collapsed !== true && item.fileDiff.hunks.some(
         (h) => definition.line >= h.additionStart && definition.line < h.additionStart + h.additionCount,
       );
-      codeViewRef.current?.scrollTo(
+      const view = codeViewRef.current;
+      if (view === null) return;
+      view.scrollTo(
         shown
           ? { type: 'line', id: definition.path, lineNumber: definition.line, side: 'additions', align: 'center' }
           : { type: 'item', id: definition.path, align: 'start' },
       );
+      // Mark the landing line for a moment with the line selection, unless the
+      // reader has one of their own (a comment being drafted) to keep.
+      if (!shown || view.getSelectedLines() !== null) return;
+      const mark = {
+        id: definition.path,
+        range: { start: definition.line, end: definition.line, side: 'additions' as const },
+      };
+      view.setSelectedLines(mark);
+      window.setTimeout(() => {
+        const current = view.getSelectedLines();
+        if (current?.id === mark.id && current.range.start === mark.range.start && current.range.end === mark.range.end) {
+          view.clearSelectedLines();
+        }
+      }, JUMP_HIGHLIGHT_MS);
     },
     [codeViewRef, items],
   );
