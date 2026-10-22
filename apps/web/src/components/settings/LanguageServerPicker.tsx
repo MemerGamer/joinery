@@ -117,7 +117,7 @@ export function useLanguageServerPicker(
       type="button"
       onClick={onClick}
       disabled={busy !== null}
-      className="text-chrome-fg-muted underline-offset-2 hover:text-chrome-fg hover:underline"
+      className="text-chrome-fg-muted underline underline-offset-2 hover:text-chrome-fg"
     >
       {label}
     </button>
