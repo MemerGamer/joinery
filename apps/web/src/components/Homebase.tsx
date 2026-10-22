@@ -9,10 +9,11 @@
  * Behind the panels sits a backdrop — solid, a glow rising from the
  * bottom, or a painting — chosen from the corner switcher and remembered,
  * so the screen has a mood rather than a flat grey. A painting (or a
- * glow's gradient, `GlowScene`) fills a
- * full-width hero band that dissolves into the page; the greeting sits
- * centred on its lower edge, the two columns below it, and Explore — the
- * finder over every branch and pull request — below those, a scroll away.
+ * glow's gradient, `GlowScene`) fills the whole window behind the page
+ * (`HomeBackdrop`), going soft and dark toward the bottom, and the panels
+ * turn to frosted glass over it. The greeting sits where the picture starts
+ * to blur, the two columns below it, and Explore (the finder over every
+ * branch and pull request) below those, a scroll away.
  *
  * Everything here comes from `useHomeData()`.
  */
@@ -36,7 +37,7 @@ import { useGenerationModel } from '../lib/agentModel.ts';
 import { effortOf } from '../lib/effort.ts';
 import { useGlobalKeymap } from '../lib/keymap.ts';
 import { maybeStartOnboarding } from '../lib/onboarding.ts';
-import { backdropProps, coverGlow, coverPainting, paintingUrl, useBackdrop } from '../lib/covers.ts';
+import { backdropProps, coverGlow, coverPainting, useBackdrop, useBackdropStyle } from '../lib/covers.ts';
 import { useHeroTones } from '../lib/heroTone.ts';
 import { personFrom } from '../lib/people.ts';
 import { pullUrl } from '../lib/pullUrl.ts';
@@ -47,7 +48,7 @@ import { useHomeData, type HomeReview } from '../state/HomeData.tsx';
 import { useTheme } from '../state/ThemeContext.tsx';
 import { CommandPalette } from './CommandPalette.tsx';
 import { BackdropPicker } from './home/BackdropPicker.tsx';
-import { GlowScene } from './home/GlowScene.tsx';
+import { HeroBand, HomeBackdrop } from './home/HomeBackdrop.tsx';
 import { Panel } from './home/Panel.tsx';
 import { Avatar, Chip, CiIcon, DiffStat, EffortMeter, ProgressBar } from './home/primitives.tsx';
 import { ITEM_CLASS as MENU_ITEM_CLASS, POPUP_CLASS as MENU_POPUP_CLASS, QueueFilterMenu, QueueSortMenu, type QueueSort } from './home/QueueMenus.tsx';
@@ -66,6 +67,10 @@ function greeting(): string {
 }
 
 const HERO_HEIGHT = 'clamp(220px, 50vh, 500px)';
+/** Roughly how far the panels' top sits below the top padding (the greeting's two lines and the gap under them): where the full-window blur is complete. */
+const PANELS_BELOW_GREETING = 96;
+/** The full-window layout's equivalent: lower, so more of the picture shows sharp above the greeting before the blur takes over. */
+const WINDOW_HERO_HEIGHT = 'clamp(260px, 56vh, 660px)';
 /** Space above Explore: this much normally, shrinking toward the minimum so its header still peeks in when the panels end on screen. */
 const EXPLORE_GAP_MAX = 72;
 const EXPLORE_GAP_MIN = 24;
@@ -78,22 +83,18 @@ const EXPLORE_PEEK = 48;
  * in quick succession.
  */
 const SKELETON_DELAY_MS = 300;
-const HERO_MASK = 'linear-gradient(to bottom, black 0%, black 55%, transparent 100%)';
-/**
- * Light mode's version. Fading a (usually dark) painting into a light page
- * passes through grey, and over the dark mode's long, even fade that reads
- * as a milky haze across half the hero. So the painting holds longer, then
- * drops away on an eased curve: the grey band stays narrow and low.
- */
-const HERO_MASK_LIGHT =
-  'linear-gradient(to bottom, black 0%, black 62%, rgba(0,0,0,0.78) 71%, rgba(0,0,0,0.45) 80%, rgba(0,0,0,0.18) 89%, rgba(0,0,0,0.05) 95%, transparent 100%)';
-/** The page-colour wash over the hero's lower part, per mode; light mode's is short, for the same reason. */
-const HERO_WASH = {
-  dark: 'linear-gradient(to bottom, transparent 0%, transparent 40%, color-mix(in srgb, var(--chrome-bg-sunken) 55%, transparent) 75%, var(--chrome-bg-sunken) 100%)',
-  light: 'linear-gradient(to bottom, transparent 0%, transparent 80%, var(--chrome-bg-sunken) 100%)',
-} as const;
 /** Glows the text in the page colour so it reads over the painting. */
 const GLOW_BG = '0 0 18px var(--chrome-bg-sunken), 0 0 6px var(--chrome-bg-sunken)';
+/**
+ * Over a full-window backdrop the greeting sits on the picture itself, so
+ * it's coloured the way the wordmark is: from the tone of the picture
+ * behind it (`heroTones.center`), light on dark and dark on light, with no
+ * glow.
+ */
+const GREETING_ON = {
+  dark: { date: { color: 'rgba(255,255,255,0.75)' }, title: { color: '#fff' } },
+  light: { date: { color: 'rgba(0,0,0,0.65)' }, title: { color: '#111' } },
+} as const;
 
 const DATE = new Intl.DateTimeFormat('en', { weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -151,6 +152,7 @@ export function Homebase(): React.JSX.Element {
   const { chromeMode } = useTheme();
   const [openingKeys, setOpeningKeys] = useState<ReadonlySet<string>>(new Set());
   const [backdrop, setBackdrop] = useBackdrop();
+  const [backdropStyle, setBackdropStyle] = useBackdropStyle();
   const scrollRef = useRef<HTMLDivElement>(null);
   const topRef = useRef<HTMLDivElement>(null);
   const [exploreGap, setExploreGap] = useState(EXPLORE_GAP_MAX);
@@ -206,13 +208,18 @@ export function Homebase(): React.JSX.Element {
   const painting = coverPainting(backdrop);
   const glow = coverGlow(backdrop);
   const hasHero = painting !== null || glow !== null;
+  const fullWindow = hasHero && backdropStyle === 'window';
   // What's behind the wordmark: the hero's corner at the top, the page once the bar's backdrop has faded in.
   const heroTones = useHeroTones(painting, glow);
-  const heroMask = chromeMode === 'light' ? HERO_MASK_LIGHT : HERO_MASK;
-  const overHero = hasHero && !scrolled;
+  // In the window style the picture is always behind the bar, scrolled or not.
+  const overHero = hasHero && (fullWindow || !scrolled);
   const behindLogo = overHero ? (heroTones.left ?? chromeMode) : chromeMode;
   // The buttons only need recolouring over the hero; elsewhere the chrome colours already fit.
   const behindButtons = overHero ? (heroTones.right ?? undefined) : undefined;
+
+  const greetingOn = fullWindow ? GREETING_ON[heroTones.center ?? chromeMode] : null;
+  // Over a painting not sampled yet, the greeting waits for its colour rather than showing in a guessed one and switching.
+  const greetingWaits = fullWindow && heroTones.pending;
 
   const youName = me?.name ?? me?.login ?? null;
 
@@ -286,7 +293,7 @@ export function Homebase(): React.JSX.Element {
   // fades in at once.
   const hidden = !ready && !slow;
   const showNoRepos = !showSkeleton && repos.length === 0;
-  const topPad = hasHero ? `calc(${HERO_HEIGHT} - 84px)` : '2.5rem';
+  const topPad = hasHero ? `calc(${fullWindow ? WINDOW_HERO_HEIGHT : HERO_HEIGHT} - 84px)` : '2.5rem';
   const noPullsAvailable = repos.length > 0 && repos.every((r) => pullsAvailable.get(r.id) === false);
   const noPullsNotice = noPullsAvailable ? firstForgeNotice(repos.map((r) => pullsNotice.get(r.id)), 'list') : null;
   // Some repos answered, others couldn't be asked: show what there is, plus a quiet note.
@@ -294,7 +301,9 @@ export function Homebase(): React.JSX.Element {
   const showQueue = showSkeleton || noPullsAvailable || queue.length > 0;
 
   return (
-    <div className="home-shell h-full" {...backdropProps(backdrop)}>
+    <div className="home-shell h-full" {...backdropProps(backdrop)} data-backdrop-style={hasHero ? backdropStyle : undefined}>
+      {/* The picture sits outside the scroller, so the page slides over it while it stays put. */}
+      {fullWindow && <HomeBackdrop backdrop={backdrop} painting={painting} glow={glow} softBy={`calc(${topPad} + ${String(PANELS_BELOW_GREETING)}px)`} />}
       <div ref={scrollRef} className="relative h-full overflow-y-auto">
         {/* Sticky top bar. Zero-height so it takes no room in the flow; its
             contents hang below it. Over the hero it's bare; once the page
@@ -302,7 +311,7 @@ export function Homebase(): React.JSX.Element {
             a solid edge rather than under floating buttons. */}
         <div className="sticky top-0 z-30 h-0">
           <div
-            className={`pointer-events-none absolute inset-x-0 top-0 h-32 transition-opacity duration-300 ${scrolled ? 'opacity-100' : 'opacity-0'}`}
+            className={`pointer-events-none absolute inset-x-0 top-0 h-32 transition-opacity duration-300 ${scrolled && !fullWindow ? 'opacity-100' : 'opacity-0'}`}
             style={{ background: TOPBAR_FADE }}
             aria-hidden
           />
@@ -315,7 +324,7 @@ export function Homebase(): React.JSX.Element {
           {/* Right: an update (when there is one), the backdrop switcher, settings, then refresh; centred on the wordmark's line (16 + 30/2 − 36/2). */}
           <div className="home-topbar-right absolute top-[13px] right-4 flex h-9 items-center gap-1" data-tone={behindButtons}>
             <UpdateButton {...version} />
-            <BackdropPicker value={backdrop} onChange={setBackdrop} />
+            <BackdropPicker value={backdrop} onChange={setBackdrop} layout={backdropStyle} onLayoutChange={setBackdropStyle} />
             <button type="button" aria-label="Settings" title="Settings" onClick={goSettings} className="chrome-icon-btn">
               <SettingsIcon size={16} strokeWidth={1.75} aria-hidden />
             </button>
@@ -330,37 +339,7 @@ export function Homebase(): React.JSX.Element {
             </button>
           </div>
         </div>
-        {/* Hero band: the painting (or a glow's gradient) dissolves into the page over its lower ~45%. */}
-        {hasHero && (
-          <div className="pointer-events-none absolute inset-x-0 top-0 overflow-hidden" style={{ height: HERO_HEIGHT }} aria-hidden>
-            {painting !== null ? (
-              <img
-                src={paintingUrl(painting, 'full')}
-                alt=""
-                className="absolute inset-0 size-full object-cover"
-                style={{ objectPosition: '50% 35%', maskImage: heroMask, WebkitMaskImage: heroMask }}
-              />
-            ) : (
-              glow !== null && backdrop.kind === 'glow' && <GlowScene glow={glow} shape={backdrop.shape} mask={heroMask} />
-            )}
-            <div
-              className="absolute inset-0"
-              style={{ background: HERO_WASH[chromeMode] }}
-            />
-            {/* Dither: a fine dot grid over the painting, for a pixel-art feel. Masked like the painting so it
-                dissolves with it — on light themes an unmasked grid greys the fade-out and ends in a hard edge —
-                and lighter there, where dark dots read as grime rather than texture. */}
-            <div
-              className="absolute inset-0 opacity-30 mix-blend-multiply"
-              style={{
-                backgroundImage: 'radial-gradient(light-dark(rgba(0,0,0,0.3), rgba(0,0,0,0.55)) 0.8px, transparent 1px)',
-                backgroundSize: '4px 4px',
-                maskImage: heroMask,
-                WebkitMaskImage: heroMask,
-              }}
-            />
-          </div>
-        )}
+        {hasHero && !fullWindow && <HeroBand backdrop={backdrop} painting={painting} glow={glow} mode={chromeMode} height={HERO_HEIGHT} />}
 
         <div
           className={`relative mx-auto flex max-w-6xl flex-col gap-6 px-2 pb-10 transition-opacity duration-150 ${hidden ? 'opacity-0' : 'opacity-100'}`}
@@ -370,13 +349,13 @@ export function Homebase(): React.JSX.Element {
           <div ref={topRef} className="flex flex-col gap-6">
             {/* mb-6 on top of the gap lets the panels start just past the hero's edge, not on it. */}
             <header className="mb-6 flex flex-col items-center gap-1">
-              <p className="text-xs text-chrome-fg-muted" style={{ textShadow: GLOW_BG }}>
+              <p className={`text-xs text-chrome-fg-muted transition-opacity duration-150 ${greetingWaits ? 'opacity-0' : ''}`} style={greetingOn?.date ?? { textShadow: GLOW_BG }}>
                 {DATE.format(new Date())}
               </p>
               {/* Held invisible (keeping its line) while the skeleton shows, so it doesn't appear, then grow a name. */}
               <h1
-                className={`text-center text-2xl font-semibold tracking-tight text-chrome-fg transition-opacity duration-150 ${ready ? '' : 'invisible opacity-0'}`}
-                style={{ textShadow: GLOW_BG }}
+                className={`text-center text-2xl font-semibold tracking-tight text-chrome-fg transition-opacity duration-150 ${ready ? '' : 'invisible opacity-0'} ${greetingWaits ? 'opacity-0' : ''}`}
+                style={greetingOn?.title ?? { textShadow: GLOW_BG }}
               >
                 {greeting()}
                 {youName !== null ? `, ${youName}` : ''}

@@ -13,6 +13,7 @@
  * 320px for the picker.
  */
 import { useCallback, useState } from 'react';
+import { useStoredState } from './storedState.ts';
 
 export interface Glow {
   id: string;
@@ -124,4 +125,15 @@ export function useBackdrop(): [Backdrop, (b: Backdrop) => void] {
     }
   }, []);
   return [backdrop, update];
+}
+
+/** How a painting or glow is laid out on Homebase: a banner across the top, or the whole window behind glass panels. */
+export type BackdropStyle = 'banner' | 'window';
+
+export const BACKDROP_STYLE_KEY = 'homebase.backdrop-style';
+
+/** Picked in the backdrop switcher and remembered, like the backdrop itself. */
+export function useBackdropStyle(): [BackdropStyle, (s: BackdropStyle) => void] {
+  const [style, set] = useStoredState<BackdropStyle>(BACKDROP_STYLE_KEY, 'window');
+  return [style === 'banner' ? 'banner' : 'window', set];
 }

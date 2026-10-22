@@ -1,15 +1,21 @@
 /**
  * The top-right backdrop switcher: a single quiet button that opens a
  * small panel with three tabs — solid, gradient, image — and the choices
- * under each. Homebase places it in its top-right corner, left of refresh;
+ * under each, plus, for a gradient or image, how it's laid out (a banner
+ * across the top, or the full window). Homebase places it in its top-right corner, left of refresh;
  * the panel drops down below the button.
  */
 import { Check, Palette, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { GLOWS, PAINTINGS, SHAPES, glowSwatch, paintingUrl, type Backdrop, type ShapeId } from '../../lib/covers.ts';
+import { GLOWS, PAINTINGS, SHAPES, glowSwatch, paintingUrl, type Backdrop, type BackdropStyle, type ShapeId } from '../../lib/covers.ts';
 import { GlowScene } from './GlowScene.tsx';
 
 type Tab = Backdrop['kind'];
+
+const LAYOUTS: { style: BackdropStyle; label: string }[] = [
+  { style: 'banner', label: 'Banner' },
+  { style: 'window', label: 'Full window' },
+];
 
 const TABS: { kind: Tab; label: string }[] = [
   { kind: 'solid', label: 'Solid' },
@@ -17,7 +23,17 @@ const TABS: { kind: Tab; label: string }[] = [
   { kind: 'image', label: 'Image' },
 ];
 
-export function BackdropPicker({ value, onChange }: { value: Backdrop; onChange: (b: Backdrop) => void }): React.JSX.Element {
+export function BackdropPicker({
+  value,
+  onChange,
+  layout,
+  onLayoutChange,
+}: {
+  value: Backdrop;
+  onChange: (b: Backdrop) => void;
+  layout: BackdropStyle;
+  onLayoutChange: (s: BackdropStyle) => void;
+}): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>(value.kind);
   const ref = useRef<HTMLDivElement>(null);
@@ -160,6 +176,28 @@ export function BackdropPicker({ value, onChange }: { value: Backdrop; onChange:
             <p className="truncate px-0.5 text-micro text-chrome-fg-subtle">
               {PAINTINGS.find((p) => p.id === value.id)?.name} · {PAINTINGS.find((p) => p.id === value.id)?.artist} · public domain
             </p>
+          )}
+
+          {tab !== 'solid' && (
+            <div className="flex flex-col gap-2">
+              <p className="px-0.5 text-micro font-medium text-chrome-fg-subtle">Layout</p>
+              <div role="radiogroup" aria-label="Layout" className="grid grid-cols-2 gap-1 rounded-md bg-chrome-bg-hover p-0.5">
+                {LAYOUTS.map((l) => (
+                  <button
+                    key={l.style}
+                    type="button"
+                    role="radio"
+                    aria-checked={layout === l.style}
+                    onClick={() => onLayoutChange(l.style)}
+                    className={`flex h-6 items-center justify-center rounded-[5px] text-xs font-medium transition-colors ${
+                      layout === l.style ? 'bg-chrome-bg text-chrome-fg shadow-sm' : 'text-chrome-fg-muted hover:text-chrome-fg'
+                    }`}
+                  >
+                    {l.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
         </div>
       )}
