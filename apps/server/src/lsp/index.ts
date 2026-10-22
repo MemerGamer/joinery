@@ -1,6 +1,7 @@
 /**
- * Hover and peek-definition for the review UI, served by real language
- * servers running against the review's checkout.
+ * Hover, definition, uses and file contents for the review UI's code
+ * intelligence, served by real language servers running against the
+ * review's checkout.
  *
  * One server per (language, checkout), started lazily on the first request,
  * stopped after `IDLE_MS` without one, and at most `MAX_SESSIONS` alive at
@@ -16,11 +17,12 @@
  * out branch that covers `head`/`pr` differing from the disk, and anywhere
  * it answers right while a checkout is still moving.
  */
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { relative, isAbsolute, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { LspDefinition, LspHover, LspLanguage } from '@joinery/core';
+import type { LspDefinition, LspFile, LspHover, LspLanguage, LspReference, LspReferences } from '@joinery/core';
 import { isCancelled, LspClient } from './client.ts';
 import { languageOf, resolveServer, type ServerSpec } from './servers.ts';
 
@@ -31,9 +33,12 @@ const IDLE_MS = 10 * 60_000;
 const RETRY_MS = 60_000;
 const MAX_SESSIONS = 4;
 const MAX_OPEN_DOCUMENTS = 24;
-/** Past this, peek gets the file only up to a little after the definition (generated files, bundles). */
-const PEEK_MAX_CHARS = 1_000_000;
-const PEEK_LINES_AFTER_WHEN_CUT = 200;
+/** Past this, a file is shown only up to a little after the line asked for (generated files, bundles). */
+const FILE_MAX_CHARS = 1_000_000;
+const FILE_LINES_AFTER_WHEN_CUT = 200;
+const MAX_REFERENCES = 1_000;
+const PREVIEW_MAX_CHARS = 200;
+const MAX_EXTERNALS = 5_000;
 
 type OpenDocument = { key: string; version: number; text: string; ready: Promise<void> };
 
@@ -51,19 +56,68 @@ type Session = {
 type Position = { line: number; character: number };
 type Range = { start: Position; end: Position };
 
-export type LspTarget = {
-  /** The checkout the server runs in (the review's attached directory). */
+/** A file to ask about, with the text the review has for it. */
+export type LspSource = {
+  /** The checkout the server runs in (`views.ts`). */
   readonly root: string;
-  /** Repo-relative path of the hovered file. */
-  readonly path: string;
-  /** Identity of the text `loadText` returns: its blob SHA. */
+  /** Absolute path of the file. */
+  readonly file: string;
+  /** Identity of the text `loadText` returns: a blob SHA, or the disk copy's mtime and size. */
   readonly contentKey: string;
   readonly loadText: () => Promise<string | null>;
+};
+
+export type LspTarget = LspSource & {
   /** 1-based line, 0-based UTF-16 character. */
   readonly line: number;
   readonly character: number;
   readonly signal?: AbortSignal;
 };
+
+/**
+ * Files outside the checkout that a server pointed to, by the id in their
+ * `external:<id>` ref: only these can be read back through a ref.
+ */
+const externals = new Map<string, string>();
+
+function externalRef(file: string): string {
+  const id = createHash('sha1').update(file).digest('hex').slice(0, 16);
+  externals.delete(id);
+  externals.set(id, file);
+  if (externals.size > MAX_EXTERNALS) externals.delete(externals.keys().next().value as string);
+  return `external:${id}`;
+}
+
+/** The absolute path behind an `external:<id>` ref; null for an unknown id or a ref of another kind. */
+export function externalFile(ref: string): string | null {
+  return ref.startsWith('external:') ? (externals.get(ref.slice('external:'.length)) ?? null) : null;
+}
+
+/** How a file is named to the client: by repo path inside `root`, else by an external ref. */
+function describe(root: string, file: string, inReview: (path: string) => boolean) {
+  const rel = relative(root, file);
+  const external = rel.startsWith('..') || isAbsolute(rel);
+  if (!external) {
+    const path = rel.split(sep).join('/');
+    return { ref: path, path, external, inReview: inReview(path) };
+  }
+  const home = homedir();
+  return {
+    ref: externalRef(file),
+    path: file.startsWith(home + sep) ? `~${file.slice(home.length)}` : file,
+    external,
+    inReview: false,
+  };
+}
+
+/** `text`, cut short when huge: up to a little after `line` (0-based) when there is one, else what fits. */
+function shown(text: string, line?: number): { text: string; truncated: boolean } {
+  if (text.length <= FILE_MAX_CHARS) return { text, truncated: false };
+  if (line !== undefined) {
+    return { text: text.split(/\r?\n/).slice(0, line + FILE_LINES_AFTER_WHEN_CUT).join('\n'), truncated: true };
+  }
+  return { text: text.slice(0, Math.max(0, text.lastIndexOf('\n', FILE_MAX_CHARS))), truncated: true };
+}
 
 class LspManager {
   readonly #sessions = new Map<string, Session>();
@@ -108,23 +162,81 @@ class LspManager {
     const file = fileURLToPath(location.uri);
     const text = session.docs.get(location.uri)?.text ?? (await readFile(file, 'utf8').catch(() => null));
     if (text === null) return null;
-    const lines = text.split(/\r?\n/);
-    const focus = Math.min(location.focus.line, Math.max(0, lines.length - 1));
-    const cut = text.length > PEEK_MAX_CHARS;
-
-    const rel = relative(session.root, file);
-    const external = rel.startsWith('..') || isAbsolute(rel);
-    const repoPath = external ? null : rel.split(sep).join('/');
-    const home = homedir();
+    const focus = Math.min(location.focus.line, Math.max(0, text.split(/\r?\n/).length - 1));
     return {
-      path: repoPath ?? (file.startsWith(home + sep) ? `~${file.slice(home.length)}` : file),
-      external,
+      ...describe(session.root, file, inReview),
+      ...shown(text, focus),
       line: focus + 1,
-      text: cut ? lines.slice(0, focus + PEEK_LINES_AFTER_WHEN_CUT).join('\n') : lines.join('\n'),
-      truncated: cut,
-      inReview: repoPath !== null && inReview(repoPath),
       server: spec.id,
     };
+  }
+
+  /** Every use of the symbol at `target` (its declaration aside), with each line's text. */
+  async references(target: LspTarget, inReview: (path: string) => boolean): Promise<LspReferences | null> {
+    const prepared = await this.#prepare(target);
+    if (prepared === null) return null;
+    const { client, spec, uri, session } = prepared;
+    let result: { uri?: string; range?: Range }[] | null;
+    try {
+      result = await client.request(
+        'textDocument/references',
+        {
+          textDocument: { uri },
+          position: { line: target.line - 1, character: target.character },
+          context: { includeDeclaration: false },
+        },
+        target.signal,
+      );
+    } catch (err) {
+      if (isCancelled(err)) return null;
+      throw err;
+    }
+    const lines = new Map<string, Promise<string[] | null>>();
+    const linesOf = (fileUri: string) => {
+      let pending = lines.get(fileUri);
+      if (pending === undefined) {
+        const open = session.docs.get(fileUri)?.text;
+        pending =
+          open !== undefined
+            ? Promise.resolve(open.split(/\r?\n/))
+            : readFile(fileURLToPath(fileUri), 'utf8').then((t) => t.split(/\r?\n/), () => null);
+        lines.set(fileUri, pending);
+      }
+      return pending;
+    };
+    const found = (result ?? []).filter(
+      (r): r is { uri: string; range: Range } => typeof r.uri === 'string' && r.uri.startsWith('file:') && r.range !== undefined,
+    );
+    const references = await Promise.all(
+      found.map(async (r): Promise<LspReference> => {
+        const line = (await linesOf(r.uri))?.[r.range.start.line] ?? '';
+        return {
+          ...describe(session.root, fileURLToPath(r.uri), inReview),
+          line: r.range.start.line + 1,
+          character: r.range.start.character,
+          preview: line.trim().slice(0, PREVIEW_MAX_CHARS),
+        };
+      }),
+    );
+    references.sort(
+      (a, b) =>
+        Number(b.inReview) - Number(a.inReview) ||
+        Number(a.external) - Number(b.external) ||
+        a.path.localeCompare(b.path) ||
+        a.line - b.line ||
+        a.character - b.character,
+    );
+    return {
+      references: references.slice(0, MAX_REFERENCES),
+      truncated: references.length > MAX_REFERENCES,
+      server: spec.id,
+    };
+  }
+
+  /** A file to show, as the review has it; no server needed. */
+  async file(source: LspSource, inReview: (path: string) => boolean): Promise<LspFile | null> {
+    const text = await source.loadText();
+    return text === null ? null : { ...describe(source.root, source.file, inReview), ...shown(text) };
   }
 
   /**
@@ -162,12 +274,12 @@ class LspManager {
   async #prepare(
     target: LspTarget,
   ): Promise<{ client: LspClient; spec: ServerSpec; uri: string; session: Session } | null> {
-    const lang = languageOf(target.path);
+    const lang = languageOf(target.file);
     if (lang === null) return null;
     const session = await this.#session(lang.language, target.root);
     const client = await session.client;
     if (client === null || session.spec === null || target.signal?.aborted === true) return null;
-    const uri = pathToFileURL(`${target.root}/${target.path}`).href;
+    const uri = pathToFileURL(target.file).href;
     const opened = await this.#ensureDocument(session, client, uri, lang.languageId, target);
     return opened ? { client, spec: session.spec, uri, session } : null;
   }

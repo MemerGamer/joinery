@@ -3,10 +3,10 @@
  * against the review's checkout (see apps/server/src/lsp):
  *
  * - hover a name → a small popover with its signature and docblock;
- * - ⌘-click it (Ctrl-click elsewhere), or "Peek definition" in that popover →
- *   a floating window with the definition's whole file, scrolled to it and
- *   highlighted like the diff, with a jump into the diff when the definition
- *   is in a changed file.
+ * - ⌘-click it (Ctrl-click elsewhere), or "Definition and uses" in that
+ *   popover → the peek window (PeekNavigator.tsx): the definition and every
+ *   use on the left, the chosen file on the right, where hover and ⌘-click
+ *   work again and step through a history of their own.
  *
  * Tokens come from `@pierre/diffs`' own token events (`onTokenEnter` and
  * friends, enabled by `useTokenTransformer` in lib/workerPool.tsx), which
@@ -20,55 +20,28 @@
  * server forwards that as `$/cancelRequest`), and answers are cached per
  * (file blob, line, token), which is immutable, for the life of the page.
  */
-import { File as CodeFile } from '@pierre/diffs/react';
 import type { DiffTokenEventBaseProps, TokenEventBase } from '@pierre/diffs';
-import type { LspDefinition, LspHover } from '@joinery/core';
-import { ArrowUpRight, X } from 'lucide-react';
+import type { LspDefinition, LspFile, LspHover, LspReferences } from '@joinery/core';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { callApi } from '../lib/apiClient.ts';
-import { PREFERRED_HIGHLIGHTER } from '../lib/workerPool.tsx';
+import { cached, IS_MAC, PEEK_KEY, placement } from '../lib/codeIntel.ts';
 import { useReview } from '../state/ReviewContext.tsx';
-import { useTheme } from '../state/ThemeContext.tsx';
 import { Markdown } from './Markdown.tsx';
+import { PeekNavigator, type Load, type Nav, type NavEntry } from './PeekNavigator.tsx';
 
 const HOVER_DELAY_MS = 300;
 /** Grace to move the pointer from the token onto the popover. */
 const CLOSE_DELAY_MS = 150;
-const CACHE_LIMIT = 2_000;
 /** How long the line a jump lands on stays highlighted. */
 const JUMP_HIGHLIGHT_MS = 1_600;
 const SUPPORTED = /\.(?:[cm]?[jt]sx?|php)$/i;
 /** A token worth asking about has a letter, `_` or `$` in it — not `(`, `=>`, `42`. */
 const NAME_LIKE = /[\p{L}_$]/u;
-const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
-const PEEK_KEY = IS_MAC ? '⌘' : 'Ctrl';
-
-/**
- * Injected into each file's shadow root alongside the card CSS: the token
- * under the pointer reads as a link while the peek modifier is held.
- */
-export const CODE_INTEL_CSS = `
-[data-char][data-lsp-link] {
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-`;
 
 const hoverCache = new Map<string, Promise<LspHover | null>>();
 const definitionCache = new Map<string, Promise<LspDefinition | null>>();
-
-/** Shared by every waiter; a request that fails or is aborted is dropped so the next hover asks again. */
-function cached<T>(cache: Map<string, Promise<T>>, key: string, load: () => Promise<T>): Promise<T> {
-  const hit = cache.get(key);
-  if (hit !== undefined) return hit;
-  const promise = load();
-  cache.set(key, promise);
-  promise.catch(() => cache.delete(key));
-  if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
-  return promise;
-}
+const referencesCache = new Map<string, Promise<LspReferences | null>>();
 
 type TokenProps = TokenEventBase & Partial<Pick<DiffTokenEventBaseProps, 'side'>>;
 type TokenContext = { item: { id: string } };
@@ -94,15 +67,34 @@ function headPosition(props: TokenProps): HeadPosition | null {
   return Number.isInteger(line) && line > 0 ? { line, character } : null;
 }
 
-type Target = { path: string; blob: string; pos: HeadPosition; tokenStart: number; element: HTMLElement };
+/**
+ * A token to ask about. `path` is what the server resolves: a diff path, or a
+ * file's `ref` when the token is in the peek window's preview (`inPreview`).
+ * `version` names the text it was read from (a blob, or the preview's text).
+ */
+type Target = {
+  path: string;
+  version: string;
+  pos: HeadPosition;
+  tokenStart: number;
+  element: HTMLElement;
+  name: string;
+  inPreview: boolean;
+};
 
 type HoverCard = { target: Target; rect: DOMRect; hover: LspHover };
 
-type Peek =
-  | { rect: DOMRect; status: 'loading' }
-  | { rect: DOMRect; status: 'none' }
-  | { rect: DOMRect; status: 'error'; message: string }
-  | { rect: DOMRect; status: 'ready'; definition: LspDefinition };
+const LOADING = { status: 'loading' } as const;
+
+function failed(err: unknown): Load<never> {
+  return { status: 'error', message: err instanceof Error ? err.message : String(err) };
+}
+
+/** The first use listed, for an entry with no definition to show. */
+function firstUse(references: Load<LspReferences | null>): NavEntry['selected'] {
+  const first = references.status === 'ready' ? references.value?.references[0] : undefined;
+  return first === undefined ? null : { ref: first.ref, line: first.line };
+}
 
 export function useCodeIntel(): {
   onTokenEnter: (props: TokenProps, event: PointerEvent, context: TokenContext) => void;
@@ -115,15 +107,16 @@ export function useCodeIntel(): {
   const blobs = useMemo(() => new Map(fileList.map((f) => [f.path, f.newBlob])), [fileList]);
 
   const [card, setCard] = useState<HoverCard | null>(null);
-  const [peek, setPeek] = useState<Peek | null>(null);
+  const [nav, setNav] = useState<Nav | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inflight = useRef<AbortController | null>(null);
   const current = useRef<Target | null>(null);
   const modifierDown = useRef(false);
+  const entryIds = useRef(0);
 
   const keyOf = useCallback(
-    (t: Target) => `${reviewId}:${t.path}:${t.blob}:${t.pos.line}:${t.tokenStart}`,
+    (t: Target) => `${reviewId}:${t.path}:${t.version}:${t.pos.line}:${t.tokenStart}`,
     [reviewId],
   );
 
@@ -149,21 +142,39 @@ export function useCodeIntel(): {
     closeTimer.current = null;
   }, []);
 
-  const targetOf = useCallback(
+  const diffTarget = useCallback(
     (props: TokenProps, context: TokenContext): Target | null => {
       const path = context.item.id;
       const blob = blobs.get(path);
       if (reviewId === '' || blob === undefined || !SUPPORTED.test(path) || !NAME_LIKE.test(props.tokenText)) return null;
       const pos = headPosition(props);
       if (pos === null) return null;
-      return { path, blob, pos, tokenStart: props.lineCharStart, element: props.tokenElement };
+      const name = props.tokenText.trim();
+      return { path, version: blob, pos, tokenStart: props.lineCharStart, element: props.tokenElement, name, inPreview: false };
     },
     [blobs, reviewId],
   );
 
-  const onTokenEnter = useCallback(
-    (props: TokenProps, event: PointerEvent, context: TokenContext) => {
-      const target = targetOf(props, context);
+  const previewTarget = useCallback(
+    (props: TokenProps, file: LspFile): Target | null => {
+      if (reviewId === '' || !SUPPORTED.test(file.path) || !NAME_LIKE.test(props.tokenText)) return null;
+      const pos = headPosition(props);
+      if (pos === null) return null;
+      return {
+        path: file.ref,
+        version: `${file.text.length}:${file.truncated}`,
+        pos,
+        tokenStart: props.lineCharStart,
+        element: props.tokenElement,
+        name: props.tokenText.trim(),
+        inPreview: true,
+      };
+    },
+    [reviewId],
+  );
+
+  const enter = useCallback(
+    (target: Target | null, event: PointerEvent) => {
       cancelHover();
       current.current = target;
       if (target === null) return;
@@ -189,10 +200,10 @@ export function useCodeIntel(): {
           .catch(() => undefined);
       }, HOVER_DELAY_MS);
     },
-    [cancelHover, keepOpen, keyOf, reviewId, targetOf],
+    [cancelHover, keepOpen, keyOf, reviewId],
   );
 
-  const onTokenLeave = useCallback(
+  const leave = useCallback(
     (props: TokenProps) => {
       setLink(props.tokenElement, false);
       if (current.current?.element === props.tokenElement) current.current = null;
@@ -202,39 +213,76 @@ export function useCodeIntel(): {
     [cancelHover, scheduleClose],
   );
 
+  /**
+   * Definition and uses of `target`, in the peek window: a new window from the
+   * diff, or the next step of the open one's history from inside its preview.
+   */
   const openPeek = useCallback(
     (target: Target) => {
       cancelHover();
       setCard(null);
-      const rect = target.element.getBoundingClientRect();
-      setPeek({ rect, status: 'loading' });
-      cached(definitionCache, keyOf(target), () =>
-        callApi('getDefinition', {
-          params: [reviewId],
-          query: { path: target.path, line: target.pos.line, character: target.pos.character },
-        }).then((r) => r.definition),
-      )
-        .then((definition) =>
-          setPeek((p) => (p?.rect !== rect ? p : definition === null ? { rect, status: 'none' } : { rect, status: 'ready', definition })),
-        )
-        .catch((err: unknown) =>
-          setPeek((p) => (p?.rect !== rect ? p : { rect, status: 'error', message: err instanceof Error ? err.message : String(err) })),
-        );
+      entryIds.current += 1;
+      const id = entryIds.current;
+      const entry: NavEntry = { id, name: target.name, definition: LOADING, references: LOADING, selected: null };
+      setNav((n) =>
+        target.inPreview && n !== null
+          ? { ...n, entries: [...n.entries.slice(0, n.index + 1), entry], index: n.index + 1 }
+          : { rect: target.element.getBoundingClientRect(), entries: [entry], index: 0 },
+      );
+      const update = (patch: (e: NavEntry) => NavEntry) =>
+        setNav((n) => (n === null ? n : { ...n, entries: n.entries.map((e) => (e.id === id ? patch(e) : e)) }));
+      const key = keyOf(target);
+      const query = { path: target.path, line: target.pos.line, character: target.pos.character };
+      cached(definitionCache, key, () => callApi('getDefinition', { params: [reviewId], query }).then((r) => r.definition)).then(
+        (definition) =>
+          update((e) => ({
+            ...e,
+            definition: { status: 'ready', value: definition },
+            selected: e.selected ?? (definition !== null ? { ref: definition.ref, line: definition.line } : firstUse(e.references)),
+          })),
+        (err: unknown) => update((e) => ({ ...e, definition: failed(err), selected: e.selected ?? firstUse(e.references) })),
+      );
+      cached(referencesCache, key, () => callApi('getReferences', { params: [reviewId], query }).then((r) => r.references)).then(
+        (references) =>
+          update((e) => {
+            const loaded: NavEntry['references'] = { status: 'ready', value: references };
+            // The definition, when there is one, is shown first; otherwise the first use.
+            const waiting = e.definition.status === 'loading' || (e.definition.status === 'ready' && e.definition.value !== null);
+            return { ...e, references: loaded, selected: e.selected ?? (waiting ? null : firstUse(loaded)) };
+          }),
+        (err: unknown) => update((e) => ({ ...e, references: failed(err) })),
+      );
     },
     [cancelHover, keyOf, reviewId],
   );
 
-  const onTokenClick = useCallback(
-    (props: TokenProps, event: MouseEvent, context: TokenContext) => {
+  const click = useCallback(
+    (target: Target | null, event: MouseEvent) => {
       if (!(IS_MAC ? event.metaKey : event.ctrlKey)) return;
       // A drag that ends on a token is a text selection, not a click on it.
       if (window.getSelection()?.isCollapsed === false) return;
-      const target = targetOf(props, context);
       if (target === null) return;
       event.preventDefault();
       openPeek(target);
     },
-    [openPeek, targetOf],
+    [openPeek],
+  );
+
+  const onTokenEnter = useCallback(
+    (props: TokenProps, event: PointerEvent, context: TokenContext) => enter(diffTarget(props, context), event),
+    [diffTarget, enter],
+  );
+  const onTokenClick = useCallback(
+    (props: TokenProps, event: MouseEvent, context: TokenContext) => click(diffTarget(props, context), event),
+    [click, diffTarget],
+  );
+  const preview = useMemo(
+    () => ({
+      onTokenEnter: (props: TokenProps, event: PointerEvent, file: LspFile) => enter(previewTarget(props, file), event),
+      onTokenLeave: leave,
+      onTokenClick: (props: TokenProps, event: MouseEvent, file: LspFile) => click(previewTarget(props, file), event),
+    }),
+    [click, enter, leave, previewTarget],
   );
 
   // The held modifier underlines the token under the pointer, editor-style.
@@ -271,28 +319,26 @@ export function useCodeIntel(): {
   useEffect(() => () => cancelHover(), [cancelHover]);
 
   const jump = useCallback(
-    (definition: LspDefinition) => {
-      setPeek(null);
-      const item = items.find((i) => i.id === definition.path);
+    (path: string, line: number) => {
+      setNav(null);
+      setCard(null);
+      const item = items.find((i) => i.id === path);
       if (item === undefined) return;
       // Only a line inside a shown hunk can be scrolled to; else the file's top.
       const shown = item.collapsed !== true && item.fileDiff.hunks.some(
-        (h) => definition.line >= h.additionStart && definition.line < h.additionStart + h.additionCount,
+        (h) => line >= h.additionStart && line < h.additionStart + h.additionCount,
       );
       const view = codeViewRef.current;
       if (view === null) return;
       view.scrollTo(
         shown
-          ? { type: 'line', id: definition.path, lineNumber: definition.line, side: 'additions', align: 'center' }
-          : { type: 'item', id: definition.path, align: 'start' },
+          ? { type: 'line', id: path, lineNumber: line, side: 'additions', align: 'center' }
+          : { type: 'item', id: path, align: 'start' },
       );
       // Mark the landing line for a moment with the line selection, unless the
       // reader has one of their own (a comment being drafted) to keep.
       if (!shown || view.getSelectedLines() !== null) return;
-      const mark = {
-        id: definition.path,
-        range: { start: definition.line, end: definition.line, side: 'additions' as const },
-      };
+      const mark = { id: path, range: { start: line, end: line, side: 'additions' as const } };
       view.setSelectedLines(mark);
       window.setTimeout(() => {
         const current = view.getSelectedLines();
@@ -304,8 +350,38 @@ export function useCodeIntel(): {
     [codeViewRef, items],
   );
 
+  const select = useCallback(
+    (selected: NonNullable<NavEntry['selected']>) =>
+      setNav((n) =>
+        n === null ? n : { ...n, entries: n.entries.map((e, i) => (i === n.index ? { ...e, selected } : e)) },
+      ),
+    [],
+  );
+  const step = useCallback(
+    (delta: 1 | -1) =>
+      setNav((n) => (n === null ? n : { ...n, index: Math.max(0, Math.min(n.entries.length - 1, n.index + delta)) })),
+    [],
+  );
+  const closeNav = useCallback(() => {
+    setNav(null);
+    setCard(null);
+  }, []);
+
   const overlay = (
     <>
+      {nav !== null &&
+        createPortal(
+          <PeekNavigator
+            nav={nav}
+            reviewId={reviewId}
+            preview={preview}
+            onSelect={select}
+            onStep={step}
+            onJump={jump}
+            onClose={closeNav}
+          />,
+          document.body,
+        )}
       {card !== null &&
         createPortal(
           <HoverPopover
@@ -316,22 +392,10 @@ export function useCodeIntel(): {
           />,
           document.body,
         )}
-      {peek !== null && createPortal(<PeekWindow peek={peek} onClose={() => setPeek(null)} onJump={jump} />, document.body)}
     </>
   );
 
-  return { onTokenEnter, onTokenLeave, onTokenClick, overlay };
-}
-
-/** Below the anchor when it fits, otherwise above; always inside the viewport. */
-function placement(rect: DOMRect, width: number, height: number): React.CSSProperties {
-  const margin = 8;
-  const left = Math.max(margin, Math.min(rect.left - 12, window.innerWidth - width - margin));
-  const below = rect.bottom + 6;
-  if (below + height <= window.innerHeight - margin || rect.top - 6 - height < margin) {
-    return { left, top: below, maxHeight: Math.max(120, window.innerHeight - below - margin) };
-  }
-  return { left, bottom: window.innerHeight - rect.top + 6, maxHeight: Math.max(120, rect.top - 6 - margin) };
+  return { onTokenEnter, onTokenLeave: leave, onTokenClick, overlay };
 }
 
 function HoverPopover({
@@ -349,10 +413,12 @@ function HoverPopover({
   return (
     <div
       role="tooltip"
+      data-code-intel=""
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}
       style={{ ...placement(card.rect, width, 260), maxWidth: width }}
-      className="fixed z-50 flex flex-col overflow-hidden rounded-md bg-chrome-bg-raised shadow-chrome ring-1 ring-chrome-fg/10"
+      // Above the peek window, whose preview has hover cards of its own.
+      className="fixed z-[60] flex flex-col overflow-hidden rounded-md bg-chrome-bg-raised shadow-chrome ring-1 ring-chrome-fg/10"
     >
       <div className="code-intel-hover min-h-0 overflow-auto px-2.5 py-1.5">
         <Markdown>{card.hover.markdown}</Markdown>
@@ -363,145 +429,11 @@ function HoverPopover({
           onClick={onPeek}
           className="-ml-1.5 rounded px-1.5 py-0.5 text-chrome-fg-muted transition-colors hover:bg-chrome-bg-hover hover:text-chrome-fg"
         >
-          Peek definition
+          Definition and uses
         </button>
         <span>{PEEK_KEY}-click</span>
         <span className="ml-auto font-mono">{card.hover.server}</span>
       </div>
-    </div>
-  );
-}
-
-/**
- * The definition's whole file, rendered by `@pierre/diffs`' `File` with the
- * diff's own highlighter, theme and font, opened at the definition's line and
- * marking it as selected.
- */
-function PeekWindow({
-  peek,
-  onClose,
-  onJump,
-}: {
-  peek: Peek;
-  onClose: () => void;
-  onJump: (definition: LspDefinition) => void;
-}): React.JSX.Element {
-  const { chromeMode } = useTheme();
-  const ref = useRef<HTMLDivElement>(null);
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const definition = peek.status === 'ready' ? peek.definition : null;
-  const file = useMemo(
-    () =>
-      definition === null
-        ? null
-        : { name: definition.path, contents: definition.text, cacheKey: `peek:${definition.path}:${definition.text.length}` },
-    [definition],
-  );
-  // A status line ("No definition found") only needs to fit its text.
-  const width = Math.min(definition === null ? 360 : 820, window.innerWidth - 16);
-  // The whole file is shown: open it at the definition, once, a third of the way down.
-  const scrolledTo = useRef<LspDefinition | null>(null);
-  const onPostRender = useCallback(
-    (node: HTMLElement) => {
-      const body = bodyRef.current;
-      if (definition === null || body === null || scrolledTo.current === definition) return;
-      const row = node.shadowRoot?.querySelector(`[data-line="${definition.line}"]`);
-      if (row == null) return;
-      scrolledTo.current = definition;
-      body.scrollTop += row.getBoundingClientRect().top - body.getBoundingClientRect().top - body.clientHeight / 3;
-    },
-    [definition],
-  );
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    const onPointerDown = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    document.addEventListener('pointerdown', onPointerDown);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.removeEventListener('pointerdown', onPointerDown);
-    };
-  }, [onClose]);
-
-  return (
-    <div
-      ref={ref}
-      role="dialog"
-      aria-label="Definition"
-      style={
-        definition === null
-          ? { ...placement(peek.rect, width, 40), maxWidth: width }
-          : { ...placement(peek.rect, width, 460), width, height: 460 }
-      }
-      className="fixed z-50 flex flex-col overflow-hidden rounded-md bg-chrome-bg-raised shadow-chrome ring-1 ring-chrome-fg/10"
-    >
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b pl-3 pr-1 text-xs">
-        {definition !== null ? (
-          <>
-            <span className="min-w-0 truncate font-mono text-chrome-fg" title={definition.path}>
-              {definition.path}
-              <span className="text-chrome-fg-subtle">:{definition.line}</span>
-            </span>
-            {definition.external && <span className="shrink-0 text-micro text-chrome-fg-subtle">outside this repo</span>}
-            {definition.truncated && <span className="shrink-0 text-micro text-chrome-fg-subtle">cut short, very large file</span>}
-            {definition.inReview && (
-              <button
-                type="button"
-                onClick={() => onJump(definition)}
-                className="ml-auto flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-chrome-fg-muted transition-colors hover:bg-chrome-bg-hover hover:text-chrome-fg"
-              >
-                Go to it in this review
-                <ArrowUpRight size={12} strokeWidth={2} aria-hidden />
-              </button>
-            )}
-          </>
-        ) : (
-          <span className="text-chrome-fg-muted">
-            {peek.status === 'loading'
-              ? 'Finding the definition…'
-              : peek.status === 'none'
-                ? 'No definition found'
-                : `Couldn't look it up: ${peek.status === 'error' ? peek.message : ''}`}
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          title="Close (Esc)"
-          className={`chrome-icon-btn size-6 shrink-0 text-chrome-fg-subtle ${definition?.inReview === true ? '' : 'ml-auto'}`}
-        >
-          <X size={14} strokeWidth={1.75} aria-hidden />
-        </button>
-      </div>
-      {definition !== null && file !== null && (
-        <div ref={bodyRef} className="min-h-0 flex-1 overflow-auto">
-          <CodeFile
-            file={file}
-            selectedLines={{ start: definition.line, end: definition.line }}
-            options={{
-              disableFileHeader: true,
-              onPostRender,
-              themeType: chromeMode,
-              preferredHighlighter: PREFERRED_HIGHLIGHTER,
-              overflow: 'scroll',
-              unsafeCSS: ':host { --diffs-bg: var(--chrome-bg-raised); }',
-            }}
-            style={
-              {
-                '--diffs-line-height': '20px',
-                '--diffs-font-family': 'var(--chrome-font-mono)',
-                '--diffs-font-size': '12px',
-              } as React.CSSProperties
-            }
-          />
-        </div>
-      )}
     </div>
   );
 }

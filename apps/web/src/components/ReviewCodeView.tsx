@@ -12,6 +12,7 @@ import type { CodeViewAnnotationArgs, CodeViewReactOptions } from '@pierre/diffs
 import type { SelectedLineRange, CodeViewItem } from '@pierre/diffs';
 import { Check, ChevronDown, ChevronRight } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { CODE_INTEL_CSS } from '../lib/codeIntel.ts';
 import { makeLoadDiffFiles } from '../lib/diffLoader.ts';
 import { PREFERRED_HIGHLIGHTER } from '../lib/workerPool.tsx';
 import {
@@ -21,7 +22,7 @@ import {
   type ThreadAnnotationMeta,
 } from '../state/ReviewContext.tsx';
 import { useTheme } from '../state/ThemeContext.tsx';
-import { CODE_INTEL_CSS, useCodeIntel } from './CodeIntel.tsx';
+import { useCodeIntel } from './CodeIntel.tsx';
 import { CommentComposer } from './CommentComposer.tsx';
 import { ReviewFooter } from './ReviewFooter.tsx';
 import { ReviewSummaryCard } from './ReviewSummaryCard.tsx';

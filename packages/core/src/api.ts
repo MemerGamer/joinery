@@ -14,9 +14,12 @@ import { fileListSchema, revisionSchema, reviewStateSchema } from './domain/file
 import {
   installableServerSchema,
   lspDefinitionSchema,
+  lspFileQuerySchema,
+  lspFileSchema,
   lspHoverSchema,
   lspLanguageSchema,
   lspPositionQuerySchema,
+  lspReferencesSchema,
   lspServerIdSchema,
 } from './domain/lsp.ts';
 import {
@@ -538,6 +541,20 @@ export const api = {
     body: undefined,
     query: lspPositionQuerySchema,
     response: z.object({ definition: lspDefinitionSchema.nullable() }),
+  }),
+  getReferences: def({
+    method: 'GET',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/lsp/references`,
+    body: undefined,
+    query: lspPositionQuerySchema,
+    response: z.object({ references: lspReferencesSchema.nullable() }),
+  }),
+  getLspFile: def({
+    method: 'GET',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/lsp/file`,
+    body: undefined,
+    query: lspFileQuerySchema,
+    response: z.object({ file: lspFileSchema.nullable() }),
   }),
   getReadingOrder: def({
     method: 'GET',

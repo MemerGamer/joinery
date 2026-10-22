@@ -3,7 +3,8 @@
  * `@joinery/core`: validate params through each route's `body`/`query`
  * schema, return exactly its `response` shape.
  */
-import { isAbsolute } from 'node:path';
+import { readFile, stat } from 'node:fs/promises';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { Hono } from 'hono';
 import {
   addRepoBodySchema,
@@ -20,6 +21,7 @@ import {
   versionQuerySchema,
   installableServerSchema,
   listReviewsQuerySchema,
+  lspFileQuerySchema,
   lspPositionQuerySchema,
   markViewedBodySchema,
   readingOrderPlanSchema,
@@ -96,7 +98,7 @@ import { projectThreads } from '../engine/threadProjection.ts';
 import { cancelRun, generateReadingOrder, requestThreadReply } from '../agent/runs.ts';
 import type { Invoke } from '../agent/tools.ts';
 import { resolveRunCwd } from '../agent/worktree.ts';
-import { installServer, lsp, removeServer, type LspTarget } from '../lsp/index.ts';
+import { externalFile, installServer, languageOf, lsp, removeServer, type LspSource, type LspTarget } from '../lsp/index.ts';
 import { lspViews } from '../lsp/views.ts';
 import { badRequest, conflict, internal, notFound, pathError } from './errors.ts';
 import { parseBody, parseQuery } from './validate.ts';
@@ -549,40 +551,71 @@ export function buildRoutes(deps: RoutesDeps): Hono {
   // --- language intelligence ---
 
   /**
-   * Where a hover/peek lands: the head side of the review's current revision.
-   * The text handed to the language server is that side's blob (the disk for
-   * `working`), so a `head`/`pr` review isn't answered from a different file.
+   * The file a language request is about, as the review has it:
+   *
+   * - a file in the diff: the head side of the current revision, from its
+   *   blob (the disk for `working`), so a `head`/`pr` review isn't answered
+   *   from a different file;
+   * - any other code file in the review's checkout (where its servers run,
+   *   at the review's commit), from disk;
+   * - `external:<id>`: a file outside it that a server pointed to.
+   *
+   * Null when there's nothing to ask about (a binary or deleted file).
    */
-  async function lspTarget(id: string, query: z.infer<typeof lspPositionQuerySchema>, signal: AbortSignal) {
+  async function lspSource(id: string, ref: string) {
     const engine = await requireEngine(deps, id);
     const renderCtx = engine.getRenderContext();
     const files = engine.getFileList().files;
-    const entry = files.find((f) => f.path === query.path);
-    if (entry === undefined) throw notFound(`no diff entry for path "${query.path}"`);
-    const target: LspTarget | null =
-      entry.binary || entry.newBlob === NULL_BLOB
-        ? null
-        : {
-            root: await lspViews.rootFor(engine),
-            path: entry.path,
-            contentKey: entry.newBlob,
-            loadText: async () =>
-              (
-                await getFileContents({
-                  cwd: renderCtx.cwd,
-                  revision: renderCtx.revision,
-                  path: entry.path,
-                  oldBlob: NULL_BLOB,
-                  newBlob: entry.newBlob,
-                  catFile: engine.getCatFile(),
-                })
-              ).newContents,
-            line: query.line,
-            character: query.character,
-            signal,
-          };
     const changed = new Set(files.filter((f) => f.status !== 'deleted').map((f) => f.path));
-    return { target, inReview: (path: string) => changed.has(path) };
+    const inReview = (path: string) => changed.has(path);
+    const root = await lspViews.rootFor(engine);
+    const entry = files.find((f) => f.path === ref);
+    if (entry !== undefined) {
+      const source: LspSource | null =
+        entry.binary || entry.newBlob === NULL_BLOB
+          ? null
+          : {
+              root,
+              file: join(root, entry.path),
+              contentKey: entry.newBlob,
+              loadText: async () =>
+                (
+                  await getFileContents({
+                    cwd: renderCtx.cwd,
+                    revision: renderCtx.revision,
+                    path: entry.path,
+                    oldBlob: NULL_BLOB,
+                    newBlob: entry.newBlob,
+                    catFile: engine.getCatFile(),
+                  })
+                ).newContents,
+            };
+      return { source, inReview };
+    }
+    let file = externalFile(ref);
+    if (file === null) {
+      if (ref.startsWith('external:')) throw notFound(`no file for "${ref}"; look it up again`);
+      file = resolve(root, ref);
+      const rel = relative(root, file);
+      if (rel.startsWith('..') || isAbsolute(rel) || languageOf(file) === null) throw notFound(`no code file "${ref}" in this review`);
+    }
+    const info = await stat(file).catch(() => null);
+    if (info === null || !info.isFile()) throw notFound(`no file "${ref}"`);
+    const path = file;
+    const source: LspSource = {
+      root,
+      file: path,
+      contentKey: `disk:${info.mtimeMs}:${info.size}`,
+      loadText: () => readFile(path, 'utf8').catch(() => null),
+    };
+    return { source, inReview };
+  }
+
+  async function lspTarget(id: string, query: z.infer<typeof lspPositionQuerySchema>, signal: AbortSignal) {
+    const { source, inReview } = await lspSource(id, query.path);
+    const target: LspTarget | null =
+      source === null ? null : { ...source, line: query.line, character: query.character, signal };
+    return { target, inReview };
   }
 
   app.get('/api/reviews/:id/lsp/hover', async (c) => {
@@ -595,6 +628,18 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     const query = parseQuery(lspPositionQuerySchema, c);
     const { target, inReview } = await lspTarget(c.req.param('id'), query, c.req.raw.signal);
     return c.json({ definition: target === null ? null : await lsp.definition(target, inReview) });
+  });
+
+  app.get('/api/reviews/:id/lsp/references', async (c) => {
+    const query = parseQuery(lspPositionQuerySchema, c);
+    const { target, inReview } = await lspTarget(c.req.param('id'), query, c.req.raw.signal);
+    return c.json({ references: target === null ? null : await lsp.references(target, inReview) });
+  });
+
+  app.get('/api/reviews/:id/lsp/file', async (c) => {
+    const query = parseQuery(lspFileQuerySchema, c);
+    const { source, inReview } = await lspSource(c.req.param('id'), query.path);
+    return c.json({ file: source === null ? null : await lsp.file(source, inReview) });
   });
 
   // --- reading order ---
