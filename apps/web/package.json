@@ -11,7 +11,8 @@
   "dependencies": {
     "@base-ui-components/react": "1.0.0-rc.0",
     "@joinery/core": "workspace:*",
-    "@pierre/diffs": "1.4.1",
+    "@pierre/diffs": "1.6.1",
+    "@pierre/highlights": "0.2.0",
     "@pierre/theme": "2.0.0",
     "@pierre/theming": "1.0.1",
     "@pierre/trees": "1.0.0-beta.6",

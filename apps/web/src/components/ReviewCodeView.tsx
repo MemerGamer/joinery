@@ -4,19 +4,17 @@
  * sequence. The current step's title + explanation live in the reading-order
  * pane instead of a header here (see ReadingOrderPane.tsx); `lineAnnotations`
  * + `renderAnnotation` render inline comment threads; `enableGutterUtility`
- * + `onGutterUtilityClick` drive the hover `+` for starting a new thread.
+ * + `onGutterUtilityClick` drive the hover `+` for starting a new thread;
+ * the token events drive hover and peek-definition (CodeIntel.tsx).
  */
 import { CodeView } from '@pierre/diffs/react';
-import type { CodeViewReactOptions } from '@pierre/diffs/react';
-import type {
-  DiffLineAnnotation,
-  LineAnnotation,
-  SelectedLineRange,
-  CodeViewItem,
-} from '@pierre/diffs';
+import type { CodeViewAnnotationArgs, CodeViewReactOptions } from '@pierre/diffs/react';
+import type { SelectedLineRange, CodeViewItem } from '@pierre/diffs';
 import { Check, ChevronDown, ChevronRight } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { CODE_INTEL_CSS } from '../lib/codeIntel.ts';
 import { makeLoadDiffFiles } from '../lib/diffLoader.ts';
+import { PREFERRED_HIGHLIGHTER } from '../lib/workerPool.tsx';
 import {
   DRAFT_THREAD_ID,
   pathAtScrollTop,
@@ -24,6 +22,7 @@ import {
   type ThreadAnnotationMeta,
 } from '../state/ReviewContext.tsx';
 import { useTheme } from '../state/ThemeContext.tsx';
+import { useCodeIntel } from './CodeIntel.tsx';
 import { CommentComposer } from './CommentComposer.tsx';
 import { ReviewFooter } from './ReviewFooter.tsx';
 import { ReviewSummaryCard } from './ReviewSummaryCard.tsx';
@@ -146,6 +145,7 @@ export function ReviewCodeView(): React.JSX.Element {
     setScrolledPath,
   } = useReview();
   const { chromeMode } = useTheme();
+  const { onTokenEnter, onTokenLeave, onTokenClick, overlay } = useCodeIntel();
 
   // `onScroll` below only fires once the reader scrolls, so take the first
   // reading here: the items mount a frame or more after `items` arrives
@@ -193,6 +193,8 @@ export function ReviewCodeView(): React.JSX.Element {
       // this, flipping the app to light on a dark-mode machine leaves the
       // diff's own chrome (gutters, scrollbars, form controls) dark.
       themeType: chromeMode,
+      // The pool's choice, for anything rendered before the pool is up.
+      preferredHighlighter: PREFERRED_HIGHLIGHTER,
       hunkSeparators: 'line-info',
       // Must agree with the CSS custom properties set on the host element
       // below — see the DIFF_* constants above for why.
@@ -215,10 +217,13 @@ export function ReviewCodeView(): React.JSX.Element {
       expansionLineCount: 20,
       stickyHeaders: true,
       disableVirtualizationBuffers: false,
-      unsafeCSS: FILE_CARD_CSS,
+      unsafeCSS: FILE_CARD_CSS + CODE_INTEL_CSS,
       // Seams between file cards match the shell's 8px island gap.
       layout: { paddingTop: 0, paddingBottom: 80, gap: 8 },
       loadDiffFiles,
+      onTokenEnter,
+      onTokenLeave,
+      onTokenClick,
       onGutterUtilityClick(range: SelectedLineRange, context) {
         startDraftThread({
           path: context.item.id,
@@ -228,7 +233,7 @@ export function ReviewCodeView(): React.JSX.Element {
         });
       },
     }),
-    [chromeMode, diffStyle, loadDiffFiles, startDraftThread],
+    [chromeMode, diffStyle, loadDiffFiles, onTokenClick, onTokenEnter, onTokenLeave, startDraftThread],
   );
 
   const byPath = useMemo(() => new Map(fileList.map((f) => [f.path, f])), [fileList]);
@@ -257,124 +262,123 @@ export function ReviewCodeView(): React.JSX.Element {
   }
 
   return (
-    <CodeView<ThreadAnnotationMeta, undefined>
-      ref={codeViewRef}
-      items={items}
-      options={options}
-      renderCodeViewHeader={renderHeader}
-      renderCodeViewFooter={renderFooter}
-      // Lets the reading order follow along (it unfolds the step holding
-      // the file being read). React bails out when the path is unchanged,
-      // so this only re-renders as a new file reaches the top.
-      onScroll={onScroll}
-      // `--diffs-gap-block`/`--diffs-line-height` are `@pierre/diffs`' own
-      // density knobs (see `dist/style.js`: `padding-block: var(--diffs-gap-block,
-      // var(--diffs-gap-fallback))` at 8px, `line-height: var(--diffs-line-height, 20px)`)
-      // — custom properties inherit through the shadow root the same way
-      // `chromeToTreeStyles` feeds `--trees-theme-*` into `@pierre/trees`
-      // (FileTreePane.tsx), so nudging them here loosens hunk/line spacing to
-      // match the rest of the chrome's density pass without touching
-      // internals we don't own.
-      // They live here rather than in a Tailwind arbitrary-property class so
-      // they and `options.itemMetrics` come from the same constants: the two
-      // must never drift (see the DIFF_* constants above).
-      //
-      // `outline-hidden!`: `@pierre/diffs` gives this scroll container its
-      // own `tabIndex={-1}` (so it has somewhere to send focus back to if a
-      // focused, virtualized item gets recycled out from under it) — but a
-      // plain click anywhere in here that doesn't land on a real focusable
-      // descendant also focuses this same container per the browser's
-      // nearest-focusable-ancestor fallback, and any key pressed afterwards
-      // (not just a shortcut aimed at this pane) then paints the app-wide
-      // `:focus-visible` ring around the *entire* pane. That's just noise —
-      // this container was never a Tab stop (`-1`) and isn't one of our own
-      // keyboard-shortcut landing targets, so there's no case where its own
-      // outline is informative. Real focusable descendants (e.g. the
-      // "Viewed" button below) are separate elements and keep their own
-      // ring untouched. `!` is needed to beat the unlayered `:focus-visible`
-      // rule in styles/index.css — see the identical workaround note in
-      // CommandPalette.tsx.
-      className="h-full w-full outline-hidden!"
-      style={
-        {
-          height: '100%',
-          overflow: 'auto',
-          '--diffs-gap-block': `${DIFF_GAP_BLOCK}px`,
-          '--diffs-line-height': `${DIFF_LINE_HEIGHT}px`,
-          // File headers are chrome, not code: they take the UI face so the
-          // path reads as a title rather than another line of monospace.
-          '--diffs-header-font-family': 'var(--chrome-font-sans)',
-          '--diffs-font-family': 'var(--chrome-font-mono)',
-          '--diffs-font-size': '12.5px',
-        } as React.CSSProperties
-      }
-      // The right-hand side of each file's title bar: the GitHub-style
-      // "viewed" check. Kept to a single compact row so it stays
-      // inside the header's `1lh + gap * 3` min-height — a taller control
-      // here would silently invalidate DIFF_HEADER_HEIGHT above.
-      renderHeaderMetadata={(item: CodeViewItem<ThreadAnnotationMeta>) => {
-        const entry = byPath.get(item.id);
-        if (entry === undefined) return null;
-        const viewed = isViewed(entry);
-        return (
+    <>
+      {overlay}
+      <CodeView<ThreadAnnotationMeta, undefined>
+        ref={codeViewRef}
+        items={items}
+        options={options}
+        renderCodeViewHeader={renderHeader}
+        renderCodeViewFooter={renderFooter}
+        // Lets the reading order follow along (it unfolds the step holding
+        // the file being read). React bails out when the path is unchanged,
+        // so this only re-renders as a new file reaches the top.
+        onScroll={onScroll}
+        // `--diffs-gap-block`/`--diffs-line-height` are `@pierre/diffs`' own
+        // density knobs (see `dist/style.js`: `padding-block: var(--diffs-gap-block,
+        // var(--diffs-gap-fallback))` at 8px, `line-height: var(--diffs-line-height, 20px)`)
+        // — custom properties inherit through the shadow root the same way
+        // `chromeToTreeStyles` feeds `--trees-theme-*` into `@pierre/trees`
+        // (FileTreePane.tsx), so nudging them here loosens hunk/line spacing to
+        // match the rest of the chrome's density pass without touching
+        // internals we don't own.
+        // They live here rather than in a Tailwind arbitrary-property class so
+        // they and `options.itemMetrics` come from the same constants: the two
+        // must never drift (see the DIFF_* constants above).
+        //
+        // `outline-hidden!`: `@pierre/diffs` gives this scroll container its
+        // own `tabIndex={-1}` (so it has somewhere to send focus back to if a
+        // focused, virtualized item gets recycled out from under it) — but a
+        // plain click anywhere in here that doesn't land on a real focusable
+        // descendant also focuses this same container per the browser's
+        // nearest-focusable-ancestor fallback, and any key pressed afterwards
+        // (not just a shortcut aimed at this pane) then paints the app-wide
+        // `:focus-visible` ring around the *entire* pane. That's just noise —
+        // this container was never a Tab stop (`-1`) and isn't one of our own
+        // keyboard-shortcut landing targets, so there's no case where its own
+        // outline is informative. Real focusable descendants (e.g. the
+        // "Viewed" button below) are separate elements and keep their own
+        // ring untouched. `!` is needed to beat the unlayered `:focus-visible`
+        // rule in styles/index.css — see the identical workaround note in
+        // CommandPalette.tsx.
+        className="h-full w-full outline-hidden!"
+        style={
+          {
+            height: '100%',
+            overflow: 'auto',
+            '--diffs-gap-block': `${DIFF_GAP_BLOCK}px`,
+            '--diffs-line-height': `${DIFF_LINE_HEIGHT}px`,
+            // File headers are chrome, not code: they take the UI face so the
+            // path reads as a title rather than another line of monospace.
+            '--diffs-header-font-family': 'var(--chrome-font-sans)',
+            '--diffs-font-family': 'var(--chrome-font-mono)',
+            '--diffs-font-size': '12.5px',
+          } as React.CSSProperties
+        }
+        // The right-hand side of each file's title bar: the GitHub-style
+        // "viewed" check. Kept to a single compact row so it stays
+        // inside the header's `1lh + gap * 3` min-height — a taller control
+        // here would silently invalidate DIFF_HEADER_HEIGHT above.
+        renderHeaderMetadata={(item: CodeViewItem<ThreadAnnotationMeta>) => {
+          const entry = byPath.get(item.id);
+          if (entry === undefined) return null;
+          const viewed = isViewed(entry);
+          return (
+            <button
+              type="button"
+              role="checkbox"
+              aria-checked={viewed}
+              onClick={() => void toggleViewed(entry.path)}
+              title={viewed ? 'Viewed — unchecks itself when this file changes' : 'Mark as viewed'}
+              className={`relative z-1 flex h-6 shrink-0 select-none items-center gap-1.5 rounded-md px-2 font-sans text-xs transition-colors ${
+                viewed
+                  ? 'bg-chrome-success-bg text-chrome-success'
+                  : 'text-chrome-fg-muted hover:bg-chrome-bg-hover hover:text-chrome-fg'
+              }`}
+            >
+              <Check size={12} strokeWidth={viewed ? 2.5 : 1.75} aria-hidden />
+              Viewed
+            </button>
+          );
+        }}
+        renderHeaderPrefix={(item: CodeViewItem<ThreadAnnotationMeta>) => (
           <button
             type="button"
-            role="checkbox"
-            aria-checked={viewed}
-            onClick={() => void toggleViewed(entry.path)}
-            title={viewed ? 'Viewed — unchecks itself when this file changes' : 'Mark as viewed'}
-            className={`relative z-1 flex h-6 shrink-0 select-none items-center gap-1.5 rounded-md px-2 font-sans text-xs transition-colors ${
-              viewed
-                ? 'bg-chrome-success-bg text-chrome-success'
-                : 'text-chrome-fg-muted hover:bg-chrome-bg-hover hover:text-chrome-fg'
-            }`}
+            onClick={() => toggleFileCollapsed(item.id)}
+            aria-label={item.collapsed === true ? `Expand ${item.id}` : `Collapse ${item.id}`}
+            title={item.collapsed === true ? `Expand ${item.id}` : `Collapse ${item.id}`}
+            aria-expanded={item.collapsed !== true}
+            // `after:` stretches the hit area over the whole header (the
+            // nearest positioned ancestor), so its empty space folds the file
+            // too; the title, counts, and "Viewed" sit above it.
+            className="chrome-icon-btn -ml-1 size-6 text-chrome-fg-subtle after:absolute after:inset-0 after:cursor-pointer"
           >
-            <Check size={12} strokeWidth={viewed ? 2.5 : 1.75} aria-hidden />
-            Viewed
+            {item.collapsed === true ? (
+              <ChevronRight size={14} strokeWidth={1.5} aria-hidden />
+            ) : (
+              <ChevronDown size={14} strokeWidth={1.5} aria-hidden />
+            )}
           </button>
-        );
-      }}
-      renderHeaderPrefix={(item: CodeViewItem<ThreadAnnotationMeta>) => (
-        <button
-          type="button"
-          onClick={() => toggleFileCollapsed(item.id)}
-          aria-label={item.collapsed === true ? `Expand ${item.id}` : `Collapse ${item.id}`}
-          title={item.collapsed === true ? `Expand ${item.id}` : `Collapse ${item.id}`}
-          aria-expanded={item.collapsed !== true}
-          // `after:` stretches the hit area over the whole header (the
-          // nearest positioned ancestor), so its empty space folds the file
-          // too; the title, counts, and "Viewed" sit above it.
-          className="chrome-icon-btn -ml-1 size-6 text-chrome-fg-subtle after:absolute after:inset-0 after:cursor-pointer"
-        >
-          {item.collapsed === true ? (
-            <ChevronRight size={14} strokeWidth={1.5} aria-hidden />
-          ) : (
-            <ChevronDown size={14} strokeWidth={1.5} aria-hidden />
-          )}
-        </button>
-      )}
-      renderAnnotation={(
-        annotation: LineAnnotation<ThreadAnnotationMeta> | DiffLineAnnotation<ThreadAnnotationMeta>,
-        item: CodeViewItem<ThreadAnnotationMeta>,
-      ) => {
-        const meta = annotation.metadata;
-        if (meta === undefined) return null;
-        if (meta.threadId === DRAFT_THREAD_ID) {
-          return (
-            <div className="my-2 w-full max-w-2xl font-sans">
-              <CommentComposer
-                placeholder="Comment on this line…"
-                onSubmit={(body, ask) => void submitDraftThread(body, ask)}
-                onCancel={cancelDraftThread}
-              />
-            </div>
-          );
-        }
-        const thread = threads.find((t) => t.id === meta.threadId);
-        if (thread === undefined) return null;
-        void item;
-        return <ThreadArticle thread={thread} onChanged={() => void reloadThreads()} />;
-      }}
-    />
+        )}
+        renderAnnotation={(...[annotation]: CodeViewAnnotationArgs<ThreadAnnotationMeta>) => {
+          const meta = annotation.metadata;
+          if (meta === undefined) return null;
+          if (meta.threadId === DRAFT_THREAD_ID) {
+            return (
+              <div className="my-2 w-full max-w-2xl font-sans">
+                <CommentComposer
+                  placeholder="Comment on this line…"
+                  onSubmit={(body, ask) => void submitDraftThread(body, ask)}
+                  onCancel={cancelDraftThread}
+                />
+              </div>
+            );
+          }
+          const thread = threads.find((t) => t.id === meta.threadId);
+          if (thread === undefined) return null;
+          return <ThreadArticle thread={thread} onChanged={() => void reloadThreads()} />;
+        }}
+      />
+    </>
   );
 }

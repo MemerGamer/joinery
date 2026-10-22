@@ -12,6 +12,18 @@ import {
 } from './domain/diff.ts';
 import { fileListSchema, revisionSchema, reviewStateSchema } from './domain/files.ts';
 import {
+  installableServerSchema,
+  lspChoiceSchema,
+  lspDefinitionSchema,
+  lspFileQuerySchema,
+  lspFileSchema,
+  lspHoverSchema,
+  lspLanguageSchema,
+  lspPositionQuerySchema,
+  lspReferencesSchema,
+  lspServerIdSchema,
+} from './domain/lsp.ts';
+import {
   agentRunSchema,
   branchSchema,
   branchSortSchema,
@@ -205,6 +217,25 @@ export const integrationsSchema = z.object({
       reason: forgeUnavailableReasonSchema.exclude(['unsupported-host']).nullable(),
     }),
   ),
+  /**
+   * Per language: the choice made in Settings and the server it comes to
+   * (null `server` when off, or not installed yet); the default server when
+   * this platform has a build of it (`installable`, else null), and Joinery's
+   * copy of it, if installed (or being installed); and why the choice can't
+   * be honoured, if it can't.
+   */
+  lsp: z.array(
+    z.object({
+      language: lspLanguageSchema,
+      choice: lspChoiceSchema,
+      server: lspServerIdSchema.nullable(),
+      path: z.string().nullable(),
+      installable: installableServerSchema.nullable(),
+      managed: z.object({ version: z.string() }).nullable(),
+      installing: z.boolean(),
+      problem: z.string().nullable(),
+    }),
+  ),
 });
 export type Integrations = z.infer<typeof integrationsSchema>;
 /**
@@ -336,6 +367,20 @@ export const api = {
     response: noContent,
   }),
   /** Restart the LaunchAgent, e.g. so a new Full Disk Access grant applies. The server answers, then goes away. */
+  installLanguageServer: def({
+    method: 'POST',
+    path: (server: string) => `/api/settings/lsp/${encodeURIComponent(server)}/install`,
+    body: undefined,
+    query: undefined,
+    response: z.object({ server: installableServerSchema, version: z.string(), path: z.string() }),
+  }),
+  setLanguageServerChoice: def({
+    method: 'PUT',
+    path: (language: string) => `/api/settings/lsp/choice/${encodeURIComponent(language)}`,
+    body: lspChoiceSchema,
+    query: undefined,
+    response: z.object({ ok: z.literal(true) }),
+  }),
   restartServer: def({
     method: 'POST',
     path: () => '/api/settings/restart',
@@ -486,6 +531,34 @@ export const api = {
     body: undefined,
     query: z.object({ path: z.string().min(1), rev: revisionSchema.optional() }),
     response: z.object({ contents: fileContentsSchema }),
+  }),
+  getHover: def({
+    method: 'GET',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/lsp/hover`,
+    body: undefined,
+    query: lspPositionQuerySchema,
+    response: z.object({ hover: lspHoverSchema.nullable() }),
+  }),
+  getDefinition: def({
+    method: 'GET',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/lsp/definition`,
+    body: undefined,
+    query: lspPositionQuerySchema,
+    response: z.object({ definition: lspDefinitionSchema.nullable(), off: lspLanguageSchema.nullable() }),
+  }),
+  getReferences: def({
+    method: 'GET',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/lsp/references`,
+    body: undefined,
+    query: lspPositionQuerySchema,
+    response: z.object({ references: lspReferencesSchema.nullable(), off: lspLanguageSchema.nullable() }),
+  }),
+  getLspFile: def({
+    method: 'GET',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/lsp/file`,
+    body: undefined,
+    query: lspFileQuerySchema,
+    response: z.object({ file: lspFileSchema.nullable() }),
   }),
   getReadingOrder: def({
     method: 'GET',

@@ -1,0 +1,445 @@
+/**
+ * Language intelligence in the diff, from the language server the server runs
+ * against the review's checkout (see apps/server/src/lsp):
+ *
+ * - hover a name → a small popover with its signature and docblock;
+ * - ⌘-click it (Ctrl-click elsewhere), or "Definition and uses" in that
+ *   popover → the peek window (PeekNavigator.tsx): the definition and every
+ *   use on the left, the chosen file on the right, where hover and ⌘-click
+ *   work again and step through a history of their own.
+ *
+ * Tokens come from `@pierre/diffs`' own token events (`onTokenEnter` and
+ * friends, enabled by `useTokenTransformer` in lib/workerPool.tsx), which
+ * already carry the line number, side, and character span — no hit-testing.
+ * Only the head side has positions the server knows: additions and context
+ * lines, plus, in split view, a context line's left copy (mapped to its
+ * right-hand twin). A deleted line has no head position and gets nothing.
+ *
+ * Nothing here can hold up the diff: requests start after a hover rests for
+ * `HOVER_DELAY_MS`, the previous one is aborted when the pointer moves on (the
+ * server forwards that as `$/cancelRequest`), and answers are cached per
+ * (file blob, line, token), which is immutable, for the life of the page.
+ */
+import type { DiffTokenEventBaseProps, TokenEventBase } from '@pierre/diffs';
+import type { LspDefinition, LspFile, LspHover, LspLanguage, LspReferences } from '@joinery/core';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { callApi } from '../lib/apiClient.ts';
+import { cached, IS_MAC, PEEK_KEY, placement } from '../lib/codeIntel.ts';
+import { useReview } from '../state/ReviewContext.tsx';
+import { Markdown } from './Markdown.tsx';
+import { PeekNavigator, type Load, type Nav, type NavEntry } from './PeekNavigator.tsx';
+
+const HOVER_DELAY_MS = 300;
+/** Grace to move the pointer from the token onto the popover. */
+const CLOSE_DELAY_MS = 150;
+/** How long the line a jump lands on stays highlighted. */
+const JUMP_HIGHLIGHT_MS = 1_600;
+const SUPPORTED = /\.(?:[cm]?[jt]sx?|php)$/i;
+/** A token worth asking about has a letter, `_` or `$` in it — not `(`, `=>`, `42`. */
+const NAME_LIKE = /[\p{L}_$]/u;
+
+const hoverCache = new Map<string, Promise<LspHover | null>>();
+// Whole answers, `off` included; an answer saying the server is off isn't kept, so turning it on takes effect.
+const definitionCache = new Map<string, Promise<{ definition: LspDefinition | null; off: LspLanguage | null }>>();
+const referencesCache = new Map<string, Promise<{ references: LspReferences | null; off: LspLanguage | null }>>();
+
+type TokenProps = TokenEventBase & Partial<Pick<DiffTokenEventBaseProps, 'side'>>;
+type TokenContext = { item: { id: string } };
+type HeadPosition = { line: number; character: number };
+
+/** Where a token sits on the head side, or null when it only exists in the base. */
+function headPosition(props: TokenProps): HeadPosition | null {
+  // Middle of the name, robust to a server strict about name boundaries. The
+  // highlighter may fold surrounding whitespace into a token (`"const "`).
+  const lead = props.tokenText.length - props.tokenText.trimStart().length;
+  const name = props.tokenText.trim().length;
+  const character = props.lineCharStart + lead + Math.floor((name - 1) / 2);
+  if (props.side !== 'deletions') return { line: props.lineNumber, character };
+  const row = props.tokenElement.closest('[data-line]');
+  if (row?.getAttribute('data-line-type')?.startsWith('context') !== true) return null;
+  // `data-line-index` is "<unified>,<split>"; the two columns share the split row.
+  const splitIndex = row.getAttribute('data-line-index')?.split(',')[1];
+  if (splitIndex === undefined) return null;
+  const twin = row
+    .closest('pre')
+    ?.querySelector(`[data-additions] [data-line][data-line-index$=",${CSS.escape(splitIndex)}"]`);
+  const line = Number(twin?.getAttribute('data-line'));
+  return Number.isInteger(line) && line > 0 ? { line, character } : null;
+}
+
+/**
+ * A token to ask about. `path` is what the server resolves: a diff path, or a
+ * file's `ref` when the token is in the peek window's preview (`inPreview`).
+ * `version` names the text it was read from (a blob, or the preview's text).
+ */
+type Target = {
+  path: string;
+  version: string;
+  pos: HeadPosition;
+  tokenStart: number;
+  element: HTMLElement;
+  name: string;
+  inPreview: boolean;
+};
+
+type HoverCard = { target: Target; rect: DOMRect; hover: LspHover };
+
+const LOADING = { status: 'loading' } as const;
+
+function failed(err: unknown): Load<never> {
+  return { status: 'error', message: err instanceof Error ? err.message : String(err) };
+}
+
+/** The first use listed, for an entry with no definition to show. */
+function firstUse(references: Load<LspReferences | null>): NavEntry['selected'] {
+  const first = references.status === 'ready' ? references.value?.references[0] : undefined;
+  return first === undefined ? null : { ref: first.ref, line: first.line };
+}
+
+export function useCodeIntel(): {
+  onTokenEnter: (props: TokenProps, event: PointerEvent, context: TokenContext) => void;
+  onTokenLeave: (props: TokenProps, event: PointerEvent, context: TokenContext) => void;
+  onTokenClick: (props: TokenProps, event: MouseEvent, context: TokenContext) => void;
+  overlay: React.ReactNode;
+} {
+  const { review, fileList, items, codeViewRef } = useReview();
+  const reviewId = review?.id ?? '';
+  const blobs = useMemo(() => new Map(fileList.map((f) => [f.path, f.newBlob])), [fileList]);
+
+  const [card, setCard] = useState<HoverCard | null>(null);
+  const [nav, setNav] = useState<Nav | null>(null);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inflight = useRef<AbortController | null>(null);
+  const current = useRef<Target | null>(null);
+  const modifierDown = useRef(false);
+  const entryIds = useRef(0);
+
+  const keyOf = useCallback(
+    (t: Target) => `${reviewId}:${t.path}:${t.version}:${t.pos.line}:${t.tokenStart}`,
+    [reviewId],
+  );
+
+  const setLink = (element: HTMLElement | undefined, on: boolean) => {
+    if (on) element?.setAttribute('data-lsp-link', '');
+    else element?.removeAttribute('data-lsp-link');
+  };
+
+  const cancelHover = useCallback(() => {
+    if (hoverTimer.current !== null) clearTimeout(hoverTimer.current);
+    hoverTimer.current = null;
+    inflight.current?.abort();
+    inflight.current = null;
+  }, []);
+
+  const scheduleClose = useCallback(() => {
+    if (closeTimer.current !== null) clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => setCard(null), CLOSE_DELAY_MS);
+  }, []);
+
+  const keepOpen = useCallback(() => {
+    if (closeTimer.current !== null) clearTimeout(closeTimer.current);
+    closeTimer.current = null;
+  }, []);
+
+  const diffTarget = useCallback(
+    (props: TokenProps, context: TokenContext): Target | null => {
+      const path = context.item.id;
+      const blob = blobs.get(path);
+      if (reviewId === '' || blob === undefined || !SUPPORTED.test(path) || !NAME_LIKE.test(props.tokenText)) return null;
+      const pos = headPosition(props);
+      if (pos === null) return null;
+      const name = props.tokenText.trim();
+      return { path, version: blob, pos, tokenStart: props.lineCharStart, element: props.tokenElement, name, inPreview: false };
+    },
+    [blobs, reviewId],
+  );
+
+  const previewTarget = useCallback(
+    (props: TokenProps, file: LspFile): Target | null => {
+      if (reviewId === '' || !SUPPORTED.test(file.path) || !NAME_LIKE.test(props.tokenText)) return null;
+      const pos = headPosition(props);
+      if (pos === null) return null;
+      return {
+        path: file.ref,
+        version: `${file.text.length}:${file.truncated}`,
+        pos,
+        tokenStart: props.lineCharStart,
+        element: props.tokenElement,
+        name: props.tokenText.trim(),
+        inPreview: true,
+      };
+    },
+    [reviewId],
+  );
+
+  const enter = useCallback(
+    (target: Target | null, event: PointerEvent) => {
+      cancelHover();
+      current.current = target;
+      if (target === null) return;
+      setLink(target.element, event.metaKey || event.ctrlKey || modifierDown.current);
+      const key = keyOf(target);
+      hoverTimer.current = setTimeout(() => {
+        hoverTimer.current = null;
+        const controller = new AbortController();
+        inflight.current = controller;
+        cached(hoverCache, key, () =>
+          callApi('getHover', {
+            params: [reviewId],
+            query: { path: target.path, line: target.pos.line, character: target.pos.character },
+            signal: controller.signal,
+          }).then((r) => r.hover),
+        )
+          .then((hover) => {
+            if (current.current !== target) return;
+            keepOpen();
+            if (hover === null) setCard(null);
+            else setCard({ target, rect: target.element.getBoundingClientRect(), hover });
+          })
+          .catch(() => undefined);
+      }, HOVER_DELAY_MS);
+    },
+    [cancelHover, keepOpen, keyOf, reviewId],
+  );
+
+  const leave = useCallback(
+    (props: TokenProps) => {
+      setLink(props.tokenElement, false);
+      if (current.current?.element === props.tokenElement) current.current = null;
+      cancelHover();
+      scheduleClose();
+    },
+    [cancelHover, scheduleClose],
+  );
+
+  /**
+   * Definition and uses of `target`, in the peek window: a new window from the
+   * diff, or the next step of the open one's history from inside its preview.
+   */
+  const openPeek = useCallback(
+    (target: Target) => {
+      cancelHover();
+      setCard(null);
+      entryIds.current += 1;
+      const id = entryIds.current;
+      const entry: NavEntry = { id, name: target.name, definition: LOADING, references: LOADING, selected: null, off: null };
+      setNav((n) =>
+        target.inPreview && n !== null
+          ? { ...n, entries: [...n.entries.slice(0, n.index + 1), entry], index: n.index + 1 }
+          : { rect: target.element.getBoundingClientRect(), entries: [entry], index: 0 },
+      );
+      const update = (patch: (e: NavEntry) => NavEntry) =>
+        setNav((n) => (n === null ? n : { ...n, entries: n.entries.map((e) => (e.id === id ? patch(e) : e)) }));
+      const key = keyOf(target);
+      const query = { path: target.path, line: target.pos.line, character: target.pos.character };
+      cached(definitionCache, key, () => callApi('getDefinition', { params: [reviewId], query })).then(
+        ({ definition, off }) => {
+          if (off !== null) definitionCache.delete(key);
+          update((e) => ({
+            ...e,
+            off: e.off ?? off,
+            definition: { status: 'ready', value: definition },
+            selected: e.selected ?? (definition !== null ? { ref: definition.ref, line: definition.line } : firstUse(e.references)),
+          }));
+        },
+        (err: unknown) => update((e) => ({ ...e, definition: failed(err), selected: e.selected ?? firstUse(e.references) })),
+      );
+      cached(referencesCache, key, () => callApi('getReferences', { params: [reviewId], query })).then(
+        ({ references, off }) => {
+          if (off !== null) referencesCache.delete(key);
+          update((e) => {
+            const loaded: NavEntry['references'] = { status: 'ready', value: references };
+            // The definition, when there is one, is shown first; otherwise the first use.
+            const waiting = e.definition.status === 'loading' || (e.definition.status === 'ready' && e.definition.value !== null);
+            return { ...e, off: e.off ?? off, references: loaded, selected: e.selected ?? (waiting ? null : firstUse(loaded)) };
+          });
+        },
+        (err: unknown) => update((e) => ({ ...e, references: failed(err) })),
+      );
+    },
+    [cancelHover, keyOf, reviewId],
+  );
+
+  const click = useCallback(
+    (target: Target | null, event: MouseEvent) => {
+      if (!(IS_MAC ? event.metaKey : event.ctrlKey)) return;
+      // A drag that ends on a token is a text selection, not a click on it.
+      if (window.getSelection()?.isCollapsed === false) return;
+      if (target === null) return;
+      event.preventDefault();
+      openPeek(target);
+    },
+    [openPeek],
+  );
+
+  const onTokenEnter = useCallback(
+    (props: TokenProps, event: PointerEvent, context: TokenContext) => enter(diffTarget(props, context), event),
+    [diffTarget, enter],
+  );
+  const onTokenClick = useCallback(
+    (props: TokenProps, event: MouseEvent, context: TokenContext) => click(diffTarget(props, context), event),
+    [click, diffTarget],
+  );
+  const preview = useMemo(
+    () => ({
+      onTokenEnter: (props: TokenProps, event: PointerEvent, file: LspFile) => enter(previewTarget(props, file), event),
+      onTokenLeave: leave,
+      onTokenClick: (props: TokenProps, event: MouseEvent, file: LspFile) => click(previewTarget(props, file), event),
+    }),
+    [click, enter, leave, previewTarget],
+  );
+
+  // The held modifier underlines the token under the pointer, editor-style.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const down = IS_MAC ? e.metaKey : e.ctrlKey;
+      if (down === modifierDown.current) return;
+      modifierDown.current = down;
+      setLink(current.current?.element, down);
+    };
+    const onBlur = () => {
+      modifierDown.current = false;
+      setLink(current.current?.element, false);
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKey);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKey);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, []);
+
+  // A scroll moves the token out from under the hover card; the peek window
+  // stays put (it is a window of its own) until dismissed.
+  useEffect(() => {
+    if (card === null) return;
+    const onScroll = () => setCard(null);
+    window.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    return () => window.removeEventListener('scroll', onScroll, { capture: true });
+  }, [card]);
+
+  useEffect(() => () => cancelHover(), [cancelHover]);
+
+  const jump = useCallback(
+    (path: string, line: number) => {
+      setNav(null);
+      setCard(null);
+      const item = items.find((i) => i.id === path);
+      if (item === undefined) return;
+      // Only a line inside a shown hunk can be scrolled to; else the file's top.
+      const shown = item.collapsed !== true && item.fileDiff.hunks.some(
+        (h) => line >= h.additionStart && line < h.additionStart + h.additionCount,
+      );
+      const view = codeViewRef.current;
+      if (view === null) return;
+      view.scrollTo(
+        shown
+          ? { type: 'line', id: path, lineNumber: line, side: 'additions', align: 'center' }
+          : { type: 'item', id: path, align: 'start' },
+      );
+      // Mark the landing line for a moment with the line selection, unless the
+      // reader has one of their own (a comment being drafted) to keep.
+      if (!shown || view.getSelectedLines() !== null) return;
+      const mark = { id: path, range: { start: line, end: line, side: 'additions' as const } };
+      view.setSelectedLines(mark);
+      window.setTimeout(() => {
+        const current = view.getSelectedLines();
+        if (current?.id === mark.id && current.range.start === mark.range.start && current.range.end === mark.range.end) {
+          view.clearSelectedLines();
+        }
+      }, JUMP_HIGHLIGHT_MS);
+    },
+    [codeViewRef, items],
+  );
+
+  const select = useCallback(
+    (selected: NonNullable<NavEntry['selected']>) =>
+      setNav((n) =>
+        n === null ? n : { ...n, entries: n.entries.map((e, i) => (i === n.index ? { ...e, selected } : e)) },
+      ),
+    [],
+  );
+  const step = useCallback(
+    (delta: 1 | -1) =>
+      setNav((n) => (n === null ? n : { ...n, index: Math.max(0, Math.min(n.entries.length - 1, n.index + delta)) })),
+    [],
+  );
+  const closeNav = useCallback(() => {
+    setNav(null);
+    setCard(null);
+  }, []);
+
+  const overlay = (
+    <>
+      {nav !== null &&
+        createPortal(
+          <PeekNavigator
+            nav={nav}
+            reviewId={reviewId}
+            preview={preview}
+            onSelect={select}
+            onStep={step}
+            onJump={jump}
+            onClose={closeNav}
+          />,
+          document.body,
+        )}
+      {card !== null &&
+        createPortal(
+          <HoverPopover
+            card={card}
+            onPointerEnter={keepOpen}
+            onPointerLeave={scheduleClose}
+            onPeek={() => openPeek(card.target)}
+          />,
+          document.body,
+        )}
+    </>
+  );
+
+  return { onTokenEnter, onTokenLeave: leave, onTokenClick, overlay };
+}
+
+function HoverPopover({
+  card,
+  onPointerEnter,
+  onPointerLeave,
+  onPeek,
+}: {
+  card: HoverCard;
+  onPointerEnter: () => void;
+  onPointerLeave: () => void;
+  onPeek: () => void;
+}): React.JSX.Element {
+  const width = Math.min(560, window.innerWidth - 16);
+  return (
+    <div
+      role="tooltip"
+      data-code-intel=""
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
+      style={{ ...placement(card.rect, width, 260), maxWidth: width }}
+      // Above the peek window, whose preview has hover cards of its own.
+      className="fixed z-[60] flex flex-col overflow-hidden rounded-md bg-chrome-bg-raised shadow-chrome ring-1 ring-chrome-fg/10"
+    >
+      <div className="code-intel-hover min-h-0 overflow-auto px-2.5 py-1.5">
+        <Markdown>{card.hover.markdown}</Markdown>
+      </div>
+      <div className="flex h-7 shrink-0 items-center gap-2 border-t px-2.5 text-micro text-chrome-fg-subtle">
+        <button
+          type="button"
+          onClick={onPeek}
+          className="-ml-1.5 rounded px-1.5 py-0.5 text-chrome-fg-muted transition-colors hover:bg-chrome-bg-hover hover:text-chrome-fg"
+        >
+          Definition and uses
+        </button>
+        <span>{PEEK_KEY}-click</span>
+        <span className="ml-auto font-mono">{card.hover.server}</span>
+      </div>
+    </div>
+  );
+}

@@ -518,6 +518,18 @@ button:focus-visible,
   line-height: 1.5;
 }
 
+/* In a hover card the signature is the card itself: no box around it, on the card's own surface. */
+.code-intel-hover .thread-code-block pre {
+  padding: 2px 0;
+  border: 0;
+  background: transparent !important;
+  white-space: pre-wrap;
+}
+.code-intel-hover hr {
+  margin: 6px 0;
+  border-color: var(--chrome-border);
+}
+
 /*
  * Initials avatar tinted by a per-person hue (`--h`), derived for both
  * schemes so a warm hue reads as warm on dark too rather than as mud.

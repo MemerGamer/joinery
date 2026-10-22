@@ -1,6 +1,6 @@
 /** Public surface of the branch state engine. */
 export { ReviewEngine, type ReviewEngineParams } from './reviewEngine.ts';
-export { EngineRegistry } from './registry.ts';
+export { EngineRegistry, type ReviewViewListener } from './registry.ts';
 export { EventBus } from './bus.ts';
 export { RepoPollers } from './repoPoller.ts';
 export {

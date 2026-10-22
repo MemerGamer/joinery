@@ -2,13 +2,14 @@
  * A few lines of diff drawn in one named theme, whichever theme is active,
  * so the settings page can show the dark and the light pick side by side.
  * The diff view itself can't do that: its worker pool renders in one theme
- * at a time. This tokenizes with Shiki on the main thread instead, loaded on
- * first use so it stays out of the main bundle.
+ * at a time. This tokenizes on the main thread instead, with the same
+ * highlighter the diff uses (`@pierre/highlights`, see lib/workerPool.tsx) so
+ * the sample's colours are the diff's, loaded on first use so it stays out of
+ * the main bundle. The surrounding colours come from the Pierre/Shiki theme.
  */
 import type { ThemeLike } from '@pierre/theming';
 import { themes as allThemes } from '@pierre/theming/themes';
 import { useEffect, useState } from 'react';
-import type { ThemeRegistrationAny } from 'shiki';
 
 const LINES: { kind: 'context' | 'removed' | 'added'; text: string }[] = [
   { kind: 'context', text: 'export function greet(name: string): string {' },
@@ -24,15 +25,17 @@ type Rendered = { lines: Token[][]; bg: string; fg: string; added: string; remov
 async function render(name: string): Promise<Rendered | null> {
   const descriptor = allThemes.getTheme(name);
   if (descriptor === undefined) return null;
-  const [{ codeToTokens }, loaded] = await Promise.all([import('shiki'), descriptor.load()]);
+  const [{ codeToTokens }, { themes: zedThemes }, loaded] = await Promise.all([
+    import('@pierre/highlights'),
+    import('@pierre/highlights/themes/loader'),
+    descriptor.load(),
+  ]);
+  const zed = await zedThemes[name]?.();
+  if (zed === undefined) return null;
   // Loaders may resolve to the theme itself or to an ES module wrapping it.
   const theme: ThemeLike = 'default' in loaded ? loaded.default : loaded;
   const colors = theme.colors ?? {};
-  const result = await codeToTokens(LINES.map((l) => l.text).join('\n'), {
-    lang: 'typescript',
-    // A Pierre/Shiki theme object, which is what Shiki takes as a theme registration.
-    theme: theme as ThemeRegistrationAny,
-  });
+  const result = codeToTokens(LINES.map((l) => l.text).join('\n'), { lang: 'typescript', theme: zed.default });
   return {
     lines: result.tokens.map((line) => line.map((t) => ({ content: t.content, color: t.color }))),
     bg: result.bg ?? theme.bg ?? colors['editor.background'] ?? 'transparent',

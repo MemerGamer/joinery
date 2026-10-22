@@ -202,6 +202,10 @@ export class ReviewEngine {
     return this.#review.id;
   }
 
+  get repo(): Repo {
+    return this.#repo;
+  }
+
   /** The cached snapshot for `revision`, or the review's current revision when omitted. */
   getFileList(revision?: Revision): FileList {
     return this.#snapshots[revision ?? this.#resolveEffectiveRevision()];
@@ -224,10 +228,18 @@ export class ReviewEngine {
    * fetches. Scoped to the review's current revision — fetching a
    * different revision's patch for one file is a known gap.
    */
-  getRenderContext(): { cwd: string; revision: Revision; baseSha: string; headSha: string } {
+  getRenderContext(): {
+    cwd: string;
+    /** The review's branch checked out on disk; null when it isn't anywhere. */
+    attachedPath: string | null;
+    revision: Revision;
+    baseSha: string;
+    headSha: string;
+  } {
     const snapshot = this.#snapshots[this.#resolveEffectiveRevision()];
     return {
       cwd: this.#attachedPath ?? this.#repo.rootPath,
+      attachedPath: this.#attachedPath,
       revision: snapshot.revision,
       baseSha: snapshot.baseSha,
       headSha: snapshot.headSha,

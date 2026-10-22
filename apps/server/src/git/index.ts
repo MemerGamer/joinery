@@ -34,6 +34,7 @@ export {
   scopedRemoveWorktree,
   worktreeDirName,
   slugifyBranch,
+  checkoutDetached,
   type WorktreeEntry,
   type CreateDetachedWorktreeParams,
   type ScopedRemoveParams,

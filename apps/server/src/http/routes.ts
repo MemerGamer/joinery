@@ -3,7 +3,8 @@
  * `@joinery/core`: validate params through each route's `body`/`query`
  * schema, return exactly its `response` shape.
  */
-import { isAbsolute } from 'node:path';
+import { readFile, stat } from 'node:fs/promises';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { Hono } from 'hono';
 import {
   addRepoBodySchema,
@@ -18,7 +19,12 @@ import {
   listPullsQuerySchema,
   searchPullsQuerySchema,
   versionQuerySchema,
+  installableServerSchema,
   listReviewsQuerySchema,
+  lspChoiceSchema,
+  lspFileQuerySchema,
+  lspLanguageSchema,
+  lspPositionQuerySchema,
   markViewedBodySchema,
   readingOrderPlanSchema,
   replyBodySchema,
@@ -27,6 +33,7 @@ import {
   setRevisionBodySchema,
   setReviewStatusBodySchema,
   NULL_BLOB,
+  type LspLanguage,
   type ServerEvent,
   type Thread,
 } from '@joinery/core';
@@ -94,7 +101,11 @@ import { projectThreads } from '../engine/threadProjection.ts';
 import { cancelRun, generateReadingOrder, requestThreadReply } from '../agent/runs.ts';
 import type { Invoke } from '../agent/tools.ts';
 import { resolveRunCwd } from '../agent/worktree.ts';
-import { badRequest, conflict, notFound, pathError } from './errors.ts';
+import { externalFile, installServer, languageOf, lsp, type LspSource, type LspTarget } from '../lsp/index.ts';
+import { installableFor } from '../lsp/install.ts';
+import { invalidChoice, lspChoice, saveLspChoice } from '../lsp/choices.ts';
+import { lspViews } from '../lsp/views.ts';
+import { badRequest, conflict, internal, notFound, pathError } from './errors.ts';
 import { parseBody, parseQuery } from './validate.ts';
 
 export type RoutesDeps = {
@@ -112,6 +123,12 @@ const threadsQuerySchema = z.object({
 });
 const reviewPullQuerySchema = z.object({ refresh: z.enum(['true', 'false']).optional() });
 const resolveBodySchema = z.object({ resolved: z.boolean().default(true) });
+
+function parseServer(raw: string) {
+  const parsed = installableServerSchema.safeParse(raw);
+  if (!parsed.success) throw badRequest(`"${raw}" is not a language server Joinery can install`, 'One of: tsrs, phpantom.');
+  return parsed.data;
+}
 
 async function requireEngine(deps: RoutesDeps, reviewId: string) {
   const engine = await deps.registry.get(reviewId);
@@ -214,6 +231,41 @@ export function buildRoutes(deps: RoutesDeps): Hono {
 
   app.post('/api/settings/full-disk-access/open', async (c) => {
     await openFullDiskAccess();
+    return c.json({ ok: true as const });
+  });
+
+  // Downloads into the data directory (lsp/install.ts); the language's
+  // sessions are reset so the next hover picks the new server up.
+  app.post('/api/settings/lsp/:server/install', async (c) => {
+    const server = parseServer(c.req.param('server'));
+    try {
+      const installed = await installServer(server);
+      await lsp.reset(server === 'tsrs' ? 'typescript' : 'php');
+      return c.json({ server, ...installed });
+    } catch (err) {
+      throw internal(
+        `could not install ${server}: ${err instanceof Error ? err.message : String(err)}`,
+        'Check the network and try again.',
+      );
+    }
+  });
+
+  app.put('/api/settings/lsp/choice/:language', async (c) => {
+    const language = lspLanguageSchema.safeParse(c.req.param('language'));
+    if (!language.success) throw badRequest(`"${c.req.param('language')}" is not a language with a server`, 'One of: typescript, php.');
+    const choice = await parseBody(lspChoiceSchema, c);
+    const invalid = invalidChoice(language.data, choice);
+    if (invalid !== null) throw badRequest(invalid);
+    // Joinery's copy is installed when picked, so the next hover doesn't wait for it.
+    const installable = choice.source === 'managed' ? installableFor(language.data) : null;
+    if (installable !== null) {
+      await installServer(installable).catch((err: unknown) => {
+        throw internal(`could not install ${installable}: ${err instanceof Error ? err.message : String(err)}`, 'Check the network and try again.');
+      });
+    }
+    await saveLspChoice(deps.db, language.data, choice);
+    // Servers already running stop; the next hover starts the chosen one.
+    await lsp.reset(language.data);
     return c.json({ ok: true as const });
   });
 
@@ -513,6 +565,108 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     return c.json({ contents });
   });
 
+  // --- language intelligence ---
+
+  /**
+   * The file a language request is about, as the review has it:
+   *
+   * - a file in the diff: the head side of the current revision, from its
+   *   blob (the disk for `working`), so a `head`/`pr` review isn't answered
+   *   from a different file;
+   * - any other code file in the review's checkout (where its servers run,
+   *   at the review's commit), from disk;
+   * - `external:<id>`: a file outside it that a server pointed to.
+   *
+   * Null when there's nothing to ask about (a binary or deleted file).
+   */
+  async function lspSource(id: string, ref: string) {
+    const engine = await requireEngine(deps, id);
+    const renderCtx = engine.getRenderContext();
+    const files = engine.getFileList().files;
+    const changed = new Set(files.filter((f) => f.status !== 'deleted').map((f) => f.path));
+    const inReview = (path: string) => changed.has(path);
+    const root = await lspViews.rootFor(engine);
+    const entry = files.find((f) => f.path === ref);
+    if (entry !== undefined) {
+      const source: LspSource | null =
+        entry.binary || entry.newBlob === NULL_BLOB
+          ? null
+          : {
+              root,
+              file: join(root, entry.path),
+              contentKey: entry.newBlob,
+              loadText: async () =>
+                (
+                  await getFileContents({
+                    cwd: renderCtx.cwd,
+                    revision: renderCtx.revision,
+                    path: entry.path,
+                    oldBlob: NULL_BLOB,
+                    newBlob: entry.newBlob,
+                    catFile: engine.getCatFile(),
+                  })
+                ).newContents,
+            };
+      return { source, inReview };
+    }
+    let file = externalFile(ref);
+    if (file === null) {
+      if (ref.startsWith('external:')) throw notFound(`no file for "${ref}"; look it up again`);
+      file = resolve(root, ref);
+      const rel = relative(root, file);
+      if (rel.startsWith('..') || isAbsolute(rel) || languageOf(file) === null) throw notFound(`no code file "${ref}" in this review`);
+    }
+    const info = await stat(file).catch(() => null);
+    if (info === null || !info.isFile()) throw notFound(`no file "${ref}"`);
+    const path = file;
+    const source: LspSource = {
+      root,
+      file: path,
+      contentKey: `disk:${info.mtimeMs}:${info.size}`,
+      loadText: () => readFile(path, 'utf8').catch(() => null),
+    };
+    return { source, inReview };
+  }
+
+  async function lspTarget(id: string, query: z.infer<typeof lspPositionQuerySchema>, signal: AbortSignal) {
+    const { source, inReview } = await lspSource(id, query.path);
+    const target: LspTarget | null =
+      source === null ? null : { ...source, line: query.line, character: query.character, signal };
+    return { target, inReview };
+  }
+
+  /** The target's language when its server is switched off in Settings, so the peek can say so rather than "nothing found". */
+  const offFor = (target: LspTarget | null): LspLanguage | null => {
+    const language = target === null ? undefined : languageOf(target.file)?.language;
+    return language !== undefined && lspChoice(language).source === 'off' ? language : null;
+  };
+
+  app.get('/api/reviews/:id/lsp/hover', async (c) => {
+    const query = parseQuery(lspPositionQuerySchema, c);
+    const { target } = await lspTarget(c.req.param('id'), query, c.req.raw.signal);
+    return c.json({ hover: target === null ? null : await lsp.hover(target) });
+  });
+
+  app.get('/api/reviews/:id/lsp/definition', async (c) => {
+    const query = parseQuery(lspPositionQuerySchema, c);
+    const { target, inReview } = await lspTarget(c.req.param('id'), query, c.req.raw.signal);
+    const off = offFor(target);
+    return c.json({ definition: target === null || off !== null ? null : await lsp.definition(target, inReview), off });
+  });
+
+  app.get('/api/reviews/:id/lsp/references', async (c) => {
+    const query = parseQuery(lspPositionQuerySchema, c);
+    const { target, inReview } = await lspTarget(c.req.param('id'), query, c.req.raw.signal);
+    const off = offFor(target);
+    return c.json({ references: target === null || off !== null ? null : await lsp.references(target, inReview), off });
+  });
+
+  app.get('/api/reviews/:id/lsp/file', async (c) => {
+    const query = parseQuery(lspFileQuerySchema, c);
+    const { source, inReview } = await lspSource(c.req.param('id'), query.path);
+    return c.json({ file: source === null ? null : await lsp.file(source, inReview) });
+  });
+
   // --- reading order ---
 
   app.get('/api/reviews/:id/reading-order', async (c) => {
@@ -765,6 +919,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     // engine's in-memory review row still needs to know the new choice
     // immediately, since it isn't reloaded from sqlite until the next tick.
     engine.setCurrentRevisionHint(body.revision);
+    lspViews.changed(engine);
     const state = await engine.getState();
     const list = engine.getFileList(body.revision);
     return c.json({ state, list });

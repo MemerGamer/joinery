@@ -1,10 +1,11 @@
 /**
  * Server startup (`startServer`, shared by `bun src/index.ts` and `joinery serve`): run migrations, ensure the data dir and
  * bearer token, start the HTTP + WS server bound to `127.0.0.1` only, log
- * the URL, and dispose engines/cat-file processes cleanly on shutdown. Also
- * fails agent runs orphaned by the previous process and keeps the agent
- * worktree cache pruned (`agent/maintenance.ts`), and the git/`gh` answer
- * cache too (`storedCache.ts`).
+ * the URL, and dispose engines, cat-file processes and language servers cleanly
+ * on shutdown. Also fails agent runs orphaned by the previous process and keeps the agent
+ * worktree cache pruned (`agent/maintenance.ts`), the git/`gh` answer
+ * cache too (`storedCache.ts`), and Joinery's language servers up to date
+ * (`lsp/install.ts`).
  */
 import { DEFAULT_HOST } from '@joinery/core';
 import { initDataDir, openDb, readToken, runMigrations } from './db/index.ts';
@@ -12,12 +13,18 @@ import { EngineRegistry } from './engine/index.ts';
 import { createApp } from './http/app.ts';
 import { failOrphanedRuns, startWorktreeSweep } from './agent/maintenance.ts';
 import { startCacheEntryPrune } from './storedCache.ts';
+import { lsp, startLspUpdates } from './lsp/index.ts';
+import { loadLspChoices } from './lsp/choices.ts';
+import { lspViews } from './lsp/views.ts';
 import { configuredPort, portFile, runtimeLayout } from './runtime.ts';
 
 export async function startServer(): Promise<void> {
   const paths = await initDataDir();
   const { db, sqlite } = openDb({ file: paths.dbFile });
   await runMigrations(sqlite, { log: (message) => console.log(`[migrate] ${message}`) });
+  await loadLspChoices(db);
+  // A newer release replaces Joinery's copy; servers running the old one restart on the next hover.
+  const stopLspUpdates = startLspUpdates((id) => void lsp.reset(id === 'tsrs' ? 'typescript' : 'php'));
 
   const token = await readToken(paths);
 
@@ -27,6 +34,7 @@ export async function startServer(): Promise<void> {
   const stopCacheEntryPrune = startCacheEntryPrune(db);
 
   const registry = new EngineRegistry(db);
+  registry.setViewListener(lspViews);
   const layout = runtimeLayout();
   const webDistDir = layout.webDistDir;
 
@@ -64,11 +72,13 @@ export async function startServer(): Promise<void> {
     shuttingDown = true;
     console.log('shutting down...');
     stopWorktreeSweep();
+    stopLspUpdates();
     stopCacheEntryPrune();
     registry.disposeAll();
     server.stop();
     sqlite.close();
-    process.exit(0);
+    // Language servers get a moment to exit cleanly, never long enough to hold up the stop.
+    void Promise.race([lsp.stopAll(), Bun.sleep(1_000)]).then(() => process.exit(0));
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);

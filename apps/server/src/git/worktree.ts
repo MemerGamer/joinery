@@ -171,6 +171,14 @@ export async function createDetachedWorktree(params: CreateDetachedWorktreeParam
   };
 }
 
+/**
+ * Move a detached worktree of ours (under `dataDir`) to `sha`. `--force`
+ * because nothing in it is anyone's work: it is only ever read.
+ */
+export async function checkoutDetached(params: { worktreePath: string; sha: string; dataDir: string }): Promise<void> {
+  await gitOrThrow(['checkout', '--detach', '--force', params.sha], { cwd: params.worktreePath, dataDir: params.dataDir });
+}
+
 export type ScopedRemoveParams = {
   /** The worktree directory we created, under `dataDir`. */
   worktreePath: string;

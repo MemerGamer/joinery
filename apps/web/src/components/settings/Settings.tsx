@@ -5,18 +5,21 @@
  *  - Appearance: the dark and the light diff theme, picked separately,
  *    each over a sample drawn in it (the same two slots ⌘K's `#` tabs fill).
  *  - Repositories: what's registered, its forge, and removing one.
- *  - Integrations: are `git` and `claude` there, and can each forge host be asked.
+ *  - Integrations, in groups with their marks: the basics (are `git` and
+ *    `claude` there), forges (can each host be asked) and language servers
+ *    (each language's switch for hover/peek in diffs).
  *  - Full Disk Access: the macOS grant for the installed server.
  *  - Data: where it lives and how big, clearing the caches, and the
  *    archived reviews, which nothing else lists, to reopen or delete.
  *
- * Everything server-side is read when the page opens; nothing here is a
- * stored server setting.
+ * Everything server-side is read when the page opens; the language server
+ * choices are the only stored server settings.
  */
 import type { DataUsage, FullDiskAccess, Integrations, Repo, Review, ReviewSummary } from '@joinery/core';
 import {
   Archive,
   ArrowLeft,
+  Bot,
   Check,
   Database,
   FolderGit2,
@@ -40,9 +43,11 @@ import { useTheme, type ChromeMode } from '../../state/ThemeContext.tsx';
 import { CommandPalette } from '../CommandPalette.tsx';
 import { ConfirmDelete } from '../ConfirmDelete.tsx';
 import { repoLabel } from '../Explore.tsx';
+import { GitHubMark, GitLabMark, GitMark, LANGUAGE_MARK } from '../brandMarks.tsx';
 import { FolderPicker } from '../home/FolderPicker.tsx';
 import { Panel } from '../home/Panel.tsx';
 import { Chip, type Tone } from '../home/primitives.tsx';
+import { LSP_TITLE, useLanguageServerPicker } from './LanguageServerPicker.tsx';
 import { ThemePicker } from './ThemePicker.tsx';
 import { ThemeSample } from './ThemeSample.tsx';
 
@@ -331,6 +336,55 @@ export function hostHint(cli: 'gh' | 'glab', host: string, reason: Integrations[
   return undefined;
 }
 
+/**
+ * One language's hover/peek server, chosen with the picker
+ * (LanguageServerPicker.tsx); the custom path form opens under the row.
+ */
+function LanguageServerRow({ row, onChanged }: { row: Integrations['lsp'][number]; onChanged: () => void }): React.JSX.Element {
+  const { controls, detail, editor } = useLanguageServerPicker(row, onChanged);
+  const Mark = LANGUAGE_MARK[row.language];
+  return (
+    <li className="flex flex-col gap-2 rounded-md px-3 py-2">
+      <span className="flex min-h-7 items-center gap-3">
+        <span className="inline-flex size-4 shrink-0 items-center justify-center text-chrome-fg-subtle [&>svg]:size-4" aria-hidden>
+          <Mark />
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="truncate text-body text-chrome-fg">{LSP_TITLE[row.language].files}</span>
+          <span className="truncate text-micro text-chrome-fg-subtle">{detail}</span>
+        </span>
+        <span className="flex shrink-0 items-center gap-1.5">{controls}</span>
+      </span>
+      {editor !== null && <span className="pl-7">{editor}</span>}
+    </li>
+  );
+}
+
+/** A group of integrations: a heading, what they're for (once, not per row), and the rows. */
+function IntegrationGroup({
+  title,
+  about,
+  first = false,
+  children,
+}: {
+  title: string;
+  about?: string;
+  first?: boolean;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <section className={first ? '' : 'mt-1.5 border-t border-chrome-border pt-2'}>
+      <header className="flex flex-col gap-0.5 px-3 pb-0.5">
+        <h3 className="text-xs font-medium text-chrome-fg">{title}</h3>
+        {about !== undefined && <p className="text-micro text-chrome-fg-subtle">{about}</p>}
+      </header>
+      <ul className="flex flex-col">{children}</ul>
+    </section>
+  );
+}
+
+const CLI_MARK: Record<Integrations['clis'][number]['cli'], React.ReactNode> = { gh: <GitHubMark />, glab: <GitLabMark /> };
+
 function IntegrationsPanel(): React.JSX.Element {
   const { data, error, loading, reload } = useLoad(() => callApi('integrations'));
   return (
@@ -349,41 +403,54 @@ function IntegrationsPanel(): React.JSX.Element {
       {data === null ? (
         error === null && <Empty>Checking…</Empty>
       ) : (
-        <ul className={`flex flex-col transition-opacity ${loading ? 'opacity-60' : ''}`}>
-          <Row title={<code>git</code>} detail={data.git.path ?? 'Joinery reads every repository through it'}>
-            {data.git.path !== null ? <Chip tone="success" icon={<Check size={11} strokeWidth={2.5} />}>Installed</Chip> : <Chip tone="danger">Not installed</Chip>}
-          </Row>
-          <Row
-            title="Claude Code"
-            detail={
-              data.claude.path !== null
-                ? data.claude.path
-                : data.claude.bundled
-                  ? 'Not on PATH'
-                  : 'Install it and run `claude` once to sign in; agent replies need it'
-            }
-          >
-            {data.claude.path !== null || data.claude.bundled ? <Chip tone="success" icon={<Check size={11} strokeWidth={2.5} />}>Found</Chip> : <Chip tone="danger">Not found</Chip>}
-          </Row>
-          {data.clis.map((c) => (
-            <Row key={c.cli} title={<code>{c.cli}</code>} detail={c.path ?? (c.cli === 'gh' ? 'Needed for GitHub pull requests' : 'Needed for GitLab merge requests')}>
-              {c.path !== null ? <Chip tone="success" icon={<Check size={11} strokeWidth={2.5} />}>Installed</Chip> : <Chip>Not installed</Chip>}
+        <div className={`transition-opacity ${loading ? 'opacity-60' : ''}`}>
+          <IntegrationGroup title="Basics" first>
+            <Row icon={<GitMark />} title={<code>git</code>} detail={data.git.path ?? 'Joinery reads every repository through it'}>
+              {data.git.path !== null ? <Chip tone="success" icon={<Check size={11} strokeWidth={2.5} />}>Installed</Chip> : <Chip tone="danger">Not installed</Chip>}
             </Row>
-          ))}
-          {data.hosts.map((h) => (
             <Row
-              key={h.host}
-              title={h.host}
-              detail={hostHint(h.cli, h.host, h.reason) ?? `${h.cli} · ${String(h.repos)} ${h.repos === 1 ? 'repository' : 'repositories'}`}
+              icon={<Bot strokeWidth={1.75} />}
+              title="Claude Code"
+              detail={
+                data.claude.path !== null
+                  ? data.claude.path
+                  : data.claude.bundled
+                    ? 'Not on PATH'
+                    : 'Install it and run `claude` once to sign in; agent replies need it'
+              }
             >
-              {h.reason === null ? (
-                <Chip tone="success" icon={<Check size={11} strokeWidth={2.5} />}>Signed in</Chip>
-              ) : (
-                <Chip tone={REASON[h.reason].tone}>{REASON[h.reason].label}</Chip>
-              )}
+              {data.claude.path !== null || data.claude.bundled ? <Chip tone="success" icon={<Check size={11} strokeWidth={2.5} />}>Found</Chip> : <Chip tone="danger">Not found</Chip>}
             </Row>
-          ))}
-        </ul>
+          </IntegrationGroup>
+          <IntegrationGroup title="Forges" about="Pull requests and merge requests come in through gh and glab, signed in to each host your repositories use.">
+            {data.clis.map((c) => (
+              <Row key={c.cli} icon={CLI_MARK[c.cli]} title={<code>{c.cli}</code>} detail={c.path ?? (c.cli === 'gh' ? 'Needed for GitHub' : 'Needed for GitLab')}>
+                {c.path !== null ? <Chip tone="success" icon={<Check size={11} strokeWidth={2.5} />}>Installed</Chip> : <Chip>Not installed</Chip>}
+              </Row>
+            ))}
+            {data.hosts.map((h) => (
+              <Row
+                key={h.host}
+                icon={CLI_MARK[h.cli]}
+                title={h.host}
+                detail={hostHint(h.cli, h.host, h.reason) ?? `${h.cli} · ${String(h.repos)} ${h.repos === 1 ? 'repository' : 'repositories'}`}
+              >
+                {h.reason === null ? (
+                  <Chip tone="success" icon={<Check size={11} strokeWidth={2.5} />}>Signed in</Chip>
+                ) : (
+                  <Chip tone={REASON[h.reason].tone}>{REASON[h.reason].label}</Chip>
+                )}
+              </Row>
+            ))}
+          </IntegrationGroup>
+          {data.lsp.length > 0 && (
+            <IntegrationGroup title="Language servers" about="Types and docs on hover, and jumps to definitions and uses, right in the diff.">
+              {data.lsp.map((l) => (
+                <LanguageServerRow key={l.language} row={l} onChanged={reload} />
+              ))}
+            </IntegrationGroup>
+          )}
+        </div>
       )}
     </Panel>
   );

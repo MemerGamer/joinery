@@ -31,6 +31,17 @@ import { ReviewEngine } from './reviewEngine.ts';
 const SWEEP_INTERVAL_MS = 60_000;
 const IDLE_GRACE_MS = 120_000;
 
+/**
+ * Told when a window starts or stops showing a review, and when a shown
+ * review moves (a tick, a revision switch): language servers get their
+ * checkout ready ahead of the first hover, and give it back after.
+ */
+export interface ReviewViewListener {
+  opened(engine: ReviewEngine): void;
+  changed(engine: ReviewEngine): void;
+  closed(reviewId: string): void;
+}
+
 interface EngineEntry {
   engine: ReviewEngine;
   lastUsedAt: number;
@@ -43,6 +54,7 @@ export class EngineRegistry {
   readonly #engines = new Map<string, EngineEntry>();
   readonly #creating = new Map<string, Promise<ReviewEngine | null>>();
   readonly #sweepTimer: ReturnType<typeof setInterval>;
+  #viewListener: ReviewViewListener | null = null;
 
   constructor(db: Db, bus: EventBus = new EventBus()) {
     this.#db = db;
@@ -95,7 +107,13 @@ export class EngineRegistry {
       review,
       // A worker's live events (file lists, state, relocated threads) only
       // concern the review's own window.
-      emit: (event) => this.bus.publish(reviewTopic(reviewId), event),
+      emit: (event) => {
+        this.bus.publish(reviewTopic(reviewId), event);
+        const entry = this.#engines.get(reviewId);
+        if ((event.type === 'files.changed' || event.type === 'root.rebound') && entry !== undefined) {
+          this.#viewListener?.changed(entry.engine);
+        }
+      },
       onStateChanged: (id) => this.bus.reviewChanged(id),
     });
     this.#engines.set(reviewId, { engine, lastUsedAt: Date.now() });
@@ -134,6 +152,7 @@ export class EngineRegistry {
     const engine = await this.get(reviewId);
     if (engine === null) return null;
     engine.subscribe();
+    this.#viewListener?.opened(engine);
     // A watched repo polls on the quick interval; poll it now rather than at the old one.
     const review = await getReview(this.#db, reviewId);
     if (review !== null) this.pollers.kick(review.repoId);
@@ -144,8 +163,13 @@ export class EngineRegistry {
         if (released) return;
         released = true;
         engine.unsubscribe();
+        this.#viewListener?.closed(reviewId);
       },
     };
+  }
+
+  setViewListener(listener: ReviewViewListener): void {
+    this.#viewListener = listener;
   }
 
   /** The review's window regained focus: re-check disk, and re-poll its repo now. */
