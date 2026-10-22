@@ -12,21 +12,25 @@
  *   ‹ › (⌘[ ⌘]) walk back and forth through those steps.
  * - "Go to it in this review" leaves for the diff when the file is changed.
  *
- * While nothing has been found yet it stays a one-line status, sized to it.
+ * While nothing has been found yet it stays a one-line status, sized to it;
+ * when the file's language server is switched off, that line says so and
+ * links to Settings, where it's turned on.
  */
 import { File as CodeFile } from '@pierre/diffs/react';
 import type { TokenEventBase } from '@pierre/diffs';
-import type { LspDefinition, LspFile, LspReference, LspReferences } from '@joinery/core';
-import { ArrowUpRight, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import type { LspDefinition, LspFile, LspLanguage, LspReference, LspReferences } from '@joinery/core';
+import { ArrowRight, ArrowUpRight, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { callApi } from '../lib/apiClient.ts';
+import { goSettings } from '../lib/router.ts';
 import { PREFERRED_HIGHLIGHTER } from '../lib/workerPool.tsx';
 import { useTheme } from '../state/ThemeContext.tsx';
+import { LSP_TITLE } from './settings/LanguageServerPicker.tsx';
 import { cached, CODE_INTEL_CSS, IS_MAC, placement } from '../lib/codeIntel.ts';
 
 const WIDTH = 1_080;
 const HEIGHT = 520;
-const STATUS_WIDTH = 360;
+const STATUS_WIDTH = 460;
 
 export type Load<T> = { status: 'loading' } | { status: 'ready'; value: T } | { status: 'error'; message: string };
 
@@ -38,6 +42,8 @@ export type NavEntry = {
   references: Load<LspReferences | null>;
   /** The file and line on the right: the definition's, or else the first use's, once in. */
   selected: { ref: string; line: number } | null;
+  /** The language, when its server is switched off in Settings. */
+  off: LspLanguage | null;
 };
 
 export type Nav = { rect: DOMRect; entries: NavEntry[]; index: number };
@@ -175,7 +181,24 @@ export function PeekNavigator({
         style={{ ...placement(nav.rect, width, 40), maxWidth: width }}
         className="fixed z-50 flex h-8 items-center gap-2 overflow-hidden rounded-md bg-chrome-bg-raised pl-3 pr-1 text-xs shadow-chrome ring-1 ring-chrome-fg/10"
       >
-        <span className="truncate text-chrome-fg-muted">{status}</span>
+        {entry.off !== null ? (
+          <>
+            <span className="truncate text-chrome-fg-muted">The {LSP_TITLE[entry.off].title} is off</span>
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                goSettings();
+              }}
+              className="flex shrink-0 items-center gap-1 rounded px-1.5 py-1 text-chrome-fg hover:bg-chrome-bg-hover"
+            >
+              Turn it on in Settings
+              <ArrowRight size={12} strokeWidth={1.75} aria-hidden />
+            </button>
+          </>
+        ) : (
+          <span className="truncate text-chrome-fg-muted">{status}</span>
+        )}
         <CloseButton onClose={onClose} />
       </div>
     );

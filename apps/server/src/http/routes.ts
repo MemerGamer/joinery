@@ -33,6 +33,7 @@ import {
   setRevisionBodySchema,
   setReviewStatusBodySchema,
   NULL_BLOB,
+  type LspLanguage,
   type ServerEvent,
   type Thread,
 } from '@joinery/core';
@@ -102,7 +103,7 @@ import type { Invoke } from '../agent/tools.ts';
 import { resolveRunCwd } from '../agent/worktree.ts';
 import { externalFile, installServer, languageOf, lsp, type LspSource, type LspTarget } from '../lsp/index.ts';
 import { installableFor } from '../lsp/install.ts';
-import { invalidChoice, saveLspChoice } from '../lsp/choices.ts';
+import { invalidChoice, lspChoice, saveLspChoice } from '../lsp/choices.ts';
 import { lspViews } from '../lsp/views.ts';
 import { badRequest, conflict, internal, notFound, pathError } from './errors.ts';
 import { parseBody, parseQuery } from './validate.ts';
@@ -634,6 +635,12 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     return { target, inReview };
   }
 
+  /** The target's language when its server is switched off in Settings, so the peek can say so rather than "nothing found". */
+  const offFor = (target: LspTarget | null): LspLanguage | null => {
+    const language = target === null ? undefined : languageOf(target.file)?.language;
+    return language !== undefined && lspChoice(language).source === 'off' ? language : null;
+  };
+
   app.get('/api/reviews/:id/lsp/hover', async (c) => {
     const query = parseQuery(lspPositionQuerySchema, c);
     const { target } = await lspTarget(c.req.param('id'), query, c.req.raw.signal);
@@ -643,13 +650,15 @@ export function buildRoutes(deps: RoutesDeps): Hono {
   app.get('/api/reviews/:id/lsp/definition', async (c) => {
     const query = parseQuery(lspPositionQuerySchema, c);
     const { target, inReview } = await lspTarget(c.req.param('id'), query, c.req.raw.signal);
-    return c.json({ definition: target === null ? null : await lsp.definition(target, inReview) });
+    const off = offFor(target);
+    return c.json({ definition: target === null || off !== null ? null : await lsp.definition(target, inReview), off });
   });
 
   app.get('/api/reviews/:id/lsp/references', async (c) => {
     const query = parseQuery(lspPositionQuerySchema, c);
     const { target, inReview } = await lspTarget(c.req.param('id'), query, c.req.raw.signal);
-    return c.json({ references: target === null ? null : await lsp.references(target, inReview) });
+    const off = offFor(target);
+    return c.json({ references: target === null || off !== null ? null : await lsp.references(target, inReview), off });
   });
 
   app.get('/api/reviews/:id/lsp/file', async (c) => {

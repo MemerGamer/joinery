@@ -544,14 +544,14 @@ export const api = {
     path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/lsp/definition`,
     body: undefined,
     query: lspPositionQuerySchema,
-    response: z.object({ definition: lspDefinitionSchema.nullable() }),
+    response: z.object({ definition: lspDefinitionSchema.nullable(), off: lspLanguageSchema.nullable() }),
   }),
   getReferences: def({
     method: 'GET',
     path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/lsp/references`,
     body: undefined,
     query: lspPositionQuerySchema,
-    response: z.object({ references: lspReferencesSchema.nullable() }),
+    response: z.object({ references: lspReferencesSchema.nullable(), off: lspLanguageSchema.nullable() }),
   }),
   getLspFile: def({
     method: 'GET',

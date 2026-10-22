@@ -21,7 +21,7 @@
  * (file blob, line, token), which is immutable, for the life of the page.
  */
 import type { DiffTokenEventBaseProps, TokenEventBase } from '@pierre/diffs';
-import type { LspDefinition, LspFile, LspHover, LspReferences } from '@joinery/core';
+import type { LspDefinition, LspFile, LspHover, LspLanguage, LspReferences } from '@joinery/core';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { callApi } from '../lib/apiClient.ts';
@@ -40,8 +40,9 @@ const SUPPORTED = /\.(?:[cm]?[jt]sx?|php)$/i;
 const NAME_LIKE = /[\p{L}_$]/u;
 
 const hoverCache = new Map<string, Promise<LspHover | null>>();
-const definitionCache = new Map<string, Promise<LspDefinition | null>>();
-const referencesCache = new Map<string, Promise<LspReferences | null>>();
+// Whole answers, `off` included; an answer saying the server is off isn't kept, so turning it on takes effect.
+const definitionCache = new Map<string, Promise<{ definition: LspDefinition | null; off: LspLanguage | null }>>();
+const referencesCache = new Map<string, Promise<{ references: LspReferences | null; off: LspLanguage | null }>>();
 
 type TokenProps = TokenEventBase & Partial<Pick<DiffTokenEventBaseProps, 'side'>>;
 type TokenContext = { item: { id: string } };
@@ -223,7 +224,7 @@ export function useCodeIntel(): {
       setCard(null);
       entryIds.current += 1;
       const id = entryIds.current;
-      const entry: NavEntry = { id, name: target.name, definition: LOADING, references: LOADING, selected: null };
+      const entry: NavEntry = { id, name: target.name, definition: LOADING, references: LOADING, selected: null, off: null };
       setNav((n) =>
         target.inPreview && n !== null
           ? { ...n, entries: [...n.entries.slice(0, n.index + 1), entry], index: n.index + 1 }
@@ -233,23 +234,28 @@ export function useCodeIntel(): {
         setNav((n) => (n === null ? n : { ...n, entries: n.entries.map((e) => (e.id === id ? patch(e) : e)) }));
       const key = keyOf(target);
       const query = { path: target.path, line: target.pos.line, character: target.pos.character };
-      cached(definitionCache, key, () => callApi('getDefinition', { params: [reviewId], query }).then((r) => r.definition)).then(
-        (definition) =>
+      cached(definitionCache, key, () => callApi('getDefinition', { params: [reviewId], query })).then(
+        ({ definition, off }) => {
+          if (off !== null) definitionCache.delete(key);
           update((e) => ({
             ...e,
+            off: e.off ?? off,
             definition: { status: 'ready', value: definition },
             selected: e.selected ?? (definition !== null ? { ref: definition.ref, line: definition.line } : firstUse(e.references)),
-          })),
+          }));
+        },
         (err: unknown) => update((e) => ({ ...e, definition: failed(err), selected: e.selected ?? firstUse(e.references) })),
       );
-      cached(referencesCache, key, () => callApi('getReferences', { params: [reviewId], query }).then((r) => r.references)).then(
-        (references) =>
+      cached(referencesCache, key, () => callApi('getReferences', { params: [reviewId], query })).then(
+        ({ references, off }) => {
+          if (off !== null) referencesCache.delete(key);
           update((e) => {
             const loaded: NavEntry['references'] = { status: 'ready', value: references };
             // The definition, when there is one, is shown first; otherwise the first use.
             const waiting = e.definition.status === 'loading' || (e.definition.status === 'ready' && e.definition.value !== null);
-            return { ...e, references: loaded, selected: e.selected ?? (waiting ? null : firstUse(loaded)) };
-          }),
+            return { ...e, off: e.off ?? off, references: loaded, selected: e.selected ?? (waiting ? null : firstUse(loaded)) };
+          });
+        },
         (err: unknown) => update((e) => ({ ...e, references: failed(err) })),
       );
     },
