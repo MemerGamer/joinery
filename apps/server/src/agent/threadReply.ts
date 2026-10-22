@@ -14,6 +14,7 @@ import { isAbsolute, relative } from 'node:path';
 import { claudeExecutableOption } from './claudeExecutable.ts';
 import { AGENT_MODEL_ID } from './model.ts';
 import { makeAgentCanUseTool } from './permissions.ts';
+import { gitToolDefinitions } from './gitTools.ts';
 import { createReviewTools, trimToLines, type Invoke } from './tools.ts';
 import { resolveRunCwd, type EngineForCwd } from './worktree.ts';
 import { appendEvent, type Db } from '../db/index.ts';
@@ -66,7 +67,9 @@ export function buildThreadReplyPrompt(input: {
     'the user. Keep replies short and grounded in specific',
     "file paths and line numbers. Don't resolve a thread unless the user",
     'explicitly asked you to. Prefer `react` over a reply for a plain',
-    'acknowledgement.',
+    'acknowledgement. To read the code use Read, Grep and Glob; for its',
+    'history (who changed what, when and why) use the read-only git_log,',
+    'git_show and git_blame tools.',
   ].join(' ');
 
   const header = [
@@ -134,7 +137,7 @@ export async function runThreadReplyAgent(
     diffText: trimToLines(patch.patch, 200),
   });
 
-  const tools = createReviewTools({ invoke: deps.invoke, reviewId: review.id, runId });
+  const tools = createReviewTools({ invoke: deps.invoke, reviewId: review.id, runId, extraTools: gitToolDefinitions({ cwd }) });
 
   const stream = query({
     prompt: userMessage,

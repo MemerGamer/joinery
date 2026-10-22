@@ -20,7 +20,7 @@
  * server's lifetime performed a write — `threadReply.ts` uses it to decide
  * whether the run needs its "nothing to add" fallback reply.
  */
-import { createSdkMcpServer, tool, type McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk';
+import { createSdkMcpServer, tool, type McpSdkServerConfigWithInstance, type SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk';
 import { reactionKindSchema, threadSideSchema } from '@joinery/core';
 import { z } from 'zod';
 
@@ -67,6 +67,8 @@ export type CreateReviewToolsOptions = {
   readonly reviewId: string;
   /** The run posting replies/reactions as `agent` — carried on every reply so it links back to this run. */
   readonly runId: string;
+  /** More read-only tools served alongside these, e.g. `gitToolDefinitions`. */
+  readonly extraTools?: readonly SdkMcpToolDefinition<any>[];
 };
 
 export type ReviewTools = {
@@ -116,6 +118,7 @@ export function createReviewTools(options: CreateReviewToolsOptions): ReviewTool
   const server = createSdkMcpServer({
     name: 'joinery',
     tools: [
+      ...(options.extraTools ?? []),
       tool(
         'get_review',
         'Get this review: the repo it belongs to, its branch/base/PR identity, and its current state (attached root, divergence from the remote, operation in progress). Use this to orient yourself before answering a thread.',
