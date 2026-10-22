@@ -31,10 +31,9 @@ const IDLE_MS = 10 * 60_000;
 const RETRY_MS = 60_000;
 const MAX_SESSIONS = 4;
 const MAX_OPEN_DOCUMENTS = 24;
-/** Lines of context above the definition's name, and the most shown below it. */
-const SNIPPET_BEFORE = 3;
-const SNIPPET_AFTER_MAX = 14;
-const SNIPPET_AFTER_MIN = 6;
+/** Past this, peek gets the file only up to a little after the definition (generated files, bundles). */
+const PEEK_MAX_CHARS = 1_000_000;
+const PEEK_LINES_AFTER_WHEN_CUT = 200;
 
 type OpenDocument = { key: string; version: number; text: string; ready: Promise<void> };
 
@@ -111,9 +110,7 @@ class LspManager {
     if (text === null) return null;
     const lines = text.split(/\r?\n/);
     const focus = Math.min(location.focus.line, Math.max(0, lines.length - 1));
-    const start = Math.max(0, focus - SNIPPET_BEFORE);
-    const declarationEnd = location.range?.end.line ?? focus;
-    const end = Math.min(lines.length - 1, Math.max(focus + SNIPPET_AFTER_MIN, Math.min(declarationEnd, focus + SNIPPET_AFTER_MAX)));
+    const cut = text.length > PEEK_MAX_CHARS;
 
     const rel = relative(session.root, file);
     const external = rel.startsWith('..') || isAbsolute(rel);
@@ -123,8 +120,8 @@ class LspManager {
       path: repoPath ?? (file.startsWith(home + sep) ? `~${file.slice(home.length)}` : file),
       external,
       line: focus + 1,
-      startLine: start + 1,
-      snippet: lines.slice(start, end + 1).join('\n'),
+      text: cut ? lines.slice(0, focus + PEEK_LINES_AFTER_WHEN_CUT).join('\n') : lines.join('\n'),
+      truncated: cut,
       inReview: repoPath !== null && inReview(repoPath),
       server: spec.id,
     };
@@ -330,10 +327,9 @@ function hoverMarkdown(contents: unknown): string | null {
 
 /**
  * The first `Location` or `LocationLink`. `focus` is where the name is (a
- * link's selection range, else the location's own range); `range` is the
- * whole declaration when the server says so (links only).
+ * link's selection range, else the location's own range).
  */
-function firstLocation(result: unknown): { uri: string; focus: Position; range: Range | null } | null {
+function firstLocation(result: unknown): { uri: string; focus: Position } | null {
   const first = Array.isArray(result) ? result[0] : result;
   if (first === null || typeof first !== 'object') return null;
   const loc = first as {
@@ -344,14 +340,10 @@ function firstLocation(result: unknown): { uri: string; focus: Position; range: 
     targetSelectionRange?: Range;
   };
   if (typeof loc.targetUri === 'string' && loc.targetRange !== undefined) {
-    return {
-      uri: loc.targetUri,
-      focus: (loc.targetSelectionRange ?? loc.targetRange).start,
-      range: loc.targetRange,
-    };
+    return { uri: loc.targetUri, focus: (loc.targetSelectionRange ?? loc.targetRange).start };
   }
   if (typeof loc.uri === 'string' && loc.range !== undefined) {
-    return { uri: loc.uri, focus: loc.range.start, range: null };
+    return { uri: loc.uri, focus: loc.range.start };
   }
   return null;
 }

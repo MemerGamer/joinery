@@ -46,9 +46,10 @@ export const lspDefinitionSchema = z.object({
   external: z.boolean(),
   /** 1-based line the definition's name is on. */
   line: z.number().int().positive(),
-  /** 1-based line `snippet` starts at. */
-  startLine: z.number().int().positive(),
-  snippet: z.string(),
+  /** The file's text from its first line: all of it, unless `truncated`. */
+  text: z.string(),
+  /** A very large file, cut off a little after the definition. */
+  truncated: z.boolean(),
   /** The definition is in a file this review changes, so the diff can jump to it. */
   inReview: z.boolean(),
   server: lspServerIdSchema,

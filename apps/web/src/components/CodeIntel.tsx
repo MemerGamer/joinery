@@ -4,8 +4,9 @@
  *
  * - hover a name → a small popover with its signature and docblock;
  * - ⌘-click it (Ctrl-click elsewhere), or "Peek definition" in that popover →
- *   a floating window with the definition's code, highlighted like the diff,
- *   with a jump into the diff when the definition is in a changed file.
+ *   a floating window with the definition's whole file, scrolled to it and
+ *   highlighted like the diff, with a jump into the diff when the definition
+ *   is in a changed file.
  *
  * Tokens come from `@pierre/diffs`' own token events (`onTokenEnter` and
  * friends, enabled by `useTokenTransformer` in lib/workerPool.tsx), which
@@ -19,8 +20,8 @@
  * server forwards that as `$/cancelRequest`), and answers are cached per
  * (file blob, line, token), which is immutable, for the life of the page.
  */
-import { FileDiff } from '@pierre/diffs/react';
-import { parsePatchFiles, type DiffTokenEventBaseProps, type FileDiffMetadata, type TokenEventBase } from '@pierre/diffs';
+import { File as CodeFile } from '@pierre/diffs/react';
+import type { DiffTokenEventBaseProps, TokenEventBase } from '@pierre/diffs';
 import type { LspDefinition, LspHover } from '@joinery/core';
 import { ArrowUpRight, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -372,19 +373,10 @@ function HoverPopover({
 }
 
 /**
- * The definition as a one-hunk, context-only patch: `FileDiff` then renders it
- * with the diff's own highlighter, theme, font and real line numbers, and
- * marks the definition's line as selected.
+ * The definition's whole file, rendered by `@pierre/diffs`' `File` with the
+ * diff's own highlighter, theme and font, opened at the definition's line and
+ * marking it as selected.
  */
-function snippetDiff(definition: LspDefinition): FileDiffMetadata | null {
-  const lines = definition.snippet.split('\n');
-  // Only names the language to highlight; whitespace would break the header.
-  const name = definition.path.replace(/\s/g, '_');
-  const range = `${definition.startLine},${lines.length}`;
-  const patch = `diff --git a/${name} b/${name}\n--- a/${name}\n+++ b/${name}\n@@ -${range} +${range} @@\n${lines.map((l) => ` ${l}`).join('\n')}\n`;
-  return parsePatchFiles(patch, `peek:${definition.path}:${definition.startLine}:${definition.snippet.length}`)[0]?.files[0] ?? null;
-}
-
 function PeekWindow({
   peek,
   onClose,
@@ -396,9 +388,29 @@ function PeekWindow({
 }): React.JSX.Element {
   const { chromeMode } = useTheme();
   const ref = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const definition = peek.status === 'ready' ? peek.definition : null;
-  const fileDiff = useMemo(() => (definition === null ? null : snippetDiff(definition)), [definition]);
-  const width = Math.min(720, window.innerWidth - 16);
+  const file = useMemo(
+    () =>
+      definition === null
+        ? null
+        : { name: definition.path, contents: definition.text, cacheKey: `peek:${definition.path}:${definition.text.length}` },
+    [definition],
+  );
+  const width = Math.min(820, window.innerWidth - 16);
+  // The whole file is shown: open it at the definition, once, a third of the way down.
+  const scrolledTo = useRef<LspDefinition | null>(null);
+  const onPostRender = useCallback(
+    (node: HTMLElement) => {
+      const body = bodyRef.current;
+      if (definition === null || body === null || scrolledTo.current === definition) return;
+      const row = node.shadowRoot?.querySelector(`[data-line="${definition.line}"]`);
+      if (row == null) return;
+      scrolledTo.current = definition;
+      body.scrollTop += row.getBoundingClientRect().top - body.getBoundingClientRect().top - body.clientHeight / 3;
+    },
+    [definition],
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -420,7 +432,7 @@ function PeekWindow({
       ref={ref}
       role="dialog"
       aria-label="Definition"
-      style={{ ...placement(peek.rect, width, 340), width }}
+      style={{ ...placement(peek.rect, width, 460), width, height: definition === null ? undefined : 460 }}
       className="fixed z-50 flex flex-col overflow-hidden rounded-md bg-chrome-bg-raised shadow-chrome ring-1 ring-chrome-fg/10"
     >
       <div className="flex h-8 shrink-0 items-center gap-2 border-b pl-3 pr-1 text-xs">
@@ -431,6 +443,7 @@ function PeekWindow({
               <span className="text-chrome-fg-subtle">:{definition.line}</span>
             </span>
             {definition.external && <span className="shrink-0 text-micro text-chrome-fg-subtle">outside this repo</span>}
+            {definition.truncated && <span className="shrink-0 text-micro text-chrome-fg-subtle">cut short, very large file</span>}
             {definition.inReview && (
               <button
                 type="button"
@@ -461,16 +474,14 @@ function PeekWindow({
           <X size={14} strokeWidth={1.75} aria-hidden />
         </button>
       </div>
-      {definition !== null && fileDiff !== null && (
-        <div className="min-h-0 overflow-auto">
-          <FileDiff
-            fileDiff={fileDiff}
-            selectedLines={{ start: definition.line, end: definition.line, side: 'additions' }}
+      {definition !== null && file !== null && (
+        <div ref={bodyRef} className="min-h-0 flex-1 overflow-auto">
+          <CodeFile
+            file={file}
+            selectedLines={{ start: definition.line, end: definition.line }}
             options={{
-              diffStyle: 'unified',
               disableFileHeader: true,
-              diffIndicators: 'none',
-              hunkSeparators: 'simple',
+              onPostRender,
               themeType: chromeMode,
               preferredHighlighter: PREFERRED_HIGHLIGHTER,
               overflow: 'scroll',
