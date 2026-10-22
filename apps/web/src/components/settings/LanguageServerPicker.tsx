@@ -1,19 +1,21 @@
 /**
  * Choosing a language's server for hover and peek, shared by Settings →
- * Integrations and onboarding's tooling step: on (the default server, tsrs
- * or PHPantom, which Joinery downloads into its data directory and keeps up
- * to date), a binary at a custom path, or off — the default, since turning
- * it on downloads a server.
+ * Integrations and onboarding's tooling step. One switch: on is the default
+ * server (tsrs, PHPantom), which Joinery downloads into its data directory
+ * and keeps up to date; off — the default, since turning it on downloads a
+ * server — is none. "Use your own" in the description opens a form for a
+ * binary at a custom path instead.
  *
  * `useLanguageServerPicker` holds the choosing; each place lays out its
- * `controls` (Turn on while off, the menu, Retry when an install failed),
- * `detail` (what runs, or what's wrong) and `editor` (the custom path form,
- * while open) its way.
+ * `controls` (the switch, and Retry when an install failed), `detail` (what
+ * runs, or what's wrong, with those links) and `editor` (the custom path
+ * form, while open) its way.
  */
+import { Switch } from '@base-ui-components/react/switch';
 import { LSP_DEFAULT_SERVER, LSP_SERVERS, type Integrations, type LspChoice, type LspServerId } from '@joinery/core';
 import { useState } from 'react';
 import { ApiError, callApi } from '../../lib/apiClient.ts';
-import { ChromeSelect, type ChromeSelectOption } from './ChromeSelect.tsx';
+import { ChromeSelect } from './ChromeSelect.tsx';
 
 type LspRow = Integrations['lsp'][number];
 
@@ -66,79 +68,90 @@ export function useLanguageServerPicker(
     }
   };
 
-  // Picking the default installs it first (the server does, before saving).
+  // Turning on installs Joinery's copy first (the server does, before saving).
   const save = (choice: LspChoice) =>
     act(choice.source === 'managed' && managed === null ? 'install' : 'save', () =>
       callApi('setLanguageServerChoice', { params: [row.language], body: choice }),
     );
 
-  const pick = async (value: LspChoice['source']) => {
-    if (value === 'custom') {
+  const canManage = installable !== null;
+  // The switch: on is Joinery's copy (or, with no build of it here, a custom server).
+  const turn = (on: boolean) => {
+    if (on && !canManage) {
       setEditing(true);
       return;
     }
     setEditing(false);
-    await save({ source: value });
+    if (on || row.choice.source !== 'off') void save(on ? { source: 'managed' } : { source: 'off' });
   };
-
-  const value = editing ? 'custom' : row.choice.source;
-  const options: ChromeSelectOption<LspChoice['source']>[] = [
-    ...(installable !== null ? [{ value: 'managed' as const, label: 'On' }] : []),
-    { value: 'custom', label: 'Custom path…' },
-    { value: 'off', label: 'Off' },
-  ];
-  // An install that failed (offline at first need, say) is retried here.
-  const retry = row.choice.source === 'managed' && installable !== null && managed === null && !row.installing;
+  // An install that failed (offline, say) is retried here.
+  const retry = row.choice.source === 'managed' && canManage && managed === null && !row.installing && error !== null;
 
   const controls = (
     <>
-      {retry && error !== null && (
+      {retry && (
         <button
           type="button"
           onClick={() => void act('install', () => callApi('installLanguageServer', { params: [installable] }))}
           disabled={busy !== null}
-          className="chrome-btn h-8!"
+          className="chrome-btn"
         >
           Retry
         </button>
       )}
-      {row.choice.source === 'off' && !editing && installable !== null && (
-        <button
-          type="button"
-          onClick={() => void pick('managed')}
-          disabled={busy !== null}
-          title={`Downloads ${defaultName} into Joinery's data folder`}
-          className="chrome-btn-primary h-8!"
-        >
-          {busy !== null ? 'Turning on…' : 'Turn on'}
-        </button>
-      )}
-      <ChromeSelect
-        value={value}
-        options={options}
-        onChange={(next) => void pick(next)}
-        disabled={busy !== null}
-        label={`${LSP_TITLE[row.language].title} to use`}
-        className="w-36"
-      />
+      <Switch.Root
+        checked={row.choice.source !== 'off' || editing}
+        onCheckedChange={turn}
+        disabled={busy !== null || row.installing}
+        aria-label={`${LSP_TITLE[row.language].title}: ${row.choice.source === 'off' ? 'off' : 'on'}`}
+        title={row.choice.source === 'off' && canManage ? `Turning it on downloads ${defaultName} into Joinery's data folder` : undefined}
+        className="relative inline-flex h-[18px] w-8 shrink-0 cursor-pointer items-center rounded-full bg-chrome-bg-active p-0.5 transition-colors data-checked:bg-chrome-accent data-disabled:cursor-default data-disabled:opacity-60"
+      >
+        <Switch.Thumb className="size-3.5 rounded-full bg-chrome-fg shadow-sm transition-transform data-checked:translate-x-3.5 data-checked:bg-chrome-accent-fg" />
+      </Switch.Root>
     </>
   );
 
-  const detailText =
-    busy === 'install' || row.installing
-      ? `Installing ${defaultName}…`
-      : (error ??
-        row.problem ??
-        (row.choice.source === 'off'
-          ? installable === null
-            ? `No ${defaultName} build for this machine: set a custom path to use another server`
-            : `Off · turning it on downloads ${defaultName} into Joinery's data folder`
-          : row.choice.source === 'custom'
-            ? `${SERVER_NAME[row.choice.server]} · ${row.choice.path}`
-            : managed !== null
-              ? `On · ${defaultName} ${managed.version} in Joinery's data folder, kept up to date`
-              : `On · ${defaultName} will be downloaded into Joinery's data folder`));
-  const detail = error !== null || row.problem !== null ? <span className="text-chrome-danger">{detailText}</span> : detailText;
+  const link = (label: string, onClick: () => void) => (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={busy !== null}
+      className="text-chrome-fg-muted underline-offset-2 hover:text-chrome-fg hover:underline"
+    >
+      {label}
+    </button>
+  );
+  const ownServer = link('use your own', () => setEditing(true));
+  const version = managed?.version.split('-')[0] ?? '';
+
+  const detailText: React.ReactNode =
+    busy === 'install' || row.installing ? (
+      `Downloading ${defaultName} into Joinery's data folder…`
+    ) : error !== null || row.problem !== null ? (
+      (error ?? row.problem)
+    ) : row.choice.source === 'custom' ? (
+      <>
+        Your own {SERVER_NAME[row.choice.server]}
+        {canManage && <> · {link(`use Joinery's ${defaultName}`, () => turn(true))}</>}
+      </>
+    ) : row.choice.source === 'managed' ? (
+      <>
+        {managed !== null ? `${defaultName} ${version}, kept up to date` : `${defaultName}, downloading when needed`} · {ownServer}
+      </>
+    ) : editing ? (
+      `Point it at a ${LSP_TITLE[row.language].files} language server you have`
+    ) : canManage ? (
+      <>
+        Turning it on downloads {defaultName} into Joinery's data folder · or {ownServer}
+      </>
+    ) : (
+      <>
+        No {defaultName} build for this machine · {ownServer}
+      </>
+    );
+  const detail =
+    (error !== null || row.problem !== null) && busy === null ? <span className="text-chrome-danger">{detailText}</span> : detailText;
 
   const editor = editing || row.choice.source === 'custom' ? (
     <form
