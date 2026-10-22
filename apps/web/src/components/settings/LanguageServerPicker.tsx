@@ -9,9 +9,9 @@
  * or what's wrong) and `editor` (the custom path form, while open) its way.
  */
 import { LSP_SERVERS, type Integrations, type LspChoice, type LspServerId } from '@joinery/core';
-import { ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 import { ApiError, callApi } from '../../lib/apiClient.ts';
+import { ChromeSelect, type ChromeSelectOption } from './ChromeSelect.tsx';
 
 type LspRow = Integrations['lsp'][number];
 
@@ -102,38 +102,34 @@ export function useLanguageServerPicker(
   const local = row.local.map((l) => l.server);
   if (row.choice.source === 'local' && !local.includes(row.choice.server)) local.push(row.choice.server);
   const value = editing ? 'custom' : valueOf(row.choice);
+  const options: ChromeSelectOption<string>[] = [
+    { value: 'auto', label: 'Automatic' },
+    ...local.map((server) => ({ value: `local:${server}`, label: `${SERVER_NAME[server]} on this machine` })),
+    ...(installable === null
+      ? []
+      : [
+          {
+            value: `managed:${installable}`,
+            label:
+              managed !== null
+                ? `Joinery’s ${SERVER_NAME[installable]} ${managed.version}`
+                : `Install ${SERVER_NAME[installable]} into Joinery`,
+          },
+        ]),
+    { value: 'custom', label: 'Custom path…' },
+    { value: 'off', label: 'Off' },
+  ];
 
   const controls = (
     <>
-      <span className="relative inline-flex">
-        <select
-          value={value}
-          onChange={(e) => void pick(e.target.value)}
-          disabled={busy !== null}
-          aria-label={`${LSP_TITLE[row.language].title} to use`}
-          className="chrome-btn max-w-60 appearance-none truncate pr-7"
-        >
-          <option value="auto">Automatic</option>
-          {local.map((server) => (
-            <option key={server} value={`local:${server}`}>
-              {SERVER_NAME[server]} on this machine
-            </option>
-          ))}
-          {installable !== null && (
-            <option value={`managed:${installable}`}>
-              {managed !== null ? `Joinery’s ${SERVER_NAME[installable]} ${managed.version}` : `Install ${SERVER_NAME[installable]} into Joinery`}
-            </option>
-          )}
-          <option value="custom">Custom path…</option>
-          <option value="off">Off</option>
-        </select>
-        <ChevronDown
-          size={12}
-          strokeWidth={2}
-          className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-chrome-fg-subtle"
-          aria-hidden
-        />
-      </span>
+      <ChromeSelect
+        value={value}
+        options={options}
+        onChange={(next) => void pick(next)}
+        disabled={busy !== null}
+        label={`${LSP_TITLE[row.language].title} to use`}
+        className="max-w-64"
+      />
       {managed !== null && (
         <button
           type="button"
@@ -177,30 +173,17 @@ export function useLanguageServerPicker(
       }}
       className="flex items-center gap-1.5"
     >
-      <span className="relative inline-flex shrink-0">
-        <select
-          value={custom.server}
-          onChange={(e) => {
-            setCustom((c) => ({ ...c, server: e.target.value as LspServerId }));
-            setEditing(true);
-          }}
-          aria-label="Which server it is"
-          title="Which server it is, so Joinery starts it the right way"
-          className="chrome-btn appearance-none pr-7"
-        >
-          {LSP_SERVERS[row.language].map((server) => (
-            <option key={server} value={server}>
-              {SERVER_NAME[server]}
-            </option>
-          ))}
-        </select>
-        <ChevronDown
-          size={12}
-          strokeWidth={2}
-          className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-chrome-fg-subtle"
-          aria-hidden
-        />
-      </span>
+      <ChromeSelect
+        value={custom.server}
+        options={LSP_SERVERS[row.language].map((server) => ({ value: server, label: SERVER_NAME[server] }))}
+        onChange={(server) => {
+          setCustom((c) => ({ ...c, server }));
+          setEditing(true);
+        }}
+        label="Which server it is"
+        title="Which server it is, so Joinery starts it the right way"
+        className="shrink-0"
+      />
       <input
         value={custom.path}
         onChange={(e) => {
@@ -211,7 +194,7 @@ export function useLanguageServerPicker(
         spellCheck={false}
         autoComplete="off"
         aria-label="Path to the server's binary"
-        className="h-[26px] min-w-0 flex-1 rounded-md bg-chrome-bg-hover px-2.5 font-mono text-xs text-chrome-fg outline-hidden placeholder:text-chrome-fg-subtle focus:ring-1 focus:ring-chrome-accent"
+        className="h-8 min-w-0 flex-1 rounded-md border border-chrome-border bg-chrome-bg-raised px-2.5 font-mono text-xs text-chrome-fg outline-hidden transition-colors placeholder:text-chrome-fg-subtle hover:border-chrome-border-strong focus:border-chrome-accent"
       />
       {editing && (
         <button type="submit" disabled={busy !== null || custom.path.trim() === ''} className="chrome-btn">
