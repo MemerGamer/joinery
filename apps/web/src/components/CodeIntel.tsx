@@ -397,7 +397,8 @@ function PeekWindow({
         : { name: definition.path, contents: definition.text, cacheKey: `peek:${definition.path}:${definition.text.length}` },
     [definition],
   );
-  const width = Math.min(820, window.innerWidth - 16);
+  // A status line ("No definition found") only needs to fit its text.
+  const width = Math.min(definition === null ? 360 : 820, window.innerWidth - 16);
   // The whole file is shown: open it at the definition, once, a third of the way down.
   const scrolledTo = useRef<LspDefinition | null>(null);
   const onPostRender = useCallback(
@@ -432,7 +433,11 @@ function PeekWindow({
       ref={ref}
       role="dialog"
       aria-label="Definition"
-      style={{ ...placement(peek.rect, width, 460), width, height: definition === null ? undefined : 460 }}
+      style={
+        definition === null
+          ? { ...placement(peek.rect, width, 40), maxWidth: width }
+          : { ...placement(peek.rect, width, 460), width, height: 460 }
+      }
       className="fixed z-50 flex flex-col overflow-hidden rounded-md bg-chrome-bg-raised shadow-chrome ring-1 ring-chrome-fg/10"
     >
       <div className="flex h-8 shrink-0 items-center gap-2 border-b pl-3 pr-1 text-xs">
