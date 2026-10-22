@@ -1,13 +1,14 @@
 /**
  * Choosing a language's server for hover and peek, shared by Settings →
- * Integrations and onboarding's tooling step: the default server (tsrs,
- * PHPantom), which Joinery installs into its data directory and keeps up to
- * date, a binary at a custom path, or off.
+ * Integrations and onboarding's tooling step: on (the default server, tsrs
+ * or PHPantom, which Joinery downloads into its data directory and keeps up
+ * to date), a binary at a custom path, or off — the default, since turning
+ * it on downloads a server.
  *
  * `useLanguageServerPicker` holds the choosing; each place lays out its
- * `controls` (the menu, and Retry when an install failed), `detail` (what
- * runs, or what's wrong) and `editor` (the custom path form, while open) its
- * way.
+ * `controls` (Turn on while off, the menu, Retry when an install failed),
+ * `detail` (what runs, or what's wrong) and `editor` (the custom path form,
+ * while open) its way.
  */
 import { LSP_DEFAULT_SERVER, LSP_SERVERS, type Integrations, type LspChoice, type LspServerId } from '@joinery/core';
 import { useState } from 'react';
@@ -82,7 +83,7 @@ export function useLanguageServerPicker(
 
   const value = editing ? 'custom' : row.choice.source;
   const options: ChromeSelectOption<LspChoice['source']>[] = [
-    ...(installable !== null ? [{ value: 'managed' as const, label: defaultName }] : []),
+    ...(installable !== null ? [{ value: 'managed' as const, label: 'On' }] : []),
     { value: 'custom', label: 'Custom path…' },
     { value: 'off', label: 'Off' },
   ];
@@ -96,9 +97,20 @@ export function useLanguageServerPicker(
           type="button"
           onClick={() => void act('install', () => callApi('installLanguageServer', { params: [installable] }))}
           disabled={busy !== null}
-          className="chrome-btn"
+          className="chrome-btn h-8!"
         >
           Retry
+        </button>
+      )}
+      {row.choice.source === 'off' && !editing && installable !== null && (
+        <button
+          type="button"
+          onClick={() => void pick('managed')}
+          disabled={busy !== null}
+          title={`Downloads ${defaultName} into Joinery's data folder`}
+          className="chrome-btn-primary h-8!"
+        >
+          {busy !== null ? 'Turning on…' : 'Turn on'}
         </button>
       )}
       <ChromeSelect
@@ -107,7 +119,7 @@ export function useLanguageServerPicker(
         onChange={(next) => void pick(next)}
         disabled={busy !== null}
         label={`${LSP_TITLE[row.language].title} to use`}
-        className="w-40"
+        className="w-36"
       />
     </>
   );
@@ -120,12 +132,12 @@ export function useLanguageServerPicker(
         (row.choice.source === 'off'
           ? installable === null
             ? `No ${defaultName} build for this machine: set a custom path to use another server`
-            : `Off: no hover or peek in ${LSP_TITLE[row.language].files} files`
+            : `Off · turning it on downloads ${defaultName} into Joinery's data folder`
           : row.choice.source === 'custom'
             ? `${SERVER_NAME[row.choice.server]} · ${row.choice.path}`
             : managed !== null
-              ? `${defaultName} ${managed.version} · installed by Joinery, kept up to date`
-              : `Joinery installs ${defaultName} the first time it's needed`));
+              ? `On · ${defaultName} ${managed.version} in Joinery's data folder, kept up to date`
+              : `On · ${defaultName} will be downloaded into Joinery's data folder`));
   const detail = error !== null || row.problem !== null ? <span className="text-chrome-danger">{detailText}</span> : detailText;
 
   const editor = editing || row.choice.source === 'custom' ? (

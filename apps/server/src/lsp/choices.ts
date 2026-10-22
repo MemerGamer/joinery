@@ -1,9 +1,8 @@
 /**
  * Which language server each language uses, as chosen in Settings: stored in
  * `app_setting` (`lsp.choice.<language>`), held in memory so starting a
- * server never waits on the database. Nothing chosen means the default:
- * Joinery's copy of the language's default server where this platform has a
- * build of it, else off.
+ * server never waits on the database. Nothing chosen means off: turning one
+ * on downloads a server, so it waits for the user to ask.
  */
 import { existsSync, statSync } from 'node:fs';
 import { LSP_SERVERS, lspChoiceSchema, type LspChoice, type LspLanguage } from '@joinery/core';
@@ -23,7 +22,7 @@ export async function loadLspChoices(db: Db): Promise<void> {
 }
 
 export function lspChoice(language: LspLanguage): LspChoice {
-  return choices.get(language) ?? (installableFor(language) !== null ? { source: 'managed' } : { source: 'off' });
+  return choices.get(language) ?? { source: 'off' };
 }
 
 /** Why `choice` can't be made for `language`, or null when it can be saved. */

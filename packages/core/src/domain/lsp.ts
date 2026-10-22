@@ -40,11 +40,11 @@ export const LSP_DEFAULT_SERVER: Readonly<Record<LspLanguage, InstallableServer>
 /**
  * Which server a language uses, as chosen in Settings:
  *
- * - `managed`: the default server (`LSP_DEFAULT_SERVER`), Joinery's own copy
- *   in its data directory, installed the first time it's needed and kept up
- *   to date;
+ * - `managed` ("on"): the default server (`LSP_DEFAULT_SERVER`), Joinery's
+ *   own copy in its data directory, installed when turned on and kept up to
+ *   date;
  * - `custom`: a binary at a path of the user's, spoken to as `server`;
- * - `off`: none, no hover or peek for the language.
+ * - `off`: none, no hover or peek for the language. The default.
  */
 export const lspChoiceSchema = z.discriminatedUnion('source', [
   z.object({ source: z.literal('managed') }),

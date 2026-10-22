@@ -3,13 +3,13 @@
  *
  * Settings picks per language (`choices.ts`):
  *
- * - by default, Joinery's own copy of the language's default server
+ * - on: Joinery's own copy of the language's default server
  *   (`LSP_DEFAULT_SERVER`: tsrs, the Rust port of TypeScript 7, and
  *   PHPantom — the fastest to first hover and the lightest on large repos
- *   in the branch notes' comparison), installed here the first time it's
- *   needed (`install.ts`);
+ *   in the branch notes' comparison), installed here when turned on, or
+ *   again if it has gone missing (`install.ts`);
  * - a binary at a custom path, spoken to as the server the user says it is;
- * - or none.
+ * - or none, until the user turns one on.
  *
  * A missing server is not an error anywhere: hover simply has nothing to say,
  * and Settings → Integrations says why.
