@@ -9,9 +9,10 @@
  * the initial empty state below. The title row doubles as the home for the
  * Threads entry point, since the threads panel slides over this pane.
  */
-import { DEFAULT_READING_ORDER_MODEL, type AgentModel } from '@joinery/core';
+import type { AgentModel } from '@joinery/core';
 import { AlertTriangle, Check, ChevronRight, Loader2, MessageSquare } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useAgentModel, useGenerationModel } from '../lib/agentModel.ts';
 import { resolveCurrentStepIndex } from '../lib/reviewNav.ts';
 import { runUiState } from '../lib/runState.ts';
 import { useReview, useScrolledPath } from '../state/ReviewContext.tsx';
@@ -103,9 +104,13 @@ export function ReadingOrderPane(): React.JSX.Element {
     </button>
   );
 
-  // The empty state's own pick, not the Ask pick: generation defaults to a
-  // stronger model. Regenerating from the palette uses that default.
-  const [generateModel, setGenerateModel] = useState<AgentModel>(DEFAULT_READING_ORDER_MODEL);
+  // The empty state's own pick, starting from the model the last reading
+  // order was generated with (shared with the palette's generate page), or
+  // the Ask pick before any generation.
+  const lastGenerationModel = useGenerationModel();
+  const askModel = useAgentModel();
+  const [pickedModel, setGenerateModel] = useState<AgentModel | null>(null);
+  const generateModel = pickedModel ?? lastGenerationModel ?? askModel;
 
   const generate = async () => {
     if (review === null) return;

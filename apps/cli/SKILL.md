@@ -46,7 +46,7 @@ this as your task) or manually.
      "steps": [
        {
          "title": "Retries in the HTTP client",
-         "guidance": "The client now retries per `RetryPolicy` instead of a fixed count. Check the backoff arithmetic.",
+         "guidance": "The client now retries per `RetryPolicy` instead of a fixed count; `request()` is the single place every CLI command goes through.",
          "attention": "focus",
          "files": [
            { "path": "apps/cli/src/client.ts", "note": null }
@@ -62,7 +62,7 @@ this as your task) or manually.
        },
        {
          "title": "Tests",
-         "guidance": "Covers the new backoff schedule.",
+         "guidance": "Cover the backoff schedule `RetryPolicy` produces.",
          "attention": "skim",
          "files": [
            { "path": "apps/cli/test/client.test.ts", "note": null }
@@ -74,9 +74,10 @@ this as your task) or manually.
    Shape (validated by `readingOrderPlanSchema` in `@joinery/core`):
    - `steps`: at least one.
    - each step: non-empty `title`; `guidance` (markdown, 1 to 2 sentences on
-     what to notice, defaults to `""` if omitted); `attention` (`"focus"` for
-     risky logic or a concern, `"skim"` for mechanical changes, or `null` for a
-     normal read, defaults to `null`); `files`: at least one.
+     what the files do and how they fit the change, defaults to `""` if
+     omitted); `attention` (`"focus"` for the heart of the change, `"skim"` for
+     mechanical changes, or `null` for a normal read, defaults to `null`);
+     `files`: at least one.
    - each file: non-empty `path` (must be one of the review's changed files);
      `note` (markdown or `null`, defaults to `null`).
    - every changed file should end up in exactly one step. Files you leave out

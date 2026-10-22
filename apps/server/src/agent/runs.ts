@@ -53,7 +53,7 @@ export type ReadingOrderContext = {
    * 202. A failure only drops the PR context from the prompt.
    */
   readonly loadPull?: () => Promise<PullContext | null>;
-  /** The model for the run; Sonnet when absent. */
+  /** The model for the run; Claude Code's own default when absent. */
   readonly model?: AgentModel;
 };
 

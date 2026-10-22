@@ -17,7 +17,7 @@ const SORT_LABELS: readonly { value: QueueSort; label: string }[] = [
 
 const TRIGGER_CLASS =
   'chrome-icon-btn relative size-6 text-chrome-fg-muted data-popup-open:bg-chrome-bg-active data-popup-open:text-chrome-fg';
-const POPUP_CLASS =
+export const POPUP_CLASS =
   'min-w-48 rounded-md bg-chrome-bg-raised p-1 text-xs shadow-chrome ring-1 ring-chrome-fg/10 outline-hidden';
 export const ITEM_CLASS =
   'flex h-7 cursor-default select-none items-center gap-2 rounded px-2 text-chrome-fg outline-hidden data-highlighted:bg-chrome-bg-hover';

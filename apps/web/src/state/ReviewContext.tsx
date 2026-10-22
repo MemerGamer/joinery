@@ -57,7 +57,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import { getAgentModel } from '../lib/agentModel.ts';
+import { getAgentModel, setGenerationModel } from '../lib/agentModel.ts';
 import { ApiError, callApi } from '../lib/apiClient.ts';
 import { blobPairKey, loadFileDiff, placeholderFileDiff } from '../lib/diffLoader.ts';
 import { toggleReactionLocally } from '../lib/reactions.ts';
@@ -915,6 +915,8 @@ export function ReviewProvider({
     // the POST (or the `run.started` event it triggers server-side) lands —
     // generation can take a while and the button must not look inert.
     setState((s) => ({ ...s, readingOrderRun: localRun(reviewId, 'pending') }));
+    // Remembered so the pane and the palette both offer it next time.
+    if (model !== undefined) setGenerationModel(model);
     try {
       const res = await callApi('generateReadingOrder', {
         params: [reviewId],

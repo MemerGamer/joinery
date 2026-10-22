@@ -16,8 +16,9 @@
  *
  * Everything here comes from `useHomeData()`.
  */
+import { Menu } from '@base-ui-components/react/menu';
 import { firstForgeNotice, forgeNoticeLine } from '../lib/forgeNotice.ts';
-import type { Pull, Repo, Review, ReviewSummary } from '@joinery/core';
+import { AGENT_MODELS, type AgentModel, type Pull, type Repo, type Review, type ReviewSummary } from '@joinery/core';
 import {
   Archive,
   Check,
@@ -25,11 +26,13 @@ import {
   GitPullRequest,
   Loader2,
   ChevronDown,
+  ChevronRight,
   RefreshCw,
   Settings as SettingsIcon,
   Waypoints,
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useGenerationModel } from '../lib/agentModel.ts';
 import { effortOf } from '../lib/effort.ts';
 import { useGlobalKeymap } from '../lib/keymap.ts';
 import { maybeStartOnboarding } from '../lib/onboarding.ts';
@@ -47,7 +50,7 @@ import { BackdropPicker } from './home/BackdropPicker.tsx';
 import { GlowScene } from './home/GlowScene.tsx';
 import { Panel } from './home/Panel.tsx';
 import { Avatar, Chip, CiIcon, DiffStat, EffortMeter, ProgressBar } from './home/primitives.tsx';
-import { QueueFilterMenu, QueueSortMenu, type QueueSort } from './home/QueueMenus.tsx';
+import { ITEM_CLASS as MENU_ITEM_CLASS, POPUP_CLASS as MENU_POPUP_CLASS, QueueFilterMenu, QueueSortMenu, type QueueSort } from './home/QueueMenus.tsx';
 import { ExploreSection } from './Explore.tsx';
 import { UpdateButton, useVersion, VersionText } from './home/VersionBadge.tsx';
 import { FolderPicker } from './home/FolderPicker.tsx';
@@ -607,7 +610,7 @@ function ReviewCard({
   onArchive,
 }: {
   review: HomeReview;
-  onGenerateReadingOrder: (id: string) => Promise<void>;
+  onGenerateReadingOrder: (id: string, model: AgentModel) => Promise<void>;
   onArchive: (id: string) => Promise<void>;
 }): React.JSX.Element {
   const { review, summary, repo } = hr;
@@ -669,7 +672,7 @@ function ReviewCard({
               <ReviewOptions
                 generating={summary.agentRunning}
                 hasReadingOrder={summary.hasReadingOrder}
-                onGenerateReadingOrder={() => void onGenerateReadingOrder(review.id)}
+                onGenerateReadingOrder={(model) => void onGenerateReadingOrder(review.id, model)}
                 onArchive={() => void onArchive(review.id)}
               />
             </span>
@@ -693,9 +696,8 @@ function ReviewCard({
 }
 
 /**
- * The chevron menu at a review row's top right: (re)generate the reading order,
- * or archive. Drawn `fixed` from the button's position so the panel's
- * `overflow-hidden` can't clip it on the last row; scrolling closes it.
+ * The chevron menu at a review row's top right: (re)generate the reading
+ * order, picking the model from a submenu, or archive.
  */
 function ReviewOptions({
   generating,
@@ -705,96 +707,58 @@ function ReviewOptions({
 }: {
   generating: boolean;
   hasReadingOrder: boolean;
-  onGenerateReadingOrder: () => void;
+  onGenerateReadingOrder: (model: AgentModel) => void;
   onArchive: () => void;
 }): React.JSX.Element {
-  const [at, setAt] = useState<{ top: number; right: number } | null>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const open = at !== null;
+  const lastGenerationModel = useGenerationModel();
+  const disabledItem = `${MENU_ITEM_CLASS} data-disabled:text-chrome-fg-muted`;
 
-  useEffect(() => {
-    if (!open) return;
-    const close = () => setAt(null);
-    const onPointerDown = (e: PointerEvent) => {
-      const t = e.target as Node;
-      if (!menuRef.current?.contains(t) && !buttonRef.current?.contains(t)) close();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
-    };
-    document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKey);
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('resize', close);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKey);
-      window.removeEventListener('scroll', close, true);
-      window.removeEventListener('resize', close);
-    };
-  }, [open]);
-
-  const toggle = () => {
-    if (open) return setAt(null);
-    const r = buttonRef.current?.getBoundingClientRect();
-    if (r !== undefined) setAt({ top: r.bottom + 4, right: window.innerWidth - r.right });
-  };
-
-  const item = 'flex h-7 w-full items-center gap-2 rounded px-2 text-left text-xs text-chrome-fg hover:bg-chrome-bg-hover disabled:text-chrome-fg-muted disabled:hover:bg-transparent';
   return (
-    <>
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={toggle}
-        aria-haspopup="menu"
-        aria-expanded={open}
+    <Menu.Root modal={false}>
+      <Menu.Trigger
         aria-label="Review options"
         title="Options"
-        className="chrome-icon-btn pointer-events-auto size-5! rounded-[5px]!"
+        className="chrome-icon-btn pointer-events-auto size-5! rounded-[5px]! data-popup-open:bg-chrome-bg-active"
       >
         <ChevronDown size={13} strokeWidth={2} aria-hidden />
-      </button>
-      {at !== null && (
-        <div
-          ref={menuRef}
-          role="menu"
-          className="pointer-events-auto fixed z-50 min-w-48 overflow-hidden rounded-md bg-chrome-bg-raised p-1 shadow-chrome ring-1 ring-chrome-fg/10"
-          style={{ top: at.top, right: at.right }}
-        >
-          <button
-            type="button"
-            role="menuitem"
-            disabled={generating}
-            onClick={() => {
-              onGenerateReadingOrder();
-              setAt(null);
-            }}
-            className={item}
-          >
-            {generating ? (
-              <Loader2 size={13} strokeWidth={1.75} className="animate-spin text-chrome-accent" aria-hidden />
-            ) : (
-              <Waypoints size={13} strokeWidth={1.75} aria-hidden />
-            )}
-            {generating ? 'Generating reading order…' : hasReadingOrder ? 'Regenerate reading order' : 'Generate reading order'}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              onArchive();
-              setAt(null);
-            }}
-            className={item}
-          >
-            <Archive size={13} strokeWidth={1.75} aria-hidden />
-            Archive
-          </button>
-        </div>
-      )}
-    </>
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner side="bottom" align="end" sideOffset={4} collisionPadding={8} className="z-50">
+          <Menu.Popup className={MENU_POPUP_CLASS}>
+            <Menu.SubmenuRoot>
+              <Menu.SubmenuTrigger disabled={generating} className={`${disabledItem} data-popup-open:bg-chrome-bg-hover`}>
+                {generating ? (
+                  <Loader2 size={13} strokeWidth={1.75} className="animate-spin text-chrome-accent" aria-hidden />
+                ) : (
+                  <Waypoints size={13} strokeWidth={1.75} aria-hidden />
+                )}
+                <span className="flex-1">
+                  {generating ? 'Generating reading order…' : hasReadingOrder ? 'Regenerate reading order' : 'Generate reading order'}
+                </span>
+                {!generating && <ChevronRight size={12} strokeWidth={2} className="text-chrome-fg-subtle" aria-hidden />}
+              </Menu.SubmenuTrigger>
+              <Menu.Portal>
+                <Menu.Positioner sideOffset={8} alignOffset={-4} collisionPadding={8} className="z-50">
+                  <Menu.Popup className={`${MENU_POPUP_CLASS} min-w-36!`}>
+                    {AGENT_MODELS.map((m) => (
+                      <Menu.Item key={m.id} onClick={() => onGenerateReadingOrder(m.id)} className={MENU_ITEM_CLASS}>
+                        <span className="flex-1">{m.label}</span>
+                        {m.id === lastGenerationModel && <span className="text-chrome-fg-subtle">last used</span>}
+                      </Menu.Item>
+                    ))}
+                  </Menu.Popup>
+                </Menu.Positioner>
+              </Menu.Portal>
+            </Menu.SubmenuRoot>
+            <Menu.Separator className="my-1 h-px bg-chrome-border" />
+            <Menu.Item onClick={onArchive} className={MENU_ITEM_CLASS}>
+              <Archive size={13} strokeWidth={1.75} aria-hidden />
+              Archive
+            </Menu.Item>
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
   );
 }
 

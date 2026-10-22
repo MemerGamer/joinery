@@ -14,7 +14,7 @@
  * structured output is a strong hint to the model, not a guarantee.
  */
 import { query, type SDKMessage, type SDKResultMessage } from '@anthropic-ai/claude-agent-sdk';
-import { DEFAULT_READING_ORDER_MODEL, READING_ORDER_RULES, readingOrderPlanSchema, type AgentModel, type FileEntry, type ReadingOrderPlan } from '@joinery/core';
+import { READING_ORDER_RULES, readingOrderPlanSchema, type AgentModel, type FileEntry, type ReadingOrderPlan } from '@joinery/core';
 import { z } from 'zod';
 import { claudeExecutableOption } from './claudeExecutable.ts';
 import { createGitTools } from './gitTools.ts';
@@ -67,8 +67,8 @@ function pullSection(pull: PullContext | undefined): string[] {
 export function buildReadingOrderPrompt(files: readonly FileEntry[], pull?: PullContext): string {
   const fileLines = files.map(describeFile).join('\n');
   return [
-    'Write a reviewer\'s guide to this code review: a short series of steps a',
-    'teammate reads in order, pointing them at what deserves their attention.',
+    'Write a reading order for this change: a short series of steps a reviewer',
+    'reads in order, explaining what each part does and how it fits together.',
     '',
     ...pullSection(pull),
     'Changed files:',
@@ -76,8 +76,9 @@ export function buildReadingOrderPrompt(files: readonly FileEntry[], pull?: Pull
     '',
     '1. Read each changed file in the review root (Read, Grep, Glob). Use the',
     '   git tools (git_log, git_show, git_blame) when history explains a change.',
+    '   Read surrounding code too where it explains what the change builds on.',
     '   Done when you can say in one sentence what every file adds or changes',
-    '   and which parts are risky.',
+    '   and which part is the heart of the change.',
     '2. Group the files into steps following the rules below. Done when every',
     '   changed file sits in exactly one step, under its exact path.',
     '3. Order the steps and write each one following the rules below.',
@@ -93,7 +94,7 @@ export type GenerateReadingOrderPlanOptions = {
   readonly cwd: string;
   readonly files: readonly FileEntry[];
   readonly pull?: PullContext;
-  /** Sonnet when absent. */
+  /** Claude Code's own default model when absent. */
   readonly model?: AgentModel;
   /** Aborting it stops the agent; the stream then ends or throws. */
   readonly abortController?: AbortController;
@@ -127,7 +128,7 @@ export async function generateReadingOrderPlan(options: GenerateReadingOrderPlan
       ...executable,
       ...(options.abortController === undefined ? {} : { abortController: options.abortController }),
       cwd: options.cwd,
-      model: options.model ?? DEFAULT_READING_ORDER_MODEL,
+      ...(options.model === undefined ? {} : { model: options.model }),
       mcpServers: { joinery: createGitTools({ cwd: options.cwd }) },
       // `Bash` is removed outright rather than gated through a read-only
       // allowlist: no shell at all for the embedded agent, on either run kind.
@@ -142,10 +143,9 @@ export async function generateReadingOrderPlan(options: GenerateReadingOrderPlan
         type: 'preset',
         preset: 'claude_code',
         append:
-          'You are writing a reviewer\'s guide to a code review for a teammate. ' +
+          'You are writing a reading order that walks a reviewer through a change. ' +
           'Your tools are read-only: Read, Grep, Glob, and the git_log, git_show and git_blame tools.',
       },
-      maxTurns: 30,
     },
   });
 

@@ -10,6 +10,7 @@
  */
 import {
   repoTopic,
+  type AgentModel,
   type Branch,
   type Me,
   type Pull,
@@ -20,6 +21,7 @@ import {
 } from '@joinery/core';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
+import { setGenerationModel } from '../lib/agentModel.ts';
 import { ApiError, callApi } from '../lib/apiClient.ts';
 import type { ForgeNotice } from '../lib/forgeNotice.ts';
 import { queryClient, queryKeys, useWatchTopics } from '../lib/liveQueries.ts';
@@ -70,7 +72,7 @@ export interface HomeActions {
   openBranch(repoId: string, branch: Branch | string): Promise<void>;
   archiveReview(id: string): Promise<void>;
   unarchiveReview(id: string): Promise<void>;
-  generateReadingOrder(id: string): Promise<void>;
+  generateReadingOrder(id: string, model: AgentModel): Promise<void>;
   addRepo(path: string): Promise<Repo>;
   addRepos(paths: string[]): Promise<AddReposResult>;
   listDirs(path?: string): Promise<ListDirsResult>;
@@ -236,13 +238,15 @@ async function unarchiveReview(id: string): Promise<void> {
   await invalidateHome();
 }
 
-async function generateReadingOrder(id: string): Promise<void> {
+async function generateReadingOrder(id: string, model: AgentModel): Promise<void> {
+  // Remembered so the review page's pane and palette offer it next time too.
+  setGenerationModel(model);
   patchReviews((res) => ({
     ...res,
     summaries: res.summaries.map((s) => (s.reviewId === id ? { ...s, agentRunning: true } : s)),
   }));
   try {
-    await callApi('generateReadingOrder', { params: [id], body: {} });
+    await callApi('generateReadingOrder', { params: [id], body: { model } });
   } catch (err) {
     setActionError(errorMessage(err, 'Failed to generate reading order'));
   }

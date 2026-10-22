@@ -104,8 +104,6 @@ export const AGENT_MODELS = [
 export const agentModelSchema = z.enum(['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5']);
 export type AgentModel = z.infer<typeof agentModelSchema>;
 export const DEFAULT_AGENT_MODEL: AgentModel = 'claude-haiku-5-5';
-/** Reading-order generation defaults to a stronger model than Ask: it runs once and sets the review's shape. */
-export const DEFAULT_READING_ORDER_MODEL: AgentModel = 'claude-sonnet-5-5';
 
 export const createThreadBodySchema = z.object({
   path: z.string().min(1),
