@@ -254,8 +254,10 @@ export const dataUsageSchema = z.object({
   /** The data directory. */
   root: z.string(),
   databaseBytes: z.number().int().nonnegative(),
-  /** Checkouts made for agent runs; rebuilt on the next run that needs one. */
+  /** Checkouts made for agent runs; rebuilt on the next run that needs one. Bytes include `reviewWorktrees`, which share the folder. */
   worktrees: z.object({ count: z.number().int().nonnegative(), bytes: z.number().int().nonnegative() }),
+  /** Checkouts language servers read reviews from; made again on the next hover. */
+  reviewWorktrees: z.object({ count: z.number().int().nonnegative(), bytes: z.number().int().nonnegative() }),
   /** Last known PR lists, PR details, review stats and your forge user; refetched on demand. */
   cachedAnswers: z.object({ count: z.number().int().nonnegative(), bytes: z.number().int().nonnegative() }),
 });
@@ -397,6 +399,14 @@ export const api = {
   clearWorktrees: def({
     method: 'POST',
     path: () => '/api/settings/worktrees/clear',
+    body: undefined,
+    query: undefined,
+    response: z.object({ removed: z.number().int() }),
+  }),
+  /** Remove every review worktree (language-server checkout); later hovers make new ones. */
+  clearReviewWorktrees: def({
+    method: 'POST',
+    path: () => '/api/settings/review-worktrees/clear',
     body: undefined,
     query: undefined,
     response: z.object({ removed: z.number().int() }),

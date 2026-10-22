@@ -638,12 +638,12 @@ function DataPanel(): React.JSX.Element {
   const { repos, unarchiveReview } = useHomeData();
   const [clearResult, setClearResult] = useState<string | null>(null);
 
-  const clear = async (what: 'clearWorktrees' | 'clearCachedAnswers') => {
+  const clear = async (what: 'clearWorktrees' | 'clearReviewWorktrees' | 'clearCachedAnswers') => {
     setClearResult(null);
     try {
       const { removed } = await callApi(what);
       setClearResult(
-        what === 'clearWorktrees'
+        what !== 'clearCachedAnswers'
           ? `Removed ${String(removed)} ${removed === 1 ? 'worktree' : 'worktrees'}.`
           : `Cleared ${String(removed)} cached ${removed === 1 ? 'answer' : 'answers'}.`,
       );
@@ -706,7 +706,7 @@ function DataPanel(): React.JSX.Element {
  * The data folder like macOS's storage bar: one bar split into what takes
  * the space, then the same parts as a list with matching colour dots. The
  * parts add up to the whole, so "Database" is the database without the PR
- * caches it holds, which sit indented under it. Only the two caches can be
+ * caches it holds, which sit indented under it. Only the caches can be
  * cleared, from their rows. Every part gets a real hue: grey and green both
  * read as free space.
  */
@@ -715,7 +715,7 @@ function UsageTree({
   onClear,
 }: {
   usage: DataUsage;
-  onClear: (what: 'clearWorktrees' | 'clearCachedAnswers') => Promise<void>;
+  onClear: (what: 'clearWorktrees' | 'clearReviewWorktrees' | 'clearCachedAnswers') => Promise<void>;
 }): React.JSX.Element {
   const total = usage.databaseBytes + usage.worktrees.bytes;
   const parts = [
@@ -751,7 +751,7 @@ function UsageTree({
       key: 'worktrees',
       title: 'Agent worktrees',
       detail: `${String(usage.worktrees.count)} ${usage.worktrees.count === 1 ? 'checkout' : 'checkouts'} for agent runs · rebuilt when needed`,
-      bytes: usage.worktrees.bytes,
+      bytes: Math.max(0, usage.worktrees.bytes - usage.reviewWorktrees.bytes),
       color: 'bg-sky-500',
       nested: false,
       action: (
@@ -760,6 +760,25 @@ function UsageTree({
           onConfirm={() => onClear('clearWorktrees')}
           confirmLabel="Remove"
           triggerLabel="Remove agent worktrees"
+          triggerClassName="chrome-icon-btn"
+        >
+          <Trash2 size={14} strokeWidth={1.75} aria-hidden />
+        </ConfirmDelete>
+      ),
+    },
+    {
+      key: 'reviewWorktrees',
+      title: 'Review worktrees',
+      detail: `${String(usage.reviewWorktrees.count)} ${usage.reviewWorktrees.count === 1 ? 'checkout' : 'checkouts'} for code hover and peek · rebuilt when needed`,
+      bytes: usage.reviewWorktrees.bytes,
+      color: 'bg-violet-500',
+      nested: false,
+      action: (
+        <ConfirmDelete
+          prompt="Remove the review worktrees? The next hover rebuilds the one it needs."
+          onConfirm={() => onClear('clearReviewWorktrees')}
+          confirmLabel="Remove"
+          triggerLabel="Remove review worktrees"
           triggerClassName="chrome-icon-btn"
         >
           <Trash2 size={14} strokeWidth={1.75} aria-hidden />

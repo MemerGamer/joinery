@@ -10,11 +10,11 @@
  * - the data directory's footprint, and clearing what's only a cache.
  */
 import { spawn } from 'node:child_process';
-import { open, realpath, stat } from 'node:fs/promises';
+import { open, readdir, realpath, rm, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { DataUsage, FullDiskAccess, Integrations } from '@joinery/core';
-import { removeAgentWorktree } from './agent/maintenance.ts';
+import { removeAgentWorktree, removeOwnWorktree } from './agent/maintenance.ts';
 import { findClaudeExecutable } from './agent/claudeExecutable.ts';
 import { cacheEntryStats, clearCacheEntries, listRepos, listUnfinishedRuns, listWorktrees, type Db } from './db/index.ts';
 import { resolveDataPaths } from './db/paths.ts';
@@ -134,26 +134,45 @@ async function fileSize(path: string): Promise<number> {
   }
 }
 
+/** The checkouts on disk under `dir`, laid out `<repo>/<checkout>`. */
+async function checkoutDirs(dir: string, skip: ReadonlySet<string> = new Set()): Promise<string[]> {
+  const list = async (path: string): Promise<string[]> =>
+    (await readdir(path).catch(() => [] as string[])).filter((name) => !name.startsWith('.'));
+  const repos = (await list(dir)).filter((name) => !skip.has(name));
+  const nested = await Promise.all(
+    repos.map(async (repo) => (await list(join(dir, repo))).map((name) => join(dir, repo, name))),
+  );
+  return nested.flat();
+}
+
+/** Agent worktrees on disk, rows or not: one left by a lost database still takes space. */
+function agentWorktreeDirs(worktreesDir: string): Promise<string[]> {
+  return checkoutDirs(worktreesDir, new Set(['lsp']));
+}
+
 export async function getDataUsage(db: Db): Promise<DataUsage> {
   const paths = resolveDataPaths();
-  const [db0, wal, worktreeRows, worktreeBytes, cached] = await Promise.all([
+  const lspDir = join(paths.worktreesDir, 'lsp');
+  const [db0, wal, agentDirs, worktreeBytes, reviewDirs, reviewBytes, cached] = await Promise.all([
     fileSize(paths.dbFile),
     fileSize(`${paths.dbFile}-wal`),
-    listWorktrees(db),
+    agentWorktreeDirs(paths.worktreesDir),
     diskUsage(paths.worktreesDir),
+    checkoutDirs(lspDir),
+    diskUsage(lspDir),
     cacheEntryStats(db),
   ]);
   return {
     root: paths.root,
     databaseBytes: db0 + wal,
-    worktrees: { count: worktreeRows.length, bytes: worktreeBytes },
+    worktrees: { count: agentDirs.length, bytes: worktreeBytes },
+    reviewWorktrees: { count: reviewDirs.length, bytes: reviewBytes },
     cachedAnswers: cached,
   };
 }
 
 /**
- * Remove every agent worktree and language-server checkout; returns how
- * many. Refused while a run is going, since its worktree would be pulled out
+ * Remove every agent worktree; returns how many. Refused while a run is going, since its worktree would be pulled out
  * from under it.
  */
 export async function clearWorktrees(db: Db): Promise<number> {
@@ -169,7 +188,22 @@ export async function clearWorktrees(db: Db): Promise<number> {
       console.log(`[worktrees] could not remove ${worktree.path}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  return removed + (await lspViews.clearCheckouts());
+  // Left without a row (e.g. by an earlier database): nothing runs in them.
+  const { worktreesDir } = resolveDataPaths();
+  for (const path of await agentWorktreeDirs(worktreesDir)) {
+    await removeOwnWorktree(path, null).catch(() => undefined);
+    await rm(path, { recursive: true, force: true });
+    removed += 1;
+  }
+  for (const repo of await readdir(worktreesDir).catch(() => [] as string[])) {
+    if (repo !== 'lsp') await rm(join(worktreesDir, repo), { recursive: true, force: true });
+  }
+  return removed;
+}
+
+/** Remove every review worktree (language-server checkout); returns how many. */
+export function clearReviewWorktrees(): Promise<number> {
+  return lspViews.clearCheckouts();
 }
 
 /** Delete every cached answer, from the database and from memory; returns how many rows. */
