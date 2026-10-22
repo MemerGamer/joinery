@@ -65,10 +65,7 @@ export function CommentComposer({
         }}
         placeholder={placeholder}
         rows={2}
-        // `outline-hidden!`: the app-wide `:focus-visible` ring (index.css)
-        // is unlayered and would otherwise beat this utility; the card's own
-        // `focus-within` ring is the focused treatment here.
-        className={`max-h-72 w-full resize-none overflow-y-auto bg-transparent pb-1 pt-2.5 text-body leading-relaxed text-chrome-fg outline-hidden! placeholder:text-chrome-fg-subtle ${
+        className={`max-h-72 w-full resize-none overflow-y-auto bg-transparent pb-1 pt-2.5 text-body leading-relaxed text-chrome-fg outline-hidden placeholder:text-chrome-fg-subtle ${
           variant === 'card' ? 'px-3' : 'px-0'
         }`}
         aria-label="Comment body"

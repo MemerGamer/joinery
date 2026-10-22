@@ -3,6 +3,8 @@
  * and its peek window (components/PeekNavigator.tsx).
  */
 
+import { useSyncExternalStore } from 'react';
+
 const CACHE_LIMIT = 2_000;
 
 export const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
@@ -19,6 +21,70 @@ export const CODE_INTEL_CSS = `
   cursor: pointer;
 }
 `;
+
+const HOVER_KEY = 'joinery:lsp-hover';
+const HOVER_DELAY_KEY = 'joinery:lsp-hover-delay';
+export const DEFAULT_HOVER_DELAY_MS = 300;
+export const MAX_HOVER_DELAY_MS = 10_000;
+const hoverListeners = new Set<() => void>();
+
+function stored(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function store(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Best-effort only.
+  }
+  for (const l of hoverListeners) l();
+}
+
+function subscribeHover(l: () => void): () => void {
+  hoverListeners.add(l);
+  return () => {
+    hoverListeners.delete(l);
+  };
+}
+
+let hoverOn = stored(HOVER_KEY) !== 'off';
+let hoverDelay = (() => {
+  const n = Number(stored(HOVER_DELAY_KEY) ?? NaN);
+  return Number.isInteger(n) && n >= 0 && n <= MAX_HOVER_DELAY_MS ? n : DEFAULT_HOVER_DELAY_MS;
+})();
+
+/** Whether resting on a name shows its types and docs (Settings → Language servers); on by default. ⌘-click works either way. */
+export function getHoverEnabled(): boolean {
+  return hoverOn;
+}
+
+export function setHoverEnabled(on: boolean): void {
+  hoverOn = on;
+  store(HOVER_KEY, on ? 'on' : 'off');
+}
+
+export function useHoverEnabled(): boolean {
+  return useSyncExternalStore(subscribeHover, getHoverEnabled);
+}
+
+/** How long the pointer rests on a name before its hover card is asked for, in ms. */
+export function getHoverDelay(): number {
+  return hoverDelay;
+}
+
+export function setHoverDelay(ms: number): void {
+  hoverDelay = Math.min(MAX_HOVER_DELAY_MS, Math.max(0, Math.round(ms)));
+  store(HOVER_DELAY_KEY, String(hoverDelay));
+}
+
+export function useHoverDelay(): number {
+  return useSyncExternalStore(subscribeHover, getHoverDelay);
+}
 
 /** Shared by every waiter; a request that fails or is aborted is dropped so the next hover asks again. */
 export function cached<T>(cache: Map<string, Promise<T>>, key: string, load: () => Promise<T>): Promise<T> {

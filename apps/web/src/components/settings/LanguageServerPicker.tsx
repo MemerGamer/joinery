@@ -24,6 +24,11 @@ export const LSP_TITLE: Record<LspRow['language'], { title: string; files: strin
   php: { title: 'PHP language server', files: 'PHP' },
 };
 
+export const SWITCH_ROOT_CLASS =
+  'relative inline-flex h-[18px] w-8 shrink-0 cursor-pointer items-center rounded-full bg-chrome-bg-active p-0.5 transition-colors data-checked:bg-chrome-accent data-disabled:cursor-default data-disabled:opacity-60';
+export const SWITCH_THUMB_CLASS =
+  'size-3.5 rounded-full bg-chrome-fg shadow-sm transition-transform data-checked:translate-x-3.5 data-checked:bg-chrome-accent-fg';
+
 export const SERVER_NAME: Record<LspServerId, string> = {
   tsrs: 'tsrs',
   tsgo: 'tsgo',
@@ -105,9 +110,9 @@ export function useLanguageServerPicker(
         disabled={busy !== null || row.installing}
         aria-label={`${LSP_TITLE[row.language].title}: ${row.choice.source === 'off' ? 'off' : 'on'}`}
         title={row.choice.source === 'off' && canManage ? `Turning it on downloads ${defaultName} into Joinery's data folder` : undefined}
-        className="relative inline-flex h-[18px] w-8 shrink-0 cursor-pointer items-center rounded-full bg-chrome-bg-active p-0.5 transition-colors data-checked:bg-chrome-accent data-disabled:cursor-default data-disabled:opacity-60"
+        className={SWITCH_ROOT_CLASS}
       >
-        <Switch.Thumb className="size-3.5 rounded-full bg-chrome-fg shadow-sm transition-transform data-checked:translate-x-3.5 data-checked:bg-chrome-accent-fg" />
+        <Switch.Thumb className={SWITCH_THUMB_CLASS} />
       </Switch.Root>
     </>
   );

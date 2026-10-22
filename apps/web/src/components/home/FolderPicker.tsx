@@ -202,8 +202,7 @@ export function FolderPicker({ onAdded, onCancel }: Props): React.JSX.Element {
             placeholder="Filter folders, or type a path…"
             spellCheck={false}
             autoComplete="off"
-            // See CommandPalette: the always-focused input shouldn't wear the global focus ring.
-            className="w-full bg-transparent text-[14px] text-chrome-fg outline-hidden! placeholder:text-chrome-fg-subtle"
+            className="w-full bg-transparent text-[14px] text-chrome-fg outline-hidden placeholder:text-chrome-fg-subtle"
           />
         </div>
 

@@ -47,10 +47,8 @@ export function ShortcutHelp({ open, onClose }: { open: boolean; onClose: () => 
         aria-modal="true"
         aria-labelledby="shortcut-help-title"
         tabIndex={-1}
-        // Focus lands on the frame itself so Escape works straight away; it
-        // isn't an input, so the app-wide focus ring would only be noise here
-        // (same `!` workaround as CommandPalette.tsx).
-        className="flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-chrome-bg-raised text-chrome-fg shadow-[0_16px_48px_-12px_rgba(0,0,0,0.35),0_0_0_0.5px_light-dark(rgba(20,22,30,0.18),rgba(255,255,255,0.1))] outline-hidden!"
+        // Focus lands on the frame itself so Escape works straight away.
+        className="flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-chrome-bg-raised text-chrome-fg shadow-[0_16px_48px_-12px_rgba(0,0,0,0.35),0_0_0_0.5px_light-dark(rgba(20,22,30,0.18),rgba(255,255,255,0.1))] outline-hidden"
       >
         <div className="flex h-12 shrink-0 items-center gap-2 border-b border-chrome-border pl-4 pr-2">
           <h2 id="shortcut-help-title" className="text-body font-medium">

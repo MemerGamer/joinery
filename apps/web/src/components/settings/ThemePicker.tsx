@@ -74,7 +74,7 @@ export function ThemePicker({
               <Search size={13} strokeWidth={1.75} className="shrink-0 text-chrome-fg-subtle" aria-hidden />
               <Combobox.Input
                 placeholder="Search themes…"
-                className="h-full min-w-0 flex-1 bg-transparent text-body text-chrome-fg outline-hidden! placeholder:text-chrome-fg-subtle"
+                className="h-full min-w-0 flex-1 bg-transparent text-body text-chrome-fg outline-hidden placeholder:text-chrome-fg-subtle"
               />
             </label>
             <Combobox.Empty className="px-3 py-6 text-center text-xs text-chrome-fg-muted empty:hidden">No themes match.</Combobox.Empty>

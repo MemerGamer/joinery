@@ -50,6 +50,7 @@ const SEARCH_MIN_CHARS = 2;
 const ALL_REPOS = '*';
 const BRANCH_FILTERS_KEY = 'joinery.explore.branch-filters';
 const BRANCH_SORT_KEY = 'joinery.explore.branch-sort';
+const REPO_KEY = 'joinery.explore.repo';
 
 /** The `listBranches` query for a filter set and sort (the defaults are left off). */
 function branchQuery(filters: BranchFilters, sort: BranchSort) {
@@ -105,7 +106,7 @@ export function repoLabel(r: Repo): string {
 export function ExploreSection(): React.JSX.Element {
   const { repos, pullsByRepo, pullsAvailable, pullsNotice, loading, error, openPull, openPullNumber, openBranch } = useHomeData();
 
-  const [repoId, setRepoIdState] = useState<string>(ALL_REPOS);
+  const [repoId, setRepoIdState] = useStoredState<string>(REPO_KEY, ALL_REPOS);
   const [q, setQ] = useState('');
   const needle = q.trim().toLowerCase();
 
@@ -409,7 +410,7 @@ export function ExploreSection(): React.JSX.Element {
                       spellCheck={false}
                       autoComplete="off"
                       aria-label="Search branches and pull requests"
-                      className="h-full min-w-0 flex-1 bg-transparent text-body text-chrome-fg outline-hidden! placeholder:text-chrome-fg-subtle disabled:opacity-60"
+                      className="h-full min-w-0 flex-1 bg-transparent text-body text-chrome-fg outline-hidden placeholder:text-chrome-fg-subtle disabled:opacity-60"
                     />
                   </label>
                   {displayError !== null && <p className="text-xs text-chrome-danger">{displayError}</p>}

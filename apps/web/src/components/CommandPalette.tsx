@@ -682,15 +682,7 @@ export function CommandPalette({
               }
             }}
             placeholder={MODE_PLACEHOLDER[mode]}
-            // The input is always focused while the palette is open (see
-            // `autoFocus` above), so the app-wide `:focus-visible` ring
-            // (index.css) would just sit there permanently, loud and
-            // pointless. It's suppressed here with `!` (important) because
-            // that global rule is unlayered CSS and normally beats any
-            // Tailwind utility regardless of specificity or source order;
-            // the frame's own `focus-within:border-chrome-accent` above is
-            // the palette's real "focused" treatment instead.
-            className="w-full bg-transparent text-[14px] text-chrome-fg outline-hidden! placeholder:text-chrome-fg-subtle"
+            className="w-full bg-transparent text-[14px] text-chrome-fg outline-hidden placeholder:text-chrome-fg-subtle"
           />
         </div>
         {mode === 'theme' && (

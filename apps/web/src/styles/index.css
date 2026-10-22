@@ -32,7 +32,6 @@
   --chrome-warning-bg: rgba(201, 138, 21, 0.12);
   --chrome-success: #2a9a5f;
   --chrome-success-bg: rgba(42, 154, 95, 0.12);
-  --chrome-focus-ring: #5b63d3;
   --chrome-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.04);
   /* Island frame (chrome-island); lib/deriveChrome.ts re-sets these per theme. */
   --chrome-island-ring: transparent;
@@ -104,7 +103,6 @@
     --chrome-warning-bg: rgba(224, 166, 58, 0.14);
     --chrome-success: #4cc38a;
     --chrome-success-bg: rgba(76, 195, 138, 0.14);
-    --chrome-focus-ring: #8b95f2;
     --chrome-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 16px rgba(0, 0, 0, 0.35);
     --chrome-island-ring: var(--chrome-border);
     --chrome-island-sheen: rgba(255, 255, 255, 0.06);
@@ -133,7 +131,6 @@
   --chrome-warning-bg: rgba(224, 166, 58, 0.14);
   --chrome-success: #4cc38a;
   --chrome-success-bg: rgba(76, 195, 138, 0.14);
-  --chrome-focus-ring: #8b95f2;
   --chrome-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 16px rgba(0, 0, 0, 0.35);
   --chrome-island-ring: var(--chrome-border);
   --chrome-island-sheen: rgba(255, 255, 255, 0.06);
@@ -220,24 +217,12 @@ body {
   }
 }
 
-:focus-visible {
-  outline: 2px solid var(--chrome-focus-ring);
-  outline-offset: 1px;
-  border-radius: var(--chrome-radius-sm);
-}
-
-/* Clicked buttons keep :focus-visible in some webviews; don't leave a lingering ring on them. */
-button:focus-visible,
-[role='button']:focus-visible {
-  outline: none;
-}
-
 /*
- * No focus ring anywhere on the review page. It is driven by shortcuts and
- * clicks, and the ring kept turning up on whatever was last clicked — a
- * link in a thread, a file row — as a stray accent outline.
+ * No focus ring anywhere, the browser's own included. Fields show focus with
+ * their own border (`focus-within:border-chrome-accent` and the like); a ring
+ * only ever turned up on whatever was last clicked as a stray outline.
  */
-.review-window :focus-visible {
+:focus-visible {
   outline: none;
 }
 
@@ -255,11 +240,7 @@ button:focus-visible,
  * `cursor-col-resize` on the resize handles (ResizeHandle.tsx), or the
  * text cursor Preflight already gives inputs/textareas — always wins over
  * this rule. Without `@layer base`, this being a later, equally-specific
- * plain rule in the cascade would beat those utilities outright (the
- * `:focus-visible` rule above hit exactly this problem once, and had to be
- * worked around with Tailwind's `!` important suffix in
- * CommandPalette.tsx) — putting it in `@layer base` avoids needing that
- * workaround here.
+ * plain rule in the cascade would beat those utilities outright.
  *
  * Disabled controls intentionally keep the default arrow rather than a
  * pointer: `:disabled` and `aria-disabled="true"` both mean "not

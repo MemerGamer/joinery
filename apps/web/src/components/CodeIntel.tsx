@@ -15,8 +15,11 @@
  * lines, plus, in split view, a context line's left copy (mapped to its
  * right-hand twin). A deleted line has no head position and gets nothing.
  *
+ * Hover cards can be turned off (Settings → Language servers); the peek
+ * window can't, it only opens on purpose.
+ *
  * Nothing here can hold up the diff: requests start after a hover rests for
- * `HOVER_DELAY_MS`, the previous one is aborted when the pointer moves on (the
+ * the delay set in Settings (300 ms by default), the previous one is aborted when the pointer moves on (the
  * server forwards that as `$/cancelRequest`), and answers are cached per
  * (file blob, line, token), which is immutable, for the life of the page.
  */
@@ -25,12 +28,11 @@ import type { LspDefinition, LspFile, LspHover, LspLanguage, LspReferences } fro
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { callApi } from '../lib/apiClient.ts';
-import { cached, IS_MAC, PEEK_KEY, placement } from '../lib/codeIntel.ts';
+import { cached, getHoverDelay, getHoverEnabled, IS_MAC, PEEK_KEY, placement } from '../lib/codeIntel.ts';
 import { useReview } from '../state/ReviewContext.tsx';
 import { Markdown } from './Markdown.tsx';
 import { PeekNavigator, type Load, type Nav, type NavEntry } from './PeekNavigator.tsx';
 
-const HOVER_DELAY_MS = 300;
 /** Grace to move the pointer from the token onto the popover. */
 const CLOSE_DELAY_MS = 150;
 /** How long the line a jump lands on stays highlighted. */
@@ -180,6 +182,8 @@ export function useCodeIntel(): {
       current.current = target;
       if (target === null) return;
       setLink(target.element, event.metaKey || event.ctrlKey || modifierDown.current);
+      // Hover cards turned off in Settings; ⌘-click still peeks.
+      if (!getHoverEnabled()) return;
       const key = keyOf(target);
       hoverTimer.current = setTimeout(() => {
         hoverTimer.current = null;
@@ -199,7 +203,7 @@ export function useCodeIntel(): {
             else setCard({ target, rect: target.element.getBoundingClientRect(), hover });
           })
           .catch(() => undefined);
-      }, HOVER_DELAY_MS);
+      }, getHoverDelay());
     },
     [cancelHover, keepOpen, keyOf, reviewId],
   );

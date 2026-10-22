@@ -16,6 +16,7 @@
  * choices are the only stored server settings.
  */
 import type { DataUsage, FullDiskAccess, Integrations, Repo, Review, ReviewSummary } from '@joinery/core';
+import { Switch } from '@base-ui-components/react/switch';
 import {
   Archive,
   ArrowLeft,
@@ -24,6 +25,7 @@ import {
   Database,
   FolderGit2,
   Moon,
+  MousePointer2,
   Palette,
   Plug,
   Plus,
@@ -34,6 +36,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiError, callApi } from '../../lib/apiClient.ts';
+import { MAX_HOVER_DELAY_MS, PEEK_KEY, setHoverDelay, setHoverEnabled, useHoverDelay, useHoverEnabled } from '../../lib/codeIntel.ts';
 import { useGlobalKeymap } from '../../lib/keymap.ts';
 import { relativeTime } from '../../lib/relativeTime.ts';
 import { goHomebase, goReview } from '../../lib/router.ts';
@@ -47,7 +50,7 @@ import { GitHubMark, GitLabMark, GitMark, LANGUAGE_MARK } from '../brandMarks.ts
 import { FolderPicker } from '../home/FolderPicker.tsx';
 import { Panel } from '../home/Panel.tsx';
 import { Chip, type Tone } from '../home/primitives.tsx';
-import { LSP_TITLE, useLanguageServerPicker } from './LanguageServerPicker.tsx';
+import { LSP_TITLE, SWITCH_ROOT_CLASS, SWITCH_THUMB_CLASS, useLanguageServerPicker } from './LanguageServerPicker.tsx';
 import { ThemePicker } from './ThemePicker.tsx';
 import { ThemeSample } from './ThemeSample.tsx';
 
@@ -360,6 +363,46 @@ function LanguageServerRow({ row, onChanged }: { row: Integrations['lsp'][number
   );
 }
 
+/**
+ * The switch for hover cards, and while on, how long the pointer rests
+ * before one shows; peeking with the modifier-click is always on.
+ */
+function HoverCardsRow(): React.JSX.Element {
+  const on = useHoverEnabled();
+  const delay = useHoverDelay();
+  // The field's own text, so it can be empty or half-typed; a valid number is saved as it's typed.
+  const [text, setText] = useState(String(delay));
+  return (
+    <Row icon={<MousePointer2 strokeWidth={1.75} />} title="Show types on hover" detail={`Signature and docs when the pointer rests on a name; ${PEEK_KEY}-click jumps either way`}>
+      {on && (
+        <label className="flex h-7 items-center gap-1 rounded-md border border-chrome-border bg-chrome-bg-raised pr-2 text-xs text-chrome-fg-subtle transition-colors hover:border-chrome-border-strong focus-within:border-chrome-accent">
+          <input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={MAX_HOVER_DELAY_MS}
+            step={50}
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              const ms = Number(e.target.value);
+              if (e.target.value.trim() !== '' && Number.isFinite(ms)) setHoverDelay(ms);
+            }}
+            onBlur={() => setText(String(delay))}
+            aria-label="Hover delay in milliseconds"
+            title="How long the pointer rests on a name before the card shows"
+            className="w-14 bg-transparent pl-2 text-right tabular-nums text-chrome-fg outline-hidden [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          />
+          ms
+        </label>
+      )}
+      <Switch.Root checked={on} onCheckedChange={setHoverEnabled} aria-label={`Show types on hover: ${on ? 'on' : 'off'}`} className={SWITCH_ROOT_CLASS}>
+        <Switch.Thumb className={SWITCH_THUMB_CLASS} />
+      </Switch.Root>
+    </Row>
+  );
+}
+
 /** A group of integrations: a heading, what they're for (once, not per row), and the rows. */
 function IntegrationGroup({
   title,
@@ -448,6 +491,7 @@ function IntegrationsPanel(): React.JSX.Element {
               {data.lsp.map((l) => (
                 <LanguageServerRow key={l.language} row={l} onChanged={reload} />
               ))}
+              <HoverCardsRow />
             </IntegrationGroup>
           )}
         </div>
