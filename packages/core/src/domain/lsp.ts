@@ -25,28 +25,31 @@ export type LspServerId = z.infer<typeof lspServerIdSchema>;
 export const installableServerSchema = lspServerIdSchema.extract(['tsrs', 'phpantom']);
 export type InstallableServer = z.infer<typeof installableServerSchema>;
 
-/** Each language's servers, fastest first: the order "automatic" tries them in. */
+/** Each language's servers: the ones a custom path can be spoken to as. */
 export const LSP_SERVERS: Readonly<Record<LspLanguage, readonly LspServerId[]>> = {
   typescript: ['tsrs', 'tsgo', 'typescript-language-server'],
   php: ['phpantom', 'intelephense', 'phpactor'],
 };
 
+/** The server Joinery installs and runs for each language unless told otherwise. */
+export const LSP_DEFAULT_SERVER: Readonly<Record<LspLanguage, InstallableServer>> = {
+  typescript: 'tsrs',
+  php: 'phpantom',
+};
+
 /**
  * Which server a language uses, as chosen in Settings:
  *
- * - `auto`: the fastest one found (a repo's own copy first, then this
- *   machine's, then the one Joinery installed);
- * - `local`: that server as installed on this machine (or in the repo);
- * - `managed`: the copy Joinery installed in its data directory;
+ * - `managed`: the default server (`LSP_DEFAULT_SERVER`), Joinery's own copy
+ *   in its data directory, installed the first time it's needed and kept up
+ *   to date;
  * - `custom`: a binary at a path of the user's, spoken to as `server`;
  * - `off`: none, no hover or peek for the language.
  */
 export const lspChoiceSchema = z.discriminatedUnion('source', [
-  z.object({ source: z.literal('auto') }),
-  z.object({ source: z.literal('off') }),
-  z.object({ source: z.literal('local'), server: lspServerIdSchema }),
-  z.object({ source: z.literal('managed'), server: installableServerSchema }),
+  z.object({ source: z.literal('managed') }),
   z.object({ source: z.literal('custom'), server: lspServerIdSchema, path: z.string().min(1) }),
+  z.object({ source: z.literal('off') }),
 ]);
 export type LspChoice = z.infer<typeof lspChoiceSchema>;
 

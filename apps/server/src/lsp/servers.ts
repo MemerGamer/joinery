@@ -1,31 +1,27 @@
 /**
  * Which language server serves which file, and where its binary is.
  *
- * Settings picks per language (`choices.ts`): a server as installed on this
- * machine, the copy Joinery installed (`install.ts`), a binary at a custom
- * path, none at all, or — the default — `auto`: the fastest one found, by
- * measured speed on large repos (startup to first hover, then resident
- * memory), see the comparison in the branch notes:
+ * Settings picks per language (`choices.ts`):
  *
- * - TypeScript/JavaScript: `tsrs` (Rust port of TypeScript 7), then the Go
- *   TypeScript 7 (`tsgo`, or the `tsc` of `typescript@>=7`), then the classic
- *   `typescript-language-server` + tsserver.
- * - PHP: PHPantom, then Intelephense, then Phpactor.
- *
- * For a server "on this machine", the repo's own copy wins over PATH, so the
- * checker matches the repo's pinned version; Joinery's copy comes after both.
+ * - by default, Joinery's own copy of the language's default server
+ *   (`LSP_DEFAULT_SERVER`: tsrs, the Rust port of TypeScript 7, and
+ *   PHPantom — the fastest to first hover and the lightest on large repos
+ *   in the branch notes' comparison), installed here the first time it's
+ *   needed (`install.ts`);
+ * - a binary at a custom path, spoken to as the server the user says it is;
+ * - or none.
  *
  * A missing server is not an error anywhere: hover simply has nothing to say,
- * and Settings → Integrations lists what to install.
+ * and Settings → Integrations says why.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { extname, join } from 'node:path';
-import { installableServerSchema, LSP_SERVERS, type Integrations, type LspChoice, type LspLanguage, type LspServerId } from '@joinery/core';
+import { LSP_DEFAULT_SERVER, LSP_SERVERS, type Integrations, type LspLanguage, type LspServerId } from '@joinery/core';
 import { resolveDataPaths } from '../db/paths.ts';
 import { lspChoice } from './choices.ts';
-import { installableFor, managedBinary, managedVersion } from './install.ts';
+import { installableFor, installServer, isInstalling, managedBinary, managedVersion } from './install.ts';
 
 export type ServerSpec = {
   readonly id: LspServerId;
@@ -49,100 +45,6 @@ const LANGUAGE_IDS: Readonly<Record<string, { language: LspLanguage; languageId:
 
 export function languageOf(path: string): { language: LspLanguage; languageId: string } | null {
   return LANGUAGE_IDS[extname(path).toLowerCase()] ?? null;
-}
-
-/** The executable names each server ships under. */
-const BINARIES: Readonly<Record<LspServerId, readonly string[]>> = {
-  tsrs: ['tsrs'],
-  tsgo: ['tsgo'],
-  'typescript-language-server': ['typescript-language-server'],
-  phpantom: ['phpantom_lsp', 'phpantom-lsp', 'phpantom'],
-  intelephense: ['intelephense'],
-  phpactor: ['phpactor'],
-};
-
-/** PATH first, then where installers usually put things (a LaunchAgent's PATH is short). */
-function onThisMachine(name: string): string | null {
-  return (
-    Bun.which(name) ??
-    [
-      '/opt/homebrew/bin',
-      '/usr/local/bin',
-      join(homedir(), '.cargo', 'bin'),
-      join(homedir(), '.local', 'bin'),
-      join(homedir(), '.bun', 'bin'),
-      join(homedir(), '.npm-global', 'bin'),
-      join(homedir(), '.composer', 'vendor', 'bin'),
-    ]
-      .map((dir) => join(dir, name))
-      .find((candidate) => existsSync(candidate)) ??
-    null
-  );
-}
-
-function projectBin(root: string, name: string): string | null {
-  const candidate = join(root, 'node_modules', '.bin', name);
-  return existsSync(candidate) ? candidate : null;
-}
-
-/** Major version of the repo's own `typescript`, or null when it has none. */
-function projectTypescriptMajor(root: string): number | null {
-  try {
-    const pkg = JSON.parse(readFileSync(join(root, 'node_modules', 'typescript', 'package.json'), 'utf8')) as {
-      version?: string;
-    };
-    const major = Number.parseInt(pkg.version ?? '', 10);
-    return Number.isFinite(major) ? major : null;
-  } catch {
-    return null;
-  }
-}
-
-/** The repo's own copy of a TypeScript server, when `root` has one. */
-function inProject(id: LspServerId, root: string): string | null {
-  if (id === 'tsrs' || id === 'typescript-language-server') return projectBin(root, id);
-  if (id === 'tsgo') return projectBin(root, 'tsgo') ?? ((projectTypescriptMajor(root) ?? 0) >= 7 ? projectBin(root, 'tsc') : null);
-  return null;
-}
-
-/** `id` installed by the user: the repo's own copy (with a `root`), else this machine's. */
-function findLocal(id: LspServerId, root: string | null): string | null {
-  return (root === null ? null : inProject(id, root)) ?? BINARIES[id].map(onThisMachine).find((p) => p !== null) ?? null;
-}
-
-function findManaged(id: LspServerId): string | null {
-  const installable = installableServerSchema.safeParse(id);
-  if (!installable.success) return null;
-  const path = managedBinary(installable.data);
-  return existsSync(path) ? path : null;
-}
-
-export type Located = { readonly id: LspServerId; readonly path: string; readonly source: 'local' | 'managed' | 'custom' };
-
-/** Where `choice` puts `language`'s server; `root` adds the repo's own copies. Null when off or not installed. */
-export function locate(language: LspLanguage, choice: LspChoice, root: string | null): Located | null {
-  switch (choice.source) {
-    case 'off':
-      return null;
-    case 'custom':
-      return existsSync(choice.path) ? { id: choice.server, path: choice.path, source: 'custom' } : null;
-    case 'managed': {
-      const path = findManaged(choice.server);
-      return path === null ? null : { id: choice.server, path, source: 'managed' };
-    }
-    case 'local': {
-      const path = findLocal(choice.server, root);
-      return path === null ? null : { id: choice.server, path, source: 'local' };
-    }
-    case 'auto':
-      for (const id of LSP_SERVERS[language]) {
-        const local = findLocal(id, root);
-        if (local !== null) return { id, path: local, source: 'local' };
-        const managed = findManaged(id);
-        if (managed !== null) return { id, path: managed, source: 'managed' };
-      }
-      return null;
-  }
 }
 
 /**
@@ -217,40 +119,49 @@ async function specFor(id: LspServerId, path: string, root: string): Promise<Ser
   }
 }
 
+/** The binary `language`'s choice runs, installing Joinery's copy first when it's the one and missing. */
+async function binaryFor(language: LspLanguage, install: boolean): Promise<{ id: LspServerId; path: string } | null> {
+  const choice = lspChoice(language);
+  if (choice.source === 'off') return null;
+  if (choice.source === 'custom') return existsSync(choice.path) ? { id: choice.server, path: choice.path } : null;
+  const id = LSP_DEFAULT_SERVER[language];
+  if (installableFor(language) === null) return null;
+  const path = managedBinary(id);
+  if (existsSync(path)) return { id, path };
+  if (!install) return null;
+  await installServer(id);
+  return { id, path };
+}
+
+/** How to start `language`'s server in `root`; null when it's off or can't be had. */
 export async function resolveServer(language: LspLanguage, root: string): Promise<ServerSpec | null> {
-  const found = locate(language, lspChoice(language), root);
+  const found = await binaryFor(language, true);
   return found === null ? null : specFor(found.id, found.path, root);
 }
 
-/** For Settings → Integrations: each language's choice, what it comes to (repo-local copies aside), and the alternatives. */
+/** For Settings → Integrations: each language's choice and what it comes to. */
 export async function installedServers(): Promise<Integrations['lsp']> {
   return Promise.all(
     (Object.keys(LSP_SERVERS) as LspLanguage[]).map(async (language) => {
       const choice = lspChoice(language);
-      const found = locate(language, choice, null);
+      const found = await binaryFor(language, false);
       const installable = installableFor(language);
       const version = installable === null ? null : await managedVersion(installable);
-      const problem =
-        found !== null || choice.source === 'auto' || choice.source === 'off'
-          ? null
-          : choice.source === 'custom'
-            ? `Nothing at ${choice.path}`
-            : choice.source === 'managed'
-              ? 'Not installed by Joinery yet'
-              : `${choice.server} isn't installed on this machine`;
+      const installing = installable !== null && isInstalling(installable);
       return {
         language,
         choice,
         server: found?.id ?? null,
         path: found?.path ?? null,
-        source: found?.source ?? null,
-        local: LSP_SERVERS[language].flatMap((server) => {
-          const path = findLocal(server, null);
-          return path === null ? [] : [{ server, path }];
-        }),
         installable,
-        managed: installable === null || version === null ? null : { server: installable, version },
-        problem,
+        managed: version === null ? null : { version },
+        installing,
+        problem:
+          choice.source === 'custom' && found === null
+            ? `Nothing at ${choice.path}`
+            : choice.source === 'managed' && installable === null
+              ? `No ${LSP_DEFAULT_SERVER[language]} build for this machine`
+              : null,
       };
     }),
   );

@@ -100,7 +100,8 @@ import { projectThreads } from '../engine/threadProjection.ts';
 import { cancelRun, generateReadingOrder, requestThreadReply } from '../agent/runs.ts';
 import type { Invoke } from '../agent/tools.ts';
 import { resolveRunCwd } from '../agent/worktree.ts';
-import { externalFile, installServer, languageOf, lsp, removeServer, type LspSource, type LspTarget } from '../lsp/index.ts';
+import { externalFile, installServer, languageOf, lsp, type LspSource, type LspTarget } from '../lsp/index.ts';
+import { installableFor } from '../lsp/install.ts';
 import { invalidChoice, saveLspChoice } from '../lsp/choices.ts';
 import { lspViews } from '../lsp/views.ts';
 import { badRequest, conflict, internal, notFound, pathError } from './errors.ts';
@@ -243,16 +244,9 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     } catch (err) {
       throw internal(
         `could not install ${server}: ${err instanceof Error ? err.message : String(err)}`,
-        'Check the network, or install it yourself with the command shown.',
+        'Check the network and try again.',
       );
     }
-  });
-
-  app.post('/api/settings/lsp/:server/remove', async (c) => {
-    const server = parseServer(c.req.param('server'));
-    await lsp.reset(server === 'tsrs' ? 'typescript' : 'php');
-    await removeServer(server);
-    return c.json({ ok: true as const });
   });
 
   app.put('/api/settings/lsp/choice/:language', async (c) => {
@@ -261,6 +255,13 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     const choice = await parseBody(lspChoiceSchema, c);
     const invalid = invalidChoice(language.data, choice);
     if (invalid !== null) throw badRequest(invalid);
+    // Joinery's copy is installed when picked, so the next hover doesn't wait for it.
+    const installable = choice.source === 'managed' ? installableFor(language.data) : null;
+    if (installable !== null) {
+      await installServer(installable).catch((err: unknown) => {
+        throw internal(`could not install ${installable}: ${err instanceof Error ? err.message : String(err)}`, 'Check the network and try again.');
+      });
+    }
     await saveLspChoice(deps.db, language.data, choice);
     // Servers already running stop; the next hover starts the chosen one.
     await lsp.reset(language.data);

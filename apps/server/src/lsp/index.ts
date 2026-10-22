@@ -27,7 +27,7 @@ import { isCancelled, LspClient } from './client.ts';
 import { languageOf, resolveServer, type ServerSpec } from './servers.ts';
 
 export { installedServers, languageOf } from './servers.ts';
-export { installServer, removeServer } from './install.ts';
+export { installServer, startLspUpdates } from './install.ts';
 
 const IDLE_MS = 10 * 60_000;
 const RETRY_MS = 60_000;

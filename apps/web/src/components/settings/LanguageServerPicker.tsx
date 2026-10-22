@@ -1,27 +1,24 @@
 /**
  * Choosing a language's server for hover and peek, shared by Settings →
- * Integrations and onboarding's tooling step: automatic, one found on this
- * machine, the copy Joinery installs into its data directory (picking it
- * installs it first), a binary at a custom path, or off.
+ * Integrations and onboarding's tooling step: the default server (tsrs,
+ * PHPantom), which Joinery installs into its data directory and keeps up to
+ * date, a binary at a custom path, or off.
  *
  * `useLanguageServerPicker` holds the choosing; each place lays out its
- * `controls` (the menu, and Remove for Joinery's copy), `detail` (what runs,
- * or what's wrong) and `editor` (the custom path form, while open) its way.
+ * `controls` (the menu, and Retry when an install failed), `detail` (what
+ * runs, or what's wrong) and `editor` (the custom path form, while open) its
+ * way.
  */
-import { LSP_SERVERS, type Integrations, type LspChoice, type LspServerId } from '@joinery/core';
+import { LSP_DEFAULT_SERVER, LSP_SERVERS, type Integrations, type LspChoice, type LspServerId } from '@joinery/core';
 import { useState } from 'react';
 import { ApiError, callApi } from '../../lib/apiClient.ts';
 import { ChromeSelect, type ChromeSelectOption } from './ChromeSelect.tsx';
 
 type LspRow = Integrations['lsp'][number];
 
-export const LSP_TITLE: Record<LspRow['language'], { title: string; files: string; install: string }> = {
-  typescript: {
-    title: 'TypeScript language server',
-    files: 'TypeScript and JavaScript',
-    install: 'npm i -g tsrs, or a repo’s own typescript@7',
-  },
-  php: { title: 'PHP language server', files: 'PHP', install: 'brew install phpantom-lsp' },
+export const LSP_TITLE: Record<LspRow['language'], { title: string; files: string }> = {
+  typescript: { title: 'TypeScript language server', files: 'TypeScript and JavaScript' },
+  php: { title: 'PHP language server', files: 'PHP' },
 };
 
 export const SERVER_NAME: Record<LspServerId, string> = {
@@ -33,11 +30,6 @@ export const SERVER_NAME: Record<LspServerId, string> = {
   phpactor: 'Phpactor',
 };
 
-/** A choice as a menu value: `auto`, `off`, `custom`, `local:<server>`, `managed:<server>`. */
-function valueOf(choice: LspChoice): string {
-  return choice.source === 'local' || choice.source === 'managed' ? `${choice.source}:${choice.server}` : choice.source;
-}
-
 function errorText(err: unknown): string {
   return err instanceof ApiError ? err.message : String(err);
 }
@@ -46,7 +38,7 @@ export function useLanguageServerPicker(
   row: LspRow,
   onChanged: () => void,
 ): { controls: React.ReactNode; detail: React.ReactNode; editor: React.ReactNode } {
-  const [busy, setBusy] = useState<'save' | 'install' | 'remove' | null>(null);
+  const [busy, setBusy] = useState<'save' | 'install' | null>(null);
   const [error, setError] = useState<string | null>(null);
   // The custom form: open while picking it, or to change a saved custom path.
   const [editing, setEditing] = useState(false);
@@ -56,8 +48,9 @@ export function useLanguageServerPicker(
       : { server: LSP_SERVERS[row.language][0] ?? 'tsrs', path: '' },
   );
   const { installable, managed } = row;
+  const defaultName = SERVER_NAME[LSP_DEFAULT_SERVER[row.language]];
 
-  const act = async (kind: 'save' | 'install' | 'remove', work: () => Promise<unknown>): Promise<boolean> => {
+  const act = async (kind: 'save' | 'install', work: () => Promise<unknown>): Promise<boolean> => {
     setBusy(kind);
     setError(null);
     try {
@@ -72,97 +65,68 @@ export function useLanguageServerPicker(
     }
   };
 
+  // Picking the default installs it first (the server does, before saving).
   const save = (choice: LspChoice) =>
-    act('save', () => callApi('setLanguageServerChoice', { params: [row.language], body: choice }));
+    act(choice.source === 'managed' && managed === null ? 'install' : 'save', () =>
+      callApi('setLanguageServerChoice', { params: [row.language], body: choice }),
+    );
 
-  const pick = async (value: string) => {
+  const pick = async (value: LspChoice['source']) => {
     if (value === 'custom') {
       setEditing(true);
       return;
     }
     setEditing(false);
-    if (value === 'auto' || value === 'off') {
-      await save({ source: value });
-      return;
-    }
-    const [source, server] = value.split(':') as ['local' | 'managed', LspServerId];
-    if (source === 'managed' && installable !== null) {
-      // Joinery's copy is installed on first pick.
-      if (managed === null) {
-        const installed = await act('install', () => callApi('installLanguageServer', { params: [installable] }));
-        if (!installed) return;
-      }
-      await save({ source: 'managed', server: installable });
-      return;
-    }
-    await save({ source: 'local', server });
+    await save({ source: value });
   };
 
-  // Every option the menu offers, the saved choice always among them.
-  const local = row.local.map((l) => l.server);
-  if (row.choice.source === 'local' && !local.includes(row.choice.server)) local.push(row.choice.server);
-  const value = editing ? 'custom' : valueOf(row.choice);
-  const options: ChromeSelectOption<string>[] = [
-    { value: 'auto', label: 'Automatic' },
-    ...local.map((server) => ({ value: `local:${server}`, label: `${SERVER_NAME[server]} on this machine` })),
-    ...(installable === null
-      ? []
-      : [
-          {
-            value: `managed:${installable}`,
-            label:
-              managed !== null
-                ? `Joinery’s ${SERVER_NAME[installable]} ${managed.version}`
-                : `Install ${SERVER_NAME[installable]} into Joinery`,
-          },
-        ]),
+  const value = editing ? 'custom' : row.choice.source;
+  const options: ChromeSelectOption<LspChoice['source']>[] = [
+    ...(installable !== null ? [{ value: 'managed' as const, label: defaultName }] : []),
     { value: 'custom', label: 'Custom path…' },
     { value: 'off', label: 'Off' },
   ];
+  // An install that failed (offline at first need, say) is retried here.
+  const retry = row.choice.source === 'managed' && installable !== null && managed === null && !row.installing;
 
   const controls = (
     <>
+      {retry && error !== null && (
+        <button
+          type="button"
+          onClick={() => void act('install', () => callApi('installLanguageServer', { params: [installable] }))}
+          disabled={busy !== null}
+          className="chrome-btn"
+        >
+          Retry
+        </button>
+      )}
       <ChromeSelect
         value={value}
         options={options}
         onChange={(next) => void pick(next)}
         disabled={busy !== null}
         label={`${LSP_TITLE[row.language].title} to use`}
-        className="max-w-64"
+        className="w-40"
       />
-      {managed !== null && (
-        <button
-          type="button"
-          onClick={() =>
-            void act('remove', async () => {
-              // Removing the copy in use falls back to choosing automatically.
-              if (row.choice.source === 'managed') await callApi('setLanguageServerChoice', { params: [row.language], body: { source: 'auto' } });
-              await callApi('removeLanguageServer', { params: [managed.server] });
-            })
-          }
-          disabled={busy !== null}
-          title={`Delete Joinery's copy of ${SERVER_NAME[managed.server]} ${managed.version}`}
-          className="chrome-btn"
-        >
-          {busy === 'remove' ? 'Removing…' : 'Remove'}
-        </button>
-      )}
     </>
   );
 
-  const label = LSP_TITLE[row.language];
   const detailText =
-    busy === 'install'
-      ? `Installing ${installable !== null ? SERVER_NAME[installable] : ''}…`
+    busy === 'install' || row.installing
+      ? `Installing ${defaultName}…`
       : (error ??
         row.problem ??
         (row.choice.source === 'off'
-          ? `Off: no hover or peek in ${label.files} files`
-          : row.server === null || row.path === null
-            ? `Nothing installed: ${installable !== null ? `pick Install ${SERVER_NAME[installable]}, or ` : ''}${label.install}`
-            : `${row.choice.source === 'auto' ? 'Automatic: ' : ''}${SERVER_NAME[row.server]}${row.source === 'managed' && managed !== null ? ` ${managed.version}, installed by Joinery` : ''} · ${row.path}`));
-  const detail =
-    error !== null || (row.problem !== null && busy === null) ? <span className="text-chrome-danger">{detailText}</span> : detailText;
+          ? installable === null
+            ? `No ${defaultName} build for this machine: set a custom path to use another server`
+            : `Off: no hover or peek in ${LSP_TITLE[row.language].files} files`
+          : row.choice.source === 'custom'
+            ? `${SERVER_NAME[row.choice.server]} · ${row.choice.path}`
+            : managed !== null
+              ? `${defaultName} ${managed.version} · installed by Joinery, kept up to date`
+              : `Joinery installs ${defaultName} the first time it's needed`));
+  const detail = error !== null || row.problem !== null ? <span className="text-chrome-danger">{detailText}</span> : detailText;
 
   const editor = editing || row.choice.source === 'custom' ? (
     <form

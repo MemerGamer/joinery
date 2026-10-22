@@ -1,9 +1,9 @@
 /**
- * One-click installs of the preferred language servers, for Settings →
- * Integrations. Each lands in Joinery's own data directory
- * (`data/lsp/servers/<id>/`): no package manager, no sudo, nothing outside
- * `~/.joinery`, and gone with "Remove". A server the user installed
- * themselves (in the repo or on PATH) still wins over these.
+ * Joinery's own copies of the default language servers (`LSP_DEFAULT_SERVER`),
+ * in its data directory (`data/lsp/servers/<id>/`): no package manager, no
+ * sudo, nothing outside `~/.joinery`. Installed the first time one is needed
+ * (`servers.ts`) or picked in Settings, and kept up to date by
+ * `startLspUpdates`, which looks for a newer release at startup and daily.
  *
  * - tsrs: its npm platform package (`@tsrs/<platform>`) is self-contained, a
  *   native binary with TypeScript's `lib.*.d.ts` beside it; no Node needed.
@@ -147,6 +147,42 @@ async function install(id: InstallableServer): Promise<{ version: string; path: 
   return { version: download.version, path: managedBinary(id) };
 }
 
-export async function removeServer(id: InstallableServer): Promise<void> {
-  await rm(join(serversDir(), id), { recursive: true, force: true });
+export function isInstalling(id: InstallableServer): boolean {
+  return installing.has(id);
+}
+
+const UPDATE_EVERY_MS = 24 * 60 * 60_000;
+/** After startup, so the first check doesn't compete with it. */
+const FIRST_UPDATE_AFTER_MS = 60_000;
+
+/**
+ * Checks each installed copy against its latest release, at startup and
+ * daily, and installs a newer one in its place; `onUpdated` then lets the
+ * caller restart servers running the old one. A failed check (offline) just
+ * waits for the next. Returns a stop function.
+ */
+export function startLspUpdates(onUpdated: (id: InstallableServer, version: string) => void): () => void {
+  const check = async () => {
+    for (const id of Object.keys(BINARY) as InstallableServer[]) {
+      const current = await managedVersion(id);
+      if (current === null || installing.has(id)) continue;
+      try {
+        const latest = (id === 'tsrs' ? await tsrsDownload() : await phpantomDownload()).version;
+        if (latest === current) continue;
+        const installed = await installServer(id);
+        console.log(`[lsp] updated ${id} ${current} → ${installed.version}`);
+        onUpdated(id, installed.version);
+      } catch (err) {
+        console.log(`[lsp] could not check ${id} for updates: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  };
+  const first = setTimeout(() => void check(), FIRST_UPDATE_AFTER_MS);
+  const timer = setInterval(() => void check(), UPDATE_EVERY_MS);
+  first.unref?.();
+  timer.unref?.();
+  return () => {
+    clearTimeout(first);
+    clearInterval(timer);
+  };
 }
