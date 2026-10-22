@@ -5,9 +5,10 @@
  *  - Welcome: three screenshots of what Joinery is for, cycling on a timer.
  *  - Repositories: the add-repo folder picker, with a heads-up about the
  *    macOS folder prompt until Full Disk Access is granted.
- *  - Tooling: git, Claude Code, `gh` and `glab`, from the settings page's
- *    integrations check, each with the fix when it isn't ready; and which
- *    language server to use per language, picked as on the settings page.
+ *  - Tooling: the settings page's integrations check in three groups —
+ *    basics (git, Claude Code), forges (`gh`, `glab`), each with the fix
+ *    when it isn't ready, and language servers, switched on per language
+ *    as on the settings page.
  *  - Make it yours: light/dark and the theme, over a mock review window
  *    drawn in the chrome, so a pick visibly re-tints the whole UI.
  */
@@ -16,7 +17,6 @@ import {
   ArrowLeft,
   ArrowRight,
   Bot,
-  Braces,
   Check,
   FolderGit2,
   FolderPlus,
@@ -34,6 +34,7 @@ import { listThemeOptions } from '../../lib/themes.ts';
 import { useHomeData } from '../../state/HomeData.tsx';
 import { useTheme, type ChromeMode } from '../../state/ThemeContext.tsx';
 import { repoLabel } from '../Explore.tsx';
+import { GitHubMark, GitLabMark, GitMark, LANGUAGE_MARK } from '../brandMarks.tsx';
 import { FolderPicker } from '../home/FolderPicker.tsx';
 import { Chip, type Tone } from '../home/primitives.tsx';
 import { LSP_TITLE, useLanguageServerPicker } from '../settings/LanguageServerPicker.tsx';
@@ -449,33 +450,28 @@ function forgeStatus(data: Integrations, forge: 'github' | 'gitlab'): ToolStatus
   return { tone: 'success', label: 'Installed', info: path };
 }
 
-const TOOLS: { key: string; icon: React.ReactNode; title: string; why: string; status: (d: Integrations) => ToolStatus }[] = [
+interface Tool {
+  key: string;
+  icon: React.ReactNode;
+  title: string;
+  why?: string;
+  status: (d: Integrations) => ToolStatus;
+}
+
+const BASICS: Tool[] = [
   { key: 'git', icon: <GitMark />, title: 'Git', why: 'Reads branches, commits and diffs straight from your clones.', status: gitStatus },
-  {
-    key: 'github',
-    icon: <GitHubMark />,
-    title: 'GitHub',
-    why: 'Lists your pull requests and review requests, through the gh CLI.',
-    status: (d) => forgeStatus(d, 'github'),
-  },
-  {
-    key: 'gitlab',
-    icon: <GitLabMark />,
-    title: 'GitLab',
-    why: 'Lists your merge requests, through the glab CLI.',
-    status: (d) => forgeStatus(d, 'gitlab'),
-  },
-  {
-    key: 'claude',
-    icon: <Bot strokeWidth={1.75} />,
-    title: 'Claude Code',
-    why: 'Answers your threads and writes reading orders.',
-    status: claudeStatus,
-  },
+  { key: 'claude', icon: <Bot strokeWidth={1.75} />, title: 'Claude Code', why: 'Answers your threads and writes reading orders.', status: claudeStatus },
+];
+
+const FORGES: Tool[] = [
+  { key: 'github', icon: <GitHubMark />, title: 'GitHub', why: 'Through the gh CLI', status: (d) => forgeStatus(d, 'github') },
+  { key: 'gitlab', icon: <GitLabMark />, title: 'GitLab', why: 'Through the glab CLI', status: (d) => forgeStatus(d, 'gitlab') },
 ];
 
 function ToolsStep(): React.JSX.Element {
   const { data, loading, reload } = useRead(() => callApi('integrations'));
+  const rows = (tools: Tool[]) =>
+    tools.map((tool) => <ToolRow key={tool.key} tool={tool} status={data !== null ? tool.status(data) : null} loading={loading} />);
 
   return (
     <>
@@ -484,85 +480,82 @@ function ToolsStep(): React.JSX.Element {
           <RefreshCw size={14} strokeWidth={1.75} className={loading ? 'animate-spin' : ''} aria-hidden />
         </button>
       </StepActions>
-      <ul className={`flex flex-col gap-1 transition-opacity ${loading && data !== null ? 'opacity-60' : ''}`}>
-        {TOOLS.map((tool) => {
-          const status = data !== null ? tool.status(data) : null;
-          return (
-            <li key={tool.key} className="flex items-start gap-3.5 rounded-md px-3 py-3" title={status?.info}>
-              <span className="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center text-chrome-fg-muted [&>svg]:size-5" aria-hidden>
-                {tool.icon}
-              </span>
-              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="text-body font-medium text-chrome-fg">{tool.title}</span>
-                <span className="text-xs text-chrome-fg-muted">{tool.why}</span>
-                {status?.fix !== undefined && <code className="mt-1 truncate text-micro text-chrome-fg-subtle">{status.fix}</code>}
-              </span>
-              <span className="mt-0.5 shrink-0">
-                {status !== null ? (
-                  <Chip tone={status.tone} {...(status.tone === 'success' ? { icon: <Check size={11} strokeWidth={2.5} /> } : {})}>
-                    {status.label}
-                  </Chip>
-                ) : (
-                  <Chip>{loading ? 'Checking…' : "Couldn't check"}</Chip>
-                )}
-              </span>
-            </li>
-          );
-        })}
-        {data?.lsp.map((row) => <LanguageServerTool key={row.language} row={row} onChanged={reload} />)}
-      </ul>
+      <div className={`flex flex-col gap-5 transition-opacity ${loading && data !== null ? 'opacity-60' : ''}`}>
+        <ToolGroup title="Basics">{rows(BASICS)}</ToolGroup>
+        <ToolGroup title="Forges" about="List your pull requests, merge requests and review requests. Only the forges your repositories use matter.">
+          {rows(FORGES)}
+        </ToolGroup>
+        {data !== null && data.lsp.length > 0 && (
+          <ToolGroup title="Language servers" about="Show types and docs on hover, and jump to definitions and uses, right in the diff.">
+            {data.lsp.map((row) => (
+              <LanguageServerTool key={row.language} row={row} onChanged={reload} />
+            ))}
+          </ToolGroup>
+        )}
+      </div>
     </>
+  );
+}
+
+/** A heading, what the group is for (said once rather than on every row), and its rows. */
+function ToolGroup({ title, about, children }: { title: string; about?: string; children: React.ReactNode }): React.JSX.Element {
+  return (
+    <section className="flex flex-col gap-1">
+      <header className="flex flex-col gap-0.5 px-3">
+        <h3 className="text-xs font-medium text-chrome-fg">{title}</h3>
+        {about !== undefined && <p className="text-xs text-chrome-fg-muted">{about}</p>}
+      </header>
+      <ul className="flex flex-col">{children}</ul>
+    </section>
+  );
+}
+
+function ToolIcon({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return (
+    <span className="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center text-chrome-fg-muted [&>svg]:size-5" aria-hidden>
+      {children}
+    </span>
+  );
+}
+
+function ToolRow({ tool, status, loading }: { tool: Tool; status: ToolStatus | null; loading: boolean }): React.JSX.Element {
+  return (
+    <li className="flex items-start gap-3.5 rounded-md px-3 py-2.5" title={status?.info}>
+      <ToolIcon>{tool.icon}</ToolIcon>
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-body font-medium text-chrome-fg">{tool.title}</span>
+        {tool.why !== undefined && <span className="text-xs text-chrome-fg-muted">{tool.why}</span>}
+        {status?.fix !== undefined && <code className="mt-1 truncate text-micro text-chrome-fg-subtle">{status.fix}</code>}
+      </span>
+      <span className="mt-0.5 shrink-0">
+        {status !== null ? (
+          <Chip tone={status.tone} {...(status.tone === 'success' ? { icon: <Check size={11} strokeWidth={2.5} /> } : {})}>
+            {status.label}
+          </Chip>
+        ) : (
+          <Chip>{loading ? 'Checking…' : "Couldn't check"}</Chip>
+        )}
+      </span>
+    </li>
   );
 }
 
 /** A language's hover/peek server, chosen right here (the same picker as Settings). */
 function LanguageServerTool({ row, onChanged }: { row: Integrations['lsp'][number]; onChanged: () => void }): React.JSX.Element {
   const { controls, detail, editor } = useLanguageServerPicker(row, onChanged);
+  const Mark = LANGUAGE_MARK[row.language];
   return (
-    <li className="flex items-start gap-3.5 rounded-md px-3 py-3">
-      <span className="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center text-chrome-fg-muted [&>svg]:size-5" aria-hidden>
-        <Braces strokeWidth={1.75} />
-      </span>
+    <li className="flex items-start gap-3.5 rounded-md px-3 py-2.5">
+      <ToolIcon>
+        <Mark />
+      </ToolIcon>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="text-body font-medium text-chrome-fg">{LSP_TITLE[row.language].title}</span>
-        <span className="text-xs text-chrome-fg-muted">
-          Shows types and docs on hover, and jumps to definitions and uses, in {LSP_TITLE[row.language].files} diffs.
-        </span>
-        <span className="mt-1 truncate text-micro text-chrome-fg-subtle">{detail}</span>
+        <span className="text-body font-medium text-chrome-fg">{LSP_TITLE[row.language].files}</span>
+        <span className="truncate text-xs text-chrome-fg-muted">{detail}</span>
         {editor !== null && <span className="mt-1.5">{editor}</span>}
       </span>
-      <span className="flex shrink-0 items-center gap-1.5">{controls}</span>
+      <span className="mt-0.5 flex shrink-0 items-center gap-1.5">{controls}</span>
     </li>
-  );
-}
-
-/*
- * The services' own marks (Simple Icons paths), single-colour in the row's
- * text colour: each names the service it links to, which their brand
- * guidelines allow.
- */
-
-function GitMark(): React.JSX.Element {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor">
-      <path d="M23.546 10.93 13.067.452c-.604-.603-1.582-.603-2.188 0L8.708 2.627l2.76 2.76c.645-.215 1.379-.07 1.889.441.516.515.658 1.258.438 1.9l2.658 2.66c.645-.223 1.387-.078 1.9.435.721.72.721 1.884 0 2.604-.719.719-1.881.719-2.6 0-.539-.541-.674-1.337-.404-1.996L12.86 8.955v6.525c.176.086.342.203.488.348.713.721.713 1.883 0 2.6-.719.721-1.889.721-2.609 0-.719-.719-.719-1.879 0-2.598.182-.18.387-.316.605-.406V8.835c-.217-.091-.424-.222-.6-.401-.545-.545-.676-1.342-.396-2.009L7.636 3.7.45 10.881c-.6.605-.6 1.584 0 2.189l10.48 10.477c.604.604 1.582.604 2.186 0l10.43-10.43c.605-.603.605-1.582 0-2.187" />
-    </svg>
-  );
-}
-
-function GitHubMark(): React.JSX.Element {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" />
-    </svg>
-  );
-}
-
-function GitLabMark(): React.JSX.Element {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor">
-      <path d="m23.6004 9.5927-.0337-.0862L20.3.9814a.851.851 0 0 0-.3362-.405.8748.8748 0 0 0-.9997.0539.8748.8748 0 0 0-.29.4399l-2.2055 6.748H7.5375l-2.2057-6.748a.8573.8573 0 0 0-.29-.4412.8748.8748 0 0 0-.9997-.0537.8585.8585 0 0 0-.3362.4049L.4332 9.5015l-.0325.0862a6.0657 6.0657 0 0 0 2.0119 7.0105l.0113.0087.03.0213 4.976 3.7264 2.462 1.8633 1.4995 1.1321a1.0085 1.0085 0 0 0 1.2197 0l1.4995-1.1321 2.4619-1.8633 5.006-3.7489.0125-.01a6.0682 6.0682 0 0 0 2.0094-7.003z" />
-    </svg>
   );
 }
 
