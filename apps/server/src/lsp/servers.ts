@@ -1,14 +1,19 @@
 /**
  * Which language server serves which file, and where its binary is.
  *
- * Preference order is by measured speed on large repos (startup to first
- * hover, then resident memory), see the comparison in the branch notes:
+ * Settings picks per language (`choices.ts`): a server as installed on this
+ * machine, the copy Joinery installed (`install.ts`), a binary at a custom
+ * path, none at all, or — the default — `auto`: the fastest one found, by
+ * measured speed on large repos (startup to first hover, then resident
+ * memory), see the comparison in the branch notes:
  *
  * - TypeScript/JavaScript: `tsrs` (Rust port of TypeScript 7), then the Go
  *   TypeScript 7 (`tsgo`, or the `tsc` of `typescript@>=7`), then the classic
- *   `typescript-language-server` + tsserver. The project's own copy wins over
- *   PATH within each tier, so the checker matches the repo's pinned version.
+ *   `typescript-language-server` + tsserver.
  * - PHP: PHPantom, then Intelephense, then Phpactor.
+ *
+ * For a server "on this machine", the repo's own copy wins over PATH, so the
+ * checker matches the repo's pinned version; Joinery's copy comes after both.
  *
  * A missing server is not an error anywhere: hover simply has nothing to say,
  * and Settings → Integrations lists what to install.
@@ -17,9 +22,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { extname, join } from 'node:path';
-import type { Integrations, LspLanguage, LspServerId } from '@joinery/core';
+import { installableServerSchema, LSP_SERVERS, type Integrations, type LspChoice, type LspLanguage, type LspServerId } from '@joinery/core';
 import { resolveDataPaths } from '../db/paths.ts';
-import { installableFor, managedBinary, managedBinaryFor, managedVersion } from './install.ts';
+import { lspChoice } from './choices.ts';
+import { installableFor, managedBinary, managedVersion } from './install.ts';
 
 export type ServerSpec = {
   readonly id: LspServerId;
@@ -45,13 +51,18 @@ export function languageOf(path: string): { language: LspLanguage; languageId: s
   return LANGUAGE_IDS[extname(path).toLowerCase()] ?? null;
 }
 
-/**
- * PATH first, then where installers usually put things (a LaunchAgent's PATH
- * is short), then the copy Settings installed (install.ts) — the user's own
- * install always wins over Joinery's.
- */
-export function findExecutable(name: string): string | null {
-  const managed = managedBinaryFor(name);
+/** The executable names each server ships under. */
+const BINARIES: Readonly<Record<LspServerId, readonly string[]>> = {
+  tsrs: ['tsrs'],
+  tsgo: ['tsgo'],
+  'typescript-language-server': ['typescript-language-server'],
+  phpantom: ['phpantom_lsp', 'phpantom-lsp', 'phpantom'],
+  intelephense: ['intelephense'],
+  phpactor: ['phpactor'],
+};
+
+/** PATH first, then where installers usually put things (a LaunchAgent's PATH is short). */
+function onThisMachine(name: string): string | null {
   return (
     Bun.which(name) ??
     [
@@ -65,7 +76,7 @@ export function findExecutable(name: string): string | null {
     ]
       .map((dir) => join(dir, name))
       .find((candidate) => existsSync(candidate)) ??
-    (managed !== null && existsSync(managed) ? managed : null)
+    null
   );
 }
 
@@ -87,26 +98,52 @@ function projectTypescriptMajor(root: string): number | null {
   }
 }
 
-function resolveTypescript(root: string): ServerSpec | null {
-  const tsrs = projectBin(root, 'tsrs') ?? findExecutable('tsrs');
-  if (tsrs !== null) return { id: 'tsrs', language: 'typescript', command: [tsrs, '--lsp', '-stdio'] };
-
-  const projectTsc = (projectTypescriptMajor(root) ?? 0) >= 7 ? projectBin(root, 'tsc') : null;
-  const tsgo = projectBin(root, 'tsgo') ?? projectTsc ?? findExecutable('tsgo');
-  if (tsgo !== null) return { id: 'tsgo', language: 'typescript', command: [tsgo, '--lsp', '--stdio'] };
-
-  const classic = projectBin(root, 'typescript-language-server') ?? findExecutable('typescript-language-server');
-  if (classic === null) return null;
-  const tsserverLib = join(root, 'node_modules', 'typescript', 'lib');
-  return {
-    id: 'typescript-language-server',
-    language: 'typescript',
-    command: [classic, '--stdio'],
-    ...(existsSync(join(tsserverLib, 'tsserver.js')) ? { initializationOptions: { tsserver: { path: tsserverLib } } } : {}),
-  };
+/** The repo's own copy of a TypeScript server, when `root` has one. */
+function inProject(id: LspServerId, root: string): string | null {
+  if (id === 'tsrs' || id === 'typescript-language-server') return projectBin(root, id);
+  if (id === 'tsgo') return projectBin(root, 'tsgo') ?? ((projectTypescriptMajor(root) ?? 0) >= 7 ? projectBin(root, 'tsc') : null);
+  return null;
 }
 
-const PHPANTOM_BINARIES = ['phpantom_lsp', 'phpantom-lsp', 'phpantom'] as const;
+/** `id` installed by the user: the repo's own copy (with a `root`), else this machine's. */
+function findLocal(id: LspServerId, root: string | null): string | null {
+  return (root === null ? null : inProject(id, root)) ?? BINARIES[id].map(onThisMachine).find((p) => p !== null) ?? null;
+}
+
+function findManaged(id: LspServerId): string | null {
+  const installable = installableServerSchema.safeParse(id);
+  if (!installable.success) return null;
+  const path = managedBinary(installable.data);
+  return existsSync(path) ? path : null;
+}
+
+export type Located = { readonly id: LspServerId; readonly path: string; readonly source: 'local' | 'managed' | 'custom' };
+
+/** Where `choice` puts `language`'s server; `root` adds the repo's own copies. Null when off or not installed. */
+export function locate(language: LspLanguage, choice: LspChoice, root: string | null): Located | null {
+  switch (choice.source) {
+    case 'off':
+      return null;
+    case 'custom':
+      return existsSync(choice.path) ? { id: choice.server, path: choice.path, source: 'custom' } : null;
+    case 'managed': {
+      const path = findManaged(choice.server);
+      return path === null ? null : { id: choice.server, path, source: 'managed' };
+    }
+    case 'local': {
+      const path = findLocal(choice.server, root);
+      return path === null ? null : { id: choice.server, path, source: 'local' };
+    }
+    case 'auto':
+      for (const id of LSP_SERVERS[language]) {
+        const local = findLocal(id, root);
+        if (local !== null) return { id, path: local, source: 'local' };
+        const managed = findManaged(id);
+        if (managed !== null) return { id, path: managed, source: 'managed' };
+      }
+      return null;
+  }
+}
 
 /**
  * Joinery only asks for hover and definition. PHPantom's default `full`
@@ -148,62 +185,72 @@ async function phpantomEnv(): Promise<Record<string, string> | undefined> {
   return { XDG_CONFIG_HOME: ours };
 }
 
-async function resolvePhp(): Promise<ServerSpec | null> {
-  const phpantom = PHPANTOM_BINARIES.map(findExecutable).find((p) => p !== null) ?? null;
-  if (phpantom !== null) {
-    const env = await phpantomEnv();
-    return { id: 'phpantom', language: 'php', command: [phpantom], ...(env !== undefined ? { env } : {}) };
+/** How to start `id` from the binary at `path`, in `root`. */
+async function specFor(id: LspServerId, path: string, root: string): Promise<ServerSpec> {
+  switch (id) {
+    case 'tsrs':
+      return { id, language: 'typescript', command: [path, '--lsp', '-stdio'] };
+    case 'tsgo':
+      return { id, language: 'typescript', command: [path, '--lsp', '--stdio'] };
+    case 'typescript-language-server': {
+      const tsserverLib = join(root, 'node_modules', 'typescript', 'lib');
+      return {
+        id,
+        language: 'typescript',
+        command: [path, '--stdio'],
+        ...(existsSync(join(tsserverLib, 'tsserver.js')) ? { initializationOptions: { tsserver: { path: tsserverLib } } } : {}),
+      };
+    }
+    case 'phpantom': {
+      const env = await phpantomEnv();
+      return { id, language: 'php', command: [path], ...(env !== undefined ? { env } : {}) };
+    }
+    case 'intelephense':
+      return {
+        id,
+        language: 'php',
+        command: [path, '--stdio'],
+        initializationOptions: { storagePath: join(resolveDataPaths().root, 'lsp', 'intelephense') },
+      };
+    case 'phpactor':
+      return { id, language: 'php', command: [path, 'language-server'] };
   }
-  const intelephense = findExecutable('intelephense');
-  if (intelephense !== null) {
-    return {
-      id: 'intelephense',
-      language: 'php',
-      command: [intelephense, '--stdio'],
-      initializationOptions: { storagePath: join(resolveDataPaths().root, 'lsp', 'intelephense') },
-    };
-  }
-  const phpactor = findExecutable('phpactor');
-  if (phpactor !== null) return { id: 'phpactor', language: 'php', command: [phpactor, 'language-server'] };
-  return null;
 }
 
 export async function resolveServer(language: LspLanguage, root: string): Promise<ServerSpec | null> {
-  return language === 'php' ? resolvePhp() : resolveTypescript(root);
+  const found = locate(language, lspChoice(language), root);
+  return found === null ? null : specFor(found.id, found.path, root);
 }
 
-/** For Settings → Integrations: what this machine would start (repo-local copies aside), and what it could install. */
+/** For Settings → Integrations: each language's choice, what it comes to (repo-local copies aside), and the alternatives. */
 export async function installedServers(): Promise<Integrations['lsp']> {
-  const ts =
-    (['tsrs', 'tsgo', 'typescript-language-server'] as const)
-      .map((id) => ({ id, path: findExecutable(id) }))
-      .find((s) => s.path !== null) ?? null;
-  const php =
-    (
-      [
-        ['phpantom', PHPANTOM_BINARIES],
-        ['intelephense', ['intelephense']],
-        ['phpactor', ['phpactor']],
-      ] as const
-    )
-      .map(([id, bins]) => ({ id, path: bins.map(findExecutable).find((p) => p !== null) ?? null }))
-      .find((s) => s.path !== null) ?? null;
   return Promise.all(
-    ([
-      ['typescript', ts],
-      ['php', php],
-    ] as const).map(async ([language, found]) => {
+    (Object.keys(LSP_SERVERS) as LspLanguage[]).map(async (language) => {
+      const choice = lspChoice(language);
+      const found = locate(language, choice, null);
       const installable = installableFor(language);
       const version = installable === null ? null : await managedVersion(installable);
+      const problem =
+        found !== null || choice.source === 'auto' || choice.source === 'off'
+          ? null
+          : choice.source === 'custom'
+            ? `Nothing at ${choice.path}`
+            : choice.source === 'managed'
+              ? 'Not installed by Joinery yet'
+              : `${choice.server} isn't installed on this machine`;
       return {
         language,
+        choice,
         server: found?.id ?? null,
         path: found?.path ?? null,
+        source: found?.source ?? null,
+        local: LSP_SERVERS[language].flatMap((server) => {
+          const path = findLocal(server, null);
+          return path === null ? [] : [{ server, path }];
+        }),
         installable,
-        managed:
-          installable === null || version === null
-            ? null
-            : { server: installable, version, inUse: found?.path === managedBinary(installable) },
+        managed: installable === null || version === null ? null : { server: installable, version },
+        problem,
       };
     }),
   );

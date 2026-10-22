@@ -210,6 +210,16 @@ export const reaction = sqliteTable(
 );
 
 /**
+ * App-wide preferences, as JSON by key (`apps/server/src/db/appSettings.ts`):
+ * state the user chose, unlike `cache_entry`, so never pruned or cleared.
+ */
+export const appSetting = sqliteTable('app_setting', {
+  key: text('key').primaryKey(),
+  /** JSON. */
+  value: text('value').notNull(),
+});
+
+/**
  * Last known answers for things computed from git or `gh`, keyed by a
  * namespaced string — a cache, not state (see `apps/server/src/storedCache.ts`).
  * `fetched_at` is epoch milliseconds.

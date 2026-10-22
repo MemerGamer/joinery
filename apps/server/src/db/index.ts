@@ -14,5 +14,6 @@ export * from './summaries.ts';
 export * from './worktrees.ts';
 export * from './renames.ts';
 export * from './cacheEntries.ts';
+export * from './appSettings.ts';
 export * from './reviewStates.ts';
 export * from './repoStates.ts';

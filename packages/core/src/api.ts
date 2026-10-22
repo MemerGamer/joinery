@@ -13,6 +13,7 @@ import {
 import { fileListSchema, revisionSchema, reviewStateSchema } from './domain/files.ts';
 import {
   installableServerSchema,
+  lspChoiceSchema,
   lspDefinitionSchema,
   lspFileQuerySchema,
   lspFileSchema,
@@ -217,19 +218,24 @@ export const integrationsSchema = z.object({
     }),
   ),
   /**
-   * The language server hover/peek would start per language (null server when
-   * none is installed); which one Settings can install here (null when this
-   * platform has no build); and the copy Settings installed, if any.
+   * Per language: the choice made in Settings, and the server it comes to
+   * (null `server` when none: off, or not installed; a repo's own copy can
+   * still win in that repo under `auto`/`local`); every server found on this
+   * machine; which one Settings can install here (null when this platform has
+   * no build) and the copy it installed, if any; and why the choice can't be
+   * honoured, if it can't.
    */
   lsp: z.array(
     z.object({
       language: lspLanguageSchema,
+      choice: lspChoiceSchema,
       server: lspServerIdSchema.nullable(),
       path: z.string().nullable(),
+      source: z.enum(['local', 'managed', 'custom']).nullable(),
+      local: z.array(z.object({ server: lspServerIdSchema, path: z.string() })),
       installable: installableServerSchema.nullable(),
-      managed: z
-        .object({ server: installableServerSchema, version: z.string(), inUse: z.boolean() })
-        .nullable(),
+      managed: z.object({ server: installableServerSchema, version: z.string() }).nullable(),
+      problem: z.string().nullable(),
     }),
   ),
 });
@@ -369,6 +375,13 @@ export const api = {
     body: undefined,
     query: undefined,
     response: z.object({ server: installableServerSchema, version: z.string(), path: z.string() }),
+  }),
+  setLanguageServerChoice: def({
+    method: 'PUT',
+    path: (language: string) => `/api/settings/lsp/choice/${encodeURIComponent(language)}`,
+    body: lspChoiceSchema,
+    query: undefined,
+    response: z.object({ ok: z.literal(true) }),
   }),
   removeLanguageServer: def({
     method: 'POST',

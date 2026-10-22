@@ -21,7 +21,9 @@ import {
   versionQuerySchema,
   installableServerSchema,
   listReviewsQuerySchema,
+  lspChoiceSchema,
   lspFileQuerySchema,
+  lspLanguageSchema,
   lspPositionQuerySchema,
   markViewedBodySchema,
   readingOrderPlanSchema,
@@ -99,6 +101,7 @@ import { cancelRun, generateReadingOrder, requestThreadReply } from '../agent/ru
 import type { Invoke } from '../agent/tools.ts';
 import { resolveRunCwd } from '../agent/worktree.ts';
 import { externalFile, installServer, languageOf, lsp, removeServer, type LspSource, type LspTarget } from '../lsp/index.ts';
+import { invalidChoice, saveLspChoice } from '../lsp/choices.ts';
 import { lspViews } from '../lsp/views.ts';
 import { badRequest, conflict, internal, notFound, pathError } from './errors.ts';
 import { parseBody, parseQuery } from './validate.ts';
@@ -249,6 +252,18 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     const server = parseServer(c.req.param('server'));
     await lsp.reset(server === 'tsrs' ? 'typescript' : 'php');
     await removeServer(server);
+    return c.json({ ok: true as const });
+  });
+
+  app.put('/api/settings/lsp/choice/:language', async (c) => {
+    const language = lspLanguageSchema.safeParse(c.req.param('language'));
+    if (!language.success) throw badRequest(`"${c.req.param('language')}" is not a language with a server`, 'One of: typescript, php.');
+    const choice = await parseBody(lspChoiceSchema, c);
+    const invalid = invalidChoice(language.data, choice);
+    if (invalid !== null) throw badRequest(invalid);
+    await saveLspChoice(deps.db, language.data, choice);
+    // Servers already running stop; the next hover starts the chosen one.
+    await lsp.reset(language.data);
     return c.json({ ok: true as const });
   });
 

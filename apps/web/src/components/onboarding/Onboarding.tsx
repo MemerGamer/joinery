@@ -6,7 +6,8 @@
  *  - Repositories: the add-repo folder picker, with a heads-up about the
  *    macOS folder prompt until Full Disk Access is granted.
  *  - Tooling: git, Claude Code, `gh` and `glab`, from the settings page's
- *    integrations check, each with the fix when it isn't ready.
+ *    integrations check, each with the fix when it isn't ready; and which
+ *    language server to use per language, picked as on the settings page.
  *  - Make it yours: light/dark and the theme, over a mock review window
  *    drawn in the chrome, so a pick visibly re-tints the whole UI.
  */
@@ -15,6 +16,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Bot,
+  Braces,
   Check,
   FolderGit2,
   FolderPlus,
@@ -34,6 +36,7 @@ import { useTheme, type ChromeMode } from '../../state/ThemeContext.tsx';
 import { repoLabel } from '../Explore.tsx';
 import { FolderPicker } from '../home/FolderPicker.tsx';
 import { Chip, type Tone } from '../home/primitives.tsx';
+import { LSP_TITLE, useLanguageServerPicker } from '../settings/LanguageServerPicker.tsx';
 import { REASON, hostHint } from '../settings/Settings.tsx';
 import { ThemePicker } from '../settings/ThemePicker.tsx';
 import { MockReview } from './MockReview.tsx';
@@ -506,8 +509,30 @@ function ToolsStep(): React.JSX.Element {
             </li>
           );
         })}
+        {data?.lsp.map((row) => <LanguageServerTool key={row.language} row={row} onChanged={reload} />)}
       </ul>
     </>
+  );
+}
+
+/** A language's hover/peek server, chosen right here (the same picker as Settings). */
+function LanguageServerTool({ row, onChanged }: { row: Integrations['lsp'][number]; onChanged: () => void }): React.JSX.Element {
+  const { controls, detail, editor } = useLanguageServerPicker(row, onChanged);
+  return (
+    <li className="flex items-start gap-3.5 rounded-md px-3 py-3">
+      <span className="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center text-chrome-fg-muted [&>svg]:size-5" aria-hidden>
+        <Braces strokeWidth={1.75} />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-body font-medium text-chrome-fg">{LSP_TITLE[row.language].title}</span>
+        <span className="text-xs text-chrome-fg-muted">
+          Shows types and docs on hover, and jumps to definitions and uses, in {LSP_TITLE[row.language].files} diffs.
+        </span>
+        <span className="mt-1 truncate text-micro text-chrome-fg-subtle">{detail}</span>
+        {editor !== null && <span className="mt-1.5">{editor}</span>}
+      </span>
+      <span className="flex shrink-0 items-center gap-1.5">{controls}</span>
+    </li>
   );
 }
 

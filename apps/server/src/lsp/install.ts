@@ -47,12 +47,6 @@ export function managedBinary(id: InstallableServer): string {
   return join(serversDir(), id, BINARY[id]);
 }
 
-/** The managed install behind an executable name, if that name is one (for PATH-style lookup). */
-export function managedBinaryFor(name: string): string | null {
-  const id = (Object.keys(BINARY) as InstallableServer[]).find((k) => BINARY[k] === name);
-  return id === undefined ? null : managedBinary(id);
-}
-
 /** What the install button offers for `language` on this machine; null when there's no build for it. */
 export function installableFor(language: LspLanguage): InstallableServer | null {
   if (language === 'typescript') return TSRS_PACKAGE[PLATFORM] !== undefined ? 'tsrs' : null;
