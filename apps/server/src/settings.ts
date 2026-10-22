@@ -20,6 +20,7 @@ import { cacheEntryStats, clearCacheEntries, listRepos, listUnfinishedRuns, list
 import { resolveDataPaths } from './db/paths.ts';
 import { diagnose } from './git/forge/cli.ts';
 import { installedServers } from './lsp/index.ts';
+import { lspViews } from './lsp/views.ts';
 import { conflict } from './http/errors.ts';
 import { runsAsService, runtimeLayout, serviceRestartCommand } from './runtime.ts';
 import { clearAllStoredCaches } from './storedCache.ts';
@@ -151,8 +152,9 @@ export async function getDataUsage(db: Db): Promise<DataUsage> {
 }
 
 /**
- * Remove every agent worktree; returns how many. Refused while a run is
- * going, since its worktree would be pulled out from under it.
+ * Remove every agent worktree and language-server checkout; returns how
+ * many. Refused while a run is going, since its worktree would be pulled out
+ * from under it.
  */
 export async function clearWorktrees(db: Db): Promise<number> {
   if ((await listUnfinishedRuns(db)).length > 0) {
@@ -167,7 +169,7 @@ export async function clearWorktrees(db: Db): Promise<number> {
       console.log(`[worktrees] could not remove ${worktree.path}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  return removed;
+  return removed + (await lspViews.clearCheckouts());
 }
 
 /** Delete every cached answer, from the database and from memory; returns how many rows. */

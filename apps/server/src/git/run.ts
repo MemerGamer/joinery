@@ -13,6 +13,10 @@
  *      resolve under the configured data directory.
  *    - `update-ref refs/review/<id> ...` (including `-d` deletes), with the
  *      ref required to start with `refs/review/`.
+ *    - `checkout --detach --force <sha>`, only with `cwd` under the data
+ *      directory: it moves a worktree of ours (the language servers'
+ *      checkouts, `lsp/checkouts.ts`) to another commit, never a branch and
+ *      never the user's own checkout.
  *    Anything else throws before a process is ever spawned.
  *
  * Scoped worktree *registry-entry* deletion (`rm -rf` the directory under
@@ -109,7 +113,7 @@ export type GitCallOptions = {
  * long-lived process rather than going through `run()` — can reuse the same
  * check for `cat-file --batch`.
  */
-export function assertAllowed(args: readonly string[], dataDir: string | undefined): void {
+export function assertAllowed(args: readonly string[], dataDir: string | undefined, cwd?: string): void {
   const sub = args[0];
   if (sub === undefined) {
     throw new GitNotAllowedError(args, 'empty argument list');
@@ -133,6 +137,11 @@ export function assertAllowed(args: readonly string[], dataDir: string | undefin
 
   if (sub === 'update-ref') {
     validateUpdateRef(args);
+    return;
+  }
+
+  if (sub === 'checkout') {
+    validateCheckout(args, dataDir, cwd);
     return;
   }
 
@@ -163,6 +172,16 @@ function validateWorktreeAdd(args: readonly string[], dataDir: string | undefine
   }
 }
 
+function validateCheckout(args: readonly string[], dataDir: string | undefined, cwd: string | undefined): void {
+  // Exactly: checkout --detach --force <full sha>. No paths, no branches.
+  if (args.length !== 4 || args[1] !== '--detach' || args[2] !== '--force' || !/^[0-9a-f]{40,64}$/u.test(args[3] ?? '')) {
+    throw new GitNotAllowedError(args, 'checkout is only allowed as `checkout --detach --force <sha>`');
+  }
+  if (dataDir === undefined || cwd === undefined || !`${resolve(cwd)}/`.startsWith(`${resolve(dataDir)}/`)) {
+    throw new GitNotAllowedError(args, 'checkout is only allowed in a worktree under the data dir');
+  }
+}
+
 function validateUpdateRef(args: readonly string[]): void {
   // Accept: update-ref [-d] refs/review/<...> [<sha>]
   const rest = args.slice(1);
@@ -183,7 +202,7 @@ function validateUpdateRef(args: readonly string[]): void {
  * it degrades exactly like any other failed git call.
  */
 export async function git(args: readonly string[], options: GitCallOptions): Promise<GitResult> {
-  assertAllowed(args, options.dataDir);
+  assertAllowed(args, options.dataDir, options.cwd);
 
   let proc;
   try {

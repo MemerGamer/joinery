@@ -13,6 +13,7 @@ import { createApp } from './http/app.ts';
 import { failOrphanedRuns, startWorktreeSweep } from './agent/maintenance.ts';
 import { startCacheEntryPrune } from './storedCache.ts';
 import { lsp } from './lsp/index.ts';
+import { lspViews } from './lsp/views.ts';
 import { configuredPort, portFile, runtimeLayout } from './runtime.ts';
 
 export async function startServer(): Promise<void> {
@@ -28,6 +29,7 @@ export async function startServer(): Promise<void> {
   const stopCacheEntryPrune = startCacheEntryPrune(db);
 
   const registry = new EngineRegistry(db);
+  registry.setViewListener(lspViews);
   const layout = runtimeLayout();
   const webDistDir = layout.webDistDir;
 

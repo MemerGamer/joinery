@@ -97,6 +97,7 @@ import { cancelRun, generateReadingOrder, requestThreadReply } from '../agent/ru
 import type { Invoke } from '../agent/tools.ts';
 import { resolveRunCwd } from '../agent/worktree.ts';
 import { installServer, lsp, removeServer, type LspTarget } from '../lsp/index.ts';
+import { lspViews } from '../lsp/views.ts';
 import { badRequest, conflict, internal, notFound, pathError } from './errors.ts';
 import { parseBody, parseQuery } from './validate.ts';
 
@@ -562,7 +563,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
       entry.binary || entry.newBlob === NULL_BLOB
         ? null
         : {
-            root: renderCtx.cwd,
+            root: await lspViews.rootFor(engine),
             path: entry.path,
             contentKey: entry.newBlob,
             loadText: async () =>
@@ -848,6 +849,7 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     // engine's in-memory review row still needs to know the new choice
     // immediately, since it isn't reloaded from sqlite until the next tick.
     engine.setCurrentRevisionHint(body.revision);
+    lspViews.changed(engine);
     const state = await engine.getState();
     const list = engine.getFileList(body.revision);
     return c.json({ state, list });

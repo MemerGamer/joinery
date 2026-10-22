@@ -112,16 +112,26 @@ export async function removeSupersededWorktrees(
 
 /** Remove one cached worktree: from disk, from git's registry, and from `agent_worktree`. */
 export async function removeAgentWorktree(db: Db, worktree: AgentWorktree): Promise<void> {
-  const registry = await registryEntry(db, worktree);
+  const repo = await getRepoById(db, worktree.repoId);
+  await removeOwnWorktree(worktree.path, repo?.rootPath ?? null);
+  await deleteWorktree(db, worktree.repoId, worktree.sha);
+}
+
+/**
+ * Remove a worktree of ours under the data dir, from disk and from git's
+ * registry. `repoRoot` locates the registry when the directory is already
+ * gone; null when the repo itself is gone too.
+ */
+export async function removeOwnWorktree(path: string, repoRoot: string | null): Promise<void> {
+  const registry = await registryEntry(path, repoRoot);
   if (registry !== null) {
     await scopedRemoveWorktree({
-      worktreePath: worktree.path,
+      worktreePath: path,
       gitCommonDir: registry.gitCommonDir,
       worktreeName: registry.name,
       dataDir: resolveDataPaths().root,
     });
   }
-  await deleteWorktree(db, worktree.repoId, worktree.sha);
 }
 
 /**
@@ -131,20 +141,19 @@ export async function removeAgentWorktree(db: Db, worktree: AgentWorktree): Prom
  * repo's common dir and the directory's basename (git's default name).
  * `null` when the repo itself is gone — then there's no registry to clean.
  */
-async function registryEntry(db: Db, worktree: AgentWorktree): Promise<{ gitCommonDir: string; name: string } | null> {
+async function registryEntry(path: string, repoRoot: string | null): Promise<{ gitCommonDir: string; name: string } | null> {
   try {
-    const text = await readFile(join(worktree.path, '.git'), 'utf8');
+    const text = await readFile(join(path, '.git'), 'utf8');
     const raw = /^gitdir:\s*(.+)$/m.exec(text)?.[1]?.trim();
     // Relative under `worktree.useRelativePaths`; it is relative to the worktree, not our cwd.
-    const gitDir = raw === undefined ? undefined : resolve(worktree.path, raw);
+    const gitDir = raw === undefined ? undefined : resolve(path, raw);
     if (gitDir !== undefined) return { gitCommonDir: dirname(dirname(gitDir)), name: basename(gitDir) };
   } catch {
     // Directory already gone — fall through.
   }
-  const repo = await getRepoById(db, worktree.repoId);
-  if (repo === null) return null;
+  if (repoRoot === null) return null;
   try {
-    return { gitCommonDir: await gitCommonDir({ cwd: repo.rootPath }), name: basename(worktree.path) };
+    return { gitCommonDir: await gitCommonDir({ cwd: repoRoot }), name: basename(path) };
   } catch {
     return null;
   }

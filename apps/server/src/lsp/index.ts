@@ -8,12 +8,13 @@
  * to start is remembered for `RETRY_MS`, so hovering doesn't re-probe PATH
  * on every token, yet installing one is picked up without a restart.
  *
- * The file being hovered is always sent to the server as an open document
- * holding the *review's* text for it (the head side of the current revision),
- * keyed by its blob SHA. For `working` that equals the disk; for `head`/`pr`
- * it overlays the disk, so positions are exact for whichever revision is on
- * screen. Other files still resolve from disk, which is the known limit when
- * the checkout is not at the revision being reviewed.
+ * Servers run in the review's own checkout when its branch is checked out,
+ * else in a checkout of its current commit (`views.ts`, `checkouts.ts`), so
+ * other files resolve as the review has them. The file being hovered is
+ * also sent as an open document holding the *review's* text for it (the
+ * head side of the current revision), keyed by its blob SHA: on a checked
+ * out branch that covers `head`/`pr` differing from the disk, and anywhere
+ * it answers right while a checkout is still moving.
  */
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -140,6 +141,20 @@ class LspManager {
         .filter((s) => s.key.startsWith(prefix))
         .map((s) => this.#stop(s)),
     );
+  }
+
+  /** Every server running in `root` stopped, before its checkout moves or goes. */
+  async stopRoot(root: string): Promise<void> {
+    await Promise.all(
+      Array.from(this.#sessions.values())
+        .filter((s) => s.root === root)
+        .map((s) => this.#stop(s)),
+    );
+  }
+
+  /** Start `languages`' servers in `root` ahead of the first hover; missing ones are just skipped. */
+  async warm(root: string, languages: Iterable<LspLanguage>): Promise<void> {
+    await Promise.all(Array.from(new Set(languages), async (language) => (await this.#session(language, root)).client));
   }
 
   /** Every running server, stopped; for shutdown. */

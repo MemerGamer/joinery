@@ -12,6 +12,7 @@ import type { Invoke } from './agent/tools.ts';
 import { deleteRepo, deleteReview, getRepoById, listReviews, listUnfinishedRuns, listWorktrees, type Db } from './db/index.ts';
 import type { EngineRegistry } from './engine/index.ts';
 import { unpinReviewRefs } from './git/index.ts';
+import { lspViews } from './lsp/views.ts';
 
 export type CleanupDeps = {
   readonly db: Db;
@@ -51,6 +52,9 @@ export async function deleteRepoFully(deps: CleanupDeps, repoId: string): Promis
       console.log(`[worktrees] could not remove ${worktree.path}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+  await lspViews.removeRepo(repo).catch((err: unknown) =>
+    console.log(`[lsp] could not remove checkouts of ${repoId}: ${err instanceof Error ? err.message : String(err)}`),
+  );
   await deleteRepo(deps.db, repoId);
   deps.registry.bus.changed('home');
 }
