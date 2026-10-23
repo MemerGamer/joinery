@@ -1,32 +1,43 @@
 /**
- * How wide a scrollbar actually is here: 8px for classic scrollbars (macOS
- * with a mouse connected, "Show scroll bars: Always", most other systems),
- * 0 for overlay ones (macOS on a trackpad alone). Layout that tucks the
- * scrollbar into a seam has to know which, or the seam collapses when the
- * scrollbar takes no room. macOS can switch modes while the page is open
- * (a mouse plugged in), so it's re-measured on focus and resize.
+ * How much room the scrollbar of `container`'s scroller (its first child)
+ * actually takes: 8px for a classic scrollbar (macOS with a mouse connected,
+ * "Show scroll bars: Always", most other systems), 0 for an overlay one
+ * (macOS on a trackpad alone) or while nothing overflows. Layout that tucks
+ * the scrollbar into a seam has to know which, or the seam collapses when
+ * the scrollbar takes no room.
+ *
+ * Read off the real scroller rather than a probe element: a probe can be
+ * styled or switched differently from it, and the scroller's content box
+ * changes whenever its scrollbar appears, goes, or changes kind, so a
+ * ResizeObserver catches every case (a mouse plugged in included). The
+ * scroller is re-found when the container's children change (loading → diff).
  */
 import { useEffect, useState } from 'react';
 
-function measure(): number {
-  const probe = document.createElement('div');
-  probe.style.cssText = 'position:absolute;top:-9999px;width:100px;height:100px;overflow:scroll;visibility:hidden';
-  document.body.appendChild(probe);
-  const width = probe.offsetWidth - probe.clientWidth;
-  probe.remove();
-  return width;
-}
-
-export function useScrollbarWidth(): number {
-  const [width, setWidth] = useState(measure);
+/** `container` from a callback ref (state), so it's picked up whenever it mounts. */
+export function useScrollbarWidth(container: HTMLElement | null): number {
+  const [width, setWidth] = useState(0);
   useEffect(() => {
-    const update = () => setWidth(measure());
-    window.addEventListener('focus', update);
-    window.addEventListener('resize', update);
-    return () => {
-      window.removeEventListener('focus', update);
-      window.removeEventListener('resize', update);
+    const host = container;
+    if (host === null) return;
+    let scroller: HTMLElement | null = null;
+    const measure = () => setWidth(scroller === null ? 0 : Math.max(0, scroller.offsetWidth - scroller.clientWidth));
+    const resize = new ResizeObserver(measure);
+    const attach = () => {
+      const next = host.firstElementChild instanceof HTMLElement ? host.firstElementChild : null;
+      if (next === scroller) return;
+      if (scroller !== null) resize.unobserve(scroller);
+      scroller = next;
+      if (scroller !== null) resize.observe(scroller);
+      measure();
     };
-  }, []);
+    const children = new MutationObserver(attach);
+    children.observe(host, { childList: true });
+    attach();
+    return () => {
+      resize.disconnect();
+      children.disconnect();
+    };
+  }, [container]);
   return width;
 }

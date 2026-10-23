@@ -42,7 +42,8 @@ function ReviewWindowInner(): React.JSX.Element {
   const closeHelp = useCallback(() => setHelpOpen(false), []);
   const shortcuts = useReviewShortcuts();
   const pull = useReviewPull(review.review?.id);
-  const scrollbarWidth = useScrollbarWidth();
+  const [diffPane, setDiffPane] = useState<HTMLDivElement | null>(null);
+  const scrollbarWidth = useScrollbarWidth(diffPane);
 
   // Tab title: `#123 Title` for a PR, else the branch (or pinned sha).
   const tabTitle =
@@ -143,11 +144,12 @@ function ReviewWindowInner(): React.JSX.Element {
         {/*
          * Side panels sit 10px from the diffs (8px gap + 2px). The diff
          * pane's scrollbar is pulled into the right seam so it doesn't add to
-         * it — by its measured width, since an overlay scrollbar (a trackpad
-         * alone on macOS) takes no room and pulling 8px anyway would collapse
-         * the seam to 2px.
+         * it — by the room it really takes, measured on the pane itself, since
+         * an overlay scrollbar (a trackpad alone on macOS) takes none and
+         * pulling 8px anyway would collapse the seam to 2px.
          */}
         <div
+          ref={setDiffPane}
           className={`min-w-0 flex-1 ${review.leftPanelOpen ? 'ml-0.5' : ''}`}
           style={{ marginRight: review.rightPanelOpen ? 2 - scrollbarWidth : -scrollbarWidth }}
         >
