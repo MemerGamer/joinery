@@ -11,7 +11,8 @@
  *   ↑/↓ step through the list.
  * - The preview is the whole file, highlighted like the diff, with hover and
  *   ⌘-click of its own: ⌘-clicking a name re-targets the window to it, and
- *   ‹ › (⌘[ ⌘]) walk back and forth through those steps.
+ *   ‹ › (⌘[ ⌘], or a mouse's back/forward buttons) walk back and forth
+ *   through those steps.
  * - "Go to it in this review" leaves for the diff when the file is changed.
  *
  * While nothing has been found yet it stays a one-line status, sized to it;
@@ -40,6 +41,75 @@ const MIN_WIDTH = 480;
 const MIN_HEIGHT = 240;
 const MARGIN = 8;
 const SIZE_KEY = 'joinery:peek-size';
+/** `MouseEvent.button` of a mouse's side buttons: they navigate, they don't close the window. */
+const BACK_BUTTON = 3;
+const FORWARD_BUTTON = 4;
+const HISTORY_KEY = 'joineryPeek';
+
+type HistorySpot = 'here' | 'ahead' | null;
+
+/**
+ * Back and forward, however they come (a mouse's side buttons, whose events
+ * the page often never sees; a trackpad swipe; the browser's own buttons),
+ * step the peek window instead of leaving the page. While it's open, two
+ * entries with the page's own URL sit in the browser history, `here` (where
+ * it stays) and `ahead`: going back lands on the page's entry and going
+ * forward on `ahead`, either is taken as a step and undone. The hash router
+ * never notices, the URL doesn't change. Back past the first step closes the
+ * window. On close the entries are stepped back over (`ahead` is left as a
+ * forward entry that goes nowhere).
+ */
+function useHistorySteps(onStep: (delta: 1 | -1) => void, onClose: () => void, atStart: boolean): void {
+  const latest = useRef({ onStep, onClose, atStart });
+  latest.current = { onStep, onClose, atStart };
+  useEffect(() => {
+    const url = location.href;
+    /** Where the browser is in our entries, or will be once `pending` own moves land. */
+    let at: HistorySpot = null;
+    let pending = 0;
+    let away = false;
+    const go = (delta: number) => {
+      pending += 1;
+      history.go(delta);
+    };
+    const onPop = (e: PopStateEvent) => {
+      if (location.href !== url) {
+        away = true;
+        return;
+      }
+      const state: unknown = e.state;
+      at = typeof state === 'object' && state !== null && HISTORY_KEY in state ? (state[HISTORY_KEY] as HistorySpot) : null;
+      if (pending > 0) {
+        pending -= 1;
+        return;
+      }
+      if (at === 'ahead') {
+        latest.current.onStep(1);
+        go(-1);
+      } else if (at === null) {
+        if (latest.current.atStart) latest.current.onClose();
+        else latest.current.onStep(-1);
+        go(1);
+      }
+    };
+    // A tick later, so a mount that's undone at once (StrictMode) adds nothing.
+    const start = setTimeout(() => {
+      history.pushState({ [HISTORY_KEY]: 'here' }, '', url);
+      history.pushState({ [HISTORY_KEY]: 'ahead' }, '', url);
+      at = 'ahead';
+      window.addEventListener('popstate', onPop);
+      go(-1);
+    }, 0);
+    return () => {
+      clearTimeout(start);
+      window.removeEventListener('popstate', onPop);
+      if (away || at === null) return;
+      // Own moves still on their way all end on `here`.
+      const spot = pending > 0 ? 'here' : at;
+      history.go(spot === 'ahead' ? -2 : -1);
+    };
+  }, []);
+}
 
 type Size = { width: number; height: number };
 type Box = Size & { left: number; top: number };
@@ -253,6 +323,8 @@ export function PeekNavigator({
     handle.addEventListener('pointercancel', onUp);
   }, []);
 
+  useHistorySteps(onStep, onClose, nav.index === 0);
+
   // Everything the list can select, in order, for ↑/↓.
   const stops = useMemo(() => {
     const all: { ref: string; line: number }[] = definition === null ? [] : [{ ref: definition.ref, line: definition.line }];
@@ -273,6 +345,7 @@ export function PeekNavigator({
       e.stopPropagation();
     };
     const onPointerDown = (e: PointerEvent) => {
+      if (e.button === BACK_BUTTON || e.button === FORWARD_BUTTON) return;
       const target = e.target as Element | null;
       if (ref.current?.contains(target) === true || target?.closest?.('[data-code-intel]') != null) return;
       onClose();
