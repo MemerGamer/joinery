@@ -147,7 +147,7 @@ function autoSelected(e: NavEntry): NavEntry['selected'] {
   return null;
 }
 
-export function useCodeIntel(): {
+export function useCodeIntel({ hoverSuppressed = false }: { hoverSuppressed?: boolean } = {}): {
   onTokenEnter: (props: TokenProps, event: PointerEvent, context: TokenContext) => void;
   onTokenLeave: (props: TokenProps, event: PointerEvent, context: TokenContext) => void;
   onTokenClick: (props: TokenProps, event: MouseEvent, context: TokenContext) => void;
@@ -194,6 +194,16 @@ export function useCodeIntel(): {
     closeTimer.current = setTimeout(() => setCard(null), CLOSE_DELAY_MS);
   }, []);
 
+  // Held off while the selection's comment button is up (SelectionComment.tsx),
+  // so a card can't open over it; one already open closes.
+  const suppressed = useRef(hoverSuppressed);
+  suppressed.current = hoverSuppressed;
+  useEffect(() => {
+    if (!hoverSuppressed) return;
+    cancelHover();
+    setCard(null);
+  }, [hoverSuppressed, cancelHover]);
+
   const keepOpen = useCallback(() => {
     if (closeTimer.current !== null) clearTimeout(closeTimer.current);
     closeTimer.current = null;
@@ -237,7 +247,7 @@ export function useCodeIntel(): {
       if (target === null) return;
       setLink(target.element, event.metaKey || event.ctrlKey || modifierDown.current);
       // Hover cards turned off in Settings; ⌘-click still peeks.
-      if (!getHoverEnabled()) return;
+      if (!getHoverEnabled() || suppressed.current) return;
       const key = keyOf(target);
       hoverTimer.current = setTimeout(() => {
         hoverTimer.current = null;
@@ -251,7 +261,7 @@ export function useCodeIntel(): {
           }).then((r) => r.hover),
         )
           .then((hover) => {
-            if (current.current !== target) return;
+            if (current.current !== target || suppressed.current) return;
             keepOpen();
             if (hover === null) setCard(null);
             else setCard({ target, rect: target.element.getBoundingClientRect(), hover });

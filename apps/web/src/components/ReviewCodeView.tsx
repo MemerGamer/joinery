@@ -26,6 +26,7 @@ import { useCodeIntel } from './CodeIntel.tsx';
 import { CommentComposer } from './CommentComposer.tsx';
 import { ReviewFooter } from './ReviewFooter.tsx';
 import { ReviewSummaryCard } from './ReviewSummaryCard.tsx';
+import { useSelectionComment } from './SelectionComment.tsx';
 import { ThreadArticle } from './ThreadArticle.tsx';
 
 /**
@@ -136,6 +137,7 @@ export function ReviewCodeView(): React.JSX.Element {
     items,
     diffStyle,
     threads,
+    draftThread,
     startDraftThread,
     cancelDraftThread,
     submitDraftThread,
@@ -145,7 +147,17 @@ export function ReviewCodeView(): React.JSX.Element {
     setScrolledPath,
   } = useReview();
   const { chromeMode } = useTheme();
-  const { onTokenEnter, onTokenLeave, onTokenClick, onPostRender, overlay } = useCodeIntel();
+  const { active: selectionOffered, trackItem, overlay: selectionOverlay } = useSelectionComment(startDraftThread);
+  const { onTokenEnter, onTokenLeave, onTokenClick, onPostRender: codeIntelPostRender, overlay } = useCodeIntel({
+    hoverSuppressed: selectionOffered,
+  });
+  const onPostRender = useCallback<typeof codeIntelPostRender>(
+    (node, instance, phase, context) => {
+      trackItem(node, phase, context.item.id);
+      codeIntelPostRender(node, instance, phase, context);
+    },
+    [codeIntelPostRender, trackItem],
+  );
 
   // `onScroll` below only fires once the reader scrolls, so take the first
   // reading here: the items mount a frame or more after `items` arrives
@@ -265,6 +277,7 @@ export function ReviewCodeView(): React.JSX.Element {
   return (
     <>
       {overlay}
+      {selectionOverlay}
       <CodeView<ThreadAnnotationMeta, undefined>
         ref={codeViewRef}
         items={items}
@@ -368,6 +381,9 @@ export function ReviewCodeView(): React.JSX.Element {
             return (
               <div className="my-2 w-full max-w-2xl font-sans">
                 <CommentComposer
+                  // A new draft (e.g. a second selection) starts from its own prefill.
+                  key={`${draftThread?.path}:${draftThread?.side}:${draftThread?.endLine}:${draftThread?.body ?? ''}`}
+                  initialValue={draftThread?.body ?? ''}
                   placeholder="Comment on this line…"
                   onSubmit={(body, ask) => void submitDraftThread(body, ask)}
                   onCancel={cancelDraftThread}

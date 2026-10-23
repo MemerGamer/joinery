@@ -1,6 +1,6 @@
 /**
  * The comment composer, used both for a new draft thread (opened via the
- * gutter `+` utility) and for replies within an existing thread.
+ * gutter `+` utility or a text selection's comment button) and for replies within an existing thread.
  * `Enter` inserts a newline; `Cmd+Enter` submits. "Ask" has no shortcut.
  *
  * "Ask ▾ Model" (`AskButton`) submits and asks the picked model to reply;
@@ -15,6 +15,7 @@ export function CommentComposer({
   placeholder = 'Leave a comment…',
   autoFocus = true,
   variant = 'card',
+  initialValue = '',
 }: {
   onSubmit: (body: string, askAgent: boolean) => void;
   onCancel?: () => void;
@@ -22,9 +23,20 @@ export function CommentComposer({
   autoFocus?: boolean;
   /** `card` floats on the diff (new draft); `inline` sits flush inside a thread card (reply), with no frame of its own. */
   variant?: 'card' | 'inline';
+  /** Prefilled text, read once on mount; the caret starts after it. */
+  initialValue?: string;
 }): React.JSX.Element {
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState(initialValue);
   const ref = useRef<HTMLTextAreaElement>(null);
+
+  // A textarea's caret starts at 0, which would put typing above the prefill.
+  useEffect(() => {
+    const el = ref.current;
+    if (el === null || initialValue.length === 0) return;
+    el.setSelectionRange(initialValue.length, initialValue.length);
+    // Mount only: the prefill is a starting point, not a controlled value.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const empty = value.trim().length === 0;
 

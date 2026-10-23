@@ -146,6 +146,8 @@ export interface DraftThread {
   side: 'old' | 'new';
   startLine: number;
   endLine: number;
+  /** Prefilled composer text, e.g. the quoted snippet of a text selection (see SelectionComment.tsx). */
+  body?: string;
 }
 
 export const DRAFT_THREAD_ID = '__draft__';
