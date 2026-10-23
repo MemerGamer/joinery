@@ -232,7 +232,7 @@ export function useCodeIntel(): {
       setNav((n) =>
         target.inPreview && n !== null
           ? { ...n, entries: [...n.entries.slice(0, n.index + 1), entry], index: n.index + 1 }
-          : { rect: target.element.getBoundingClientRect(), entries: [entry], index: 0 },
+          : { rect: target.element.getBoundingClientRect(), origin: target.element, entries: [entry], index: 0 },
       );
       const update = (patch: (e: NavEntry) => NavEntry) =>
         setNav((n) => (n === null ? n : { ...n, entries: n.entries.map((e) => (e.id === id ? patch(e) : e)) }));
@@ -327,6 +327,13 @@ export function useCodeIntel(): {
   }, [card]);
 
   useEffect(() => () => cancelHover(), [cancelHover]);
+
+  const origin = nav?.origin;
+  useEffect(() => {
+    if (origin === undefined) return;
+    origin.setAttribute('data-lsp-origin', '');
+    return () => origin.removeAttribute('data-lsp-origin');
+  }, [origin]);
 
   const jump = useCallback(
     (path: string, line: number) => {

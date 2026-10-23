@@ -15,6 +15,9 @@
  * While nothing has been found yet it stays a one-line status, sized to it;
  * when the file's language server is switched off, that line says so and
  * links to Settings, where it's turned on.
+ *
+ * The window opens by the symbol; its title bar drags it and its edges and
+ * corners resize it. The size is remembered for next time, the spot is not.
  */
 import { File as CodeFile } from '@pierre/diffs/react';
 import type { TokenEventBase } from '@pierre/diffs';
@@ -31,6 +34,79 @@ import { cached, CODE_INTEL_CSS, IS_MAC, placement } from '../lib/codeIntel.ts';
 const WIDTH = 1_080;
 const HEIGHT = 520;
 const STATUS_WIDTH = 460;
+const MIN_WIDTH = 480;
+const MIN_HEIGHT = 240;
+const MARGIN = 8;
+const SIZE_KEY = 'joinery:peek-size';
+
+type Size = { width: number; height: number };
+type Box = Size & { left: number; top: number };
+type Edges = { x: -1 | 0 | 1; y: -1 | 0 | 1 };
+
+function storedSize(): Size {
+  try {
+    const v: unknown = JSON.parse(localStorage.getItem(SIZE_KEY) ?? 'null');
+    if (typeof v === 'object' && v !== null && 'width' in v && 'height' in v) {
+      const { width, height } = v;
+      if (typeof width === 'number' && typeof height === 'number') {
+        return { width: Math.max(MIN_WIDTH, width), height: Math.max(MIN_HEIGHT, height) };
+      }
+    }
+  } catch {
+    // Best-effort only.
+  }
+  return { width: WIDTH, height: HEIGHT };
+}
+
+function storeSize(size: Size): void {
+  try {
+    localStorage.setItem(SIZE_KEY, JSON.stringify({ width: Math.round(size.width), height: Math.round(size.height) }));
+  } catch {
+    // Best-effort only.
+  }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+/** Where a drag (no edges) or a resize from `edges` takes `start`, kept inside the viewport. */
+function dragged(start: Box, edges: Edges | null, dx: number, dy: number): Box {
+  const maxRight = window.innerWidth - MARGIN;
+  const maxBottom = window.innerHeight - MARGIN;
+  if (edges === null) {
+    return {
+      ...start,
+      left: clamp(start.left + dx, MARGIN, Math.max(MARGIN, maxRight - start.width)),
+      top: clamp(start.top + dy, MARGIN, Math.max(MARGIN, maxBottom - start.height)),
+    };
+  }
+  let { left, top, width, height } = start;
+  const right = start.left + start.width;
+  const bottom = start.top + start.height;
+  if (edges.x === 1) width = clamp(start.width + dx, MIN_WIDTH, maxRight - left);
+  if (edges.x === -1) {
+    width = clamp(start.width - dx, MIN_WIDTH, right - MARGIN);
+    left = right - width;
+  }
+  if (edges.y === 1) height = clamp(start.height + dy, MIN_HEIGHT, maxBottom - top);
+  if (edges.y === -1) {
+    height = clamp(start.height - dy, MIN_HEIGHT, bottom - MARGIN);
+    top = bottom - height;
+  }
+  return { left, top, width, height };
+}
+
+const HANDLES: readonly (Edges & { className: string })[] = [
+  { x: 0, y: -1, className: 'inset-x-2 -top-1 h-2 cursor-ns-resize' },
+  { x: 0, y: 1, className: 'inset-x-2 -bottom-1 h-2 cursor-ns-resize' },
+  { x: -1, y: 0, className: 'inset-y-2 -left-1 w-2 cursor-ew-resize' },
+  { x: 1, y: 0, className: 'inset-y-2 -right-1 w-2 cursor-ew-resize' },
+  { x: -1, y: -1, className: '-left-1 -top-1 size-3 cursor-nwse-resize' },
+  { x: 1, y: -1, className: '-right-1 -top-1 size-3 cursor-nesw-resize' },
+  { x: -1, y: 1, className: '-bottom-1 -left-1 size-3 cursor-nesw-resize' },
+  { x: 1, y: 1, className: '-bottom-1 -right-1 size-3 cursor-nwse-resize' },
+];
 
 export type Load<T> = { status: 'loading' } | { status: 'ready'; value: T } | { status: 'error'; message: string };
 
@@ -46,7 +122,8 @@ export type NavEntry = {
   off: LspLanguage | null;
 };
 
-export type Nav = { rect: DOMRect; entries: NavEntry[]; index: number };
+/** `origin` is the token the window was opened from, marked while it's open. */
+export type Nav = { rect: DOMRect; origin: HTMLElement; entries: NavEntry[]; index: number };
 
 type PreviewHandlers = {
   onTokenEnter: (props: TokenEventBase, event: PointerEvent, file: LspFile) => void;
@@ -124,6 +201,38 @@ export function PeekNavigator({
   const definition = entry?.definition.status === 'ready' ? entry.definition.value : null;
   const references = entry?.references.status === 'ready' ? (entry.references.value?.references ?? []) : [];
   const selected = entry?.selected ?? null;
+  const [size, setSize] = useState(storedSize);
+  /** Set once the window has been dragged or resized; until then it sits by the symbol. */
+  const [box, setBox] = useState<Box | null>(null);
+
+  // Follows the pointer (captured by the grabbed bar or handle) until it's let go.
+  const grab = useCallback((e: React.PointerEvent<HTMLElement>, edges: Edges | null) => {
+    const el = ref.current;
+    if (e.button !== 0 || el === null) return;
+    if (edges === null && (e.target as Element).closest('button') !== null) return;
+    e.preventDefault();
+    const r = el.getBoundingClientRect();
+    const start: Box = { left: r.left, top: r.top, width: r.width, height: r.height };
+    let last = start;
+    const handle = e.currentTarget;
+    handle.setPointerCapture(e.pointerId);
+    const onMove = (m: PointerEvent) => {
+      last = dragged(start, edges, m.clientX - e.clientX, m.clientY - e.clientY);
+      setBox(last);
+    };
+    const onUp = () => {
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+      handle.removeEventListener('pointercancel', onUp);
+      if (edges !== null) {
+        setSize({ width: last.width, height: last.height });
+        storeSize(last);
+      }
+    };
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
+    handle.addEventListener('pointercancel', onUp);
+  }, []);
 
   // Everything the list can select, in order, for ↑/↓.
   const stops = useMemo(() => {
@@ -204,8 +313,8 @@ export function PeekNavigator({
     );
   }
 
-  const width = Math.min(WIDTH, window.innerWidth - 16);
-  const height = Math.min(HEIGHT, window.innerHeight - 16);
+  const width = Math.min(size.width, window.innerWidth - 2 * MARGIN);
+  const height = Math.min(size.height, window.innerHeight - 2 * MARGIN);
   const groups = groupByFile(references);
   const inReview = groups.filter((g) => g.inReview);
   const elsewhere = groups.filter((g) => !g.inReview);
@@ -217,87 +326,100 @@ export function PeekNavigator({
       role="dialog"
       aria-label="Definition and uses"
       data-code-intel=""
-      style={{ ...placement(nav.rect, width, height), width, height }}
-      className="fixed z-50 flex flex-col overflow-hidden rounded-md bg-chrome-bg-raised shadow-chrome ring-1 ring-chrome-fg/10"
+      style={box ?? { ...placement(nav.rect, width, height), width, height }}
+      className="fixed z-50 rounded-md bg-chrome-bg-raised shadow-chrome ring-1 ring-chrome-fg/10"
     >
-      <div className="flex h-8 shrink-0 items-center gap-1 border-b pl-1 pr-1 text-xs">
-        <button
-          type="button"
-          onClick={() => onStep(-1)}
-          disabled={nav.index === 0}
-          aria-label="Back"
-          title={`Back (${IS_MAC ? '⌘[' : 'Ctrl+['})`}
-          className="chrome-icon-btn size-6 shrink-0 text-chrome-fg-subtle disabled:opacity-40"
+      <div className="flex h-full flex-col overflow-hidden rounded-md">
+        <div
+          onPointerDown={(e) => grab(e, null)}
+          className="flex h-8 shrink-0 cursor-move items-center gap-1 border-b pl-1 pr-1 text-xs"
         >
-          <ChevronLeft size={14} strokeWidth={1.75} aria-hidden />
-        </button>
-        <button
-          type="button"
-          onClick={() => onStep(1)}
-          disabled={nav.index === nav.entries.length - 1}
-          aria-label="Forward"
-          title={`Forward (${IS_MAC ? '⌘]' : 'Ctrl+]'})`}
-          className="chrome-icon-btn size-6 shrink-0 text-chrome-fg-subtle disabled:opacity-40"
-        >
-          <ChevronRight size={14} strokeWidth={1.75} aria-hidden />
-        </button>
-        <span className="ml-1 min-w-0 truncate font-mono text-chrome-fg">{entry.name}</span>
-        {entry.references.status === 'ready' && entry.references.value !== null && (
-          <span className="shrink-0 text-micro text-chrome-fg-subtle">
-            {references.length === 1 ? '1 use' : `${references.length}${truncated ? '+' : ''} uses`}
-          </span>
-        )}
-        <span className="ml-auto" />
-        <CloseButton onClose={onClose} />
-      </div>
-      <div className="flex min-h-0 flex-1">
-        <div className="w-64 shrink-0 overflow-y-auto border-r py-1 text-xs">
-          <Section title="Definition">
-            {entry.definition.status === 'loading' ? (
-              <Note>Finding the definition…</Note>
-            ) : definition === null ? (
-              <Note>{loadError(entry.definition) ?? 'No definition found'}</Note>
-            ) : (
-              <FileRow
-                path={definition.path}
-                line={definition.line}
-                active={selected?.ref === definition.ref && selected.line === definition.line}
-                onClick={() => onSelect({ ref: definition.ref, line: definition.line })}
-              />
-            )}
-          </Section>
-          {entry.references.status === 'loading' ? (
-            <Section title="Uses">
-              <Note>Finding uses…</Note>
-            </Section>
-          ) : references.length === 0 ? (
-            <Section title="Uses">
-              <Note>{loadError(entry.references) ?? 'No uses found'}</Note>
-            </Section>
-          ) : (
-            <>
-              {inReview.length > 0 && (
-                <Section title={`Uses in this review · ${inReview.reduce((n, g) => n + g.uses.length, 0)}`}>
-                  <Groups groups={inReview} selected={selected} onSelect={onSelect} />
-                </Section>
-              )}
-              {elsewhere.length > 0 && (
-                <Section title={`Uses elsewhere · ${elsewhere.reduce((n, g) => n + g.uses.length, 0)}`}>
-                  <Groups groups={elsewhere} selected={selected} onSelect={onSelect} />
-                </Section>
-              )}
-              {truncated && <Note>Only the first {references.length} are listed.</Note>}
-            </>
+          <button
+            type="button"
+            onClick={() => onStep(-1)}
+            disabled={nav.index === 0}
+            aria-label="Back"
+            title={`Back (${IS_MAC ? '⌘[' : 'Ctrl+['})`}
+            className="chrome-icon-btn size-6 shrink-0 text-chrome-fg-subtle disabled:opacity-40"
+          >
+            <ChevronLeft size={14} strokeWidth={1.75} aria-hidden />
+          </button>
+          <button
+            type="button"
+            onClick={() => onStep(1)}
+            disabled={nav.index === nav.entries.length - 1}
+            aria-label="Forward"
+            title={`Forward (${IS_MAC ? '⌘]' : 'Ctrl+]'})`}
+            className="chrome-icon-btn size-6 shrink-0 text-chrome-fg-subtle disabled:opacity-40"
+          >
+            <ChevronRight size={14} strokeWidth={1.75} aria-hidden />
+          </button>
+          <span className="ml-1 min-w-0 truncate font-mono text-chrome-fg">{entry.name}</span>
+          {entry.references.status === 'ready' && entry.references.value !== null && (
+            <span className="shrink-0 text-micro text-chrome-fg-subtle">
+              {references.length === 1 ? '1 use' : `${references.length}${truncated ? '+' : ''} uses`}
+            </span>
           )}
+          <span className="ml-auto" />
+          <CloseButton onClose={onClose} />
         </div>
-        <Preview
-          reviewId={reviewId}
-          selected={selected}
-          definition={definition}
-          preview={preview}
-          onJump={onJump}
-        />
+        <div className="flex min-h-0 flex-1">
+          <div className="w-64 shrink-0 overflow-y-auto border-r py-1 text-xs">
+            <Section title="Definition">
+              {entry.definition.status === 'loading' ? (
+                <Note>Finding the definition…</Note>
+              ) : definition === null ? (
+                <Note>{loadError(entry.definition) ?? 'No definition found'}</Note>
+              ) : (
+                <FileRow
+                  path={definition.path}
+                  line={definition.line}
+                  active={selected?.ref === definition.ref && selected.line === definition.line}
+                  onClick={() => onSelect({ ref: definition.ref, line: definition.line })}
+                />
+              )}
+            </Section>
+            {entry.references.status === 'loading' ? (
+              <Section title="Uses">
+                <Note>Finding uses…</Note>
+              </Section>
+            ) : references.length === 0 ? (
+              <Section title="Uses">
+                <Note>{loadError(entry.references) ?? 'No uses found'}</Note>
+              </Section>
+            ) : (
+              <>
+                {inReview.length > 0 && (
+                  <Section title={`Uses in this review · ${inReview.reduce((n, g) => n + g.uses.length, 0)}`}>
+                    <Groups groups={inReview} selected={selected} onSelect={onSelect} />
+                  </Section>
+                )}
+                {elsewhere.length > 0 && (
+                  <Section title={`Uses elsewhere · ${elsewhere.reduce((n, g) => n + g.uses.length, 0)}`}>
+                    <Groups groups={elsewhere} selected={selected} onSelect={onSelect} />
+                  </Section>
+                )}
+                {truncated && <Note>Only the first {references.length} are listed.</Note>}
+              </>
+            )}
+          </div>
+          <Preview
+            reviewId={reviewId}
+            selected={selected}
+            definition={definition}
+            preview={preview}
+            onJump={onJump}
+          />
+        </div>
       </div>
+      {HANDLES.map((h) => (
+        <div
+          key={`${h.x}:${h.y}`}
+          aria-hidden
+          onPointerDown={(e) => grab(e, h)}
+          className={`absolute ${h.className}`}
+        />
+      ))}
     </div>
   );
 }

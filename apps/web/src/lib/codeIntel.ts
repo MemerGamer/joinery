@@ -12,13 +12,19 @@ export const PEEK_KEY = IS_MAC ? '⌘' : 'Ctrl';
 
 /**
  * Injected into each file's shadow root alongside the card CSS: the token
- * under the pointer reads as a link while the peek modifier is held.
+ * under the pointer reads as a link while the peek modifier is held, and the
+ * one a peek window was opened from stays marked while it's open.
  */
 export const CODE_INTEL_CSS = `
 [data-char][data-lsp-link] {
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
+}
+[data-char][data-lsp-origin] {
+  background-color: var(--chrome-accent-soft);
+  outline: 1px solid color-mix(in srgb, var(--chrome-accent) 55%, transparent);
+  border-radius: 2px;
 }
 `;
 
