@@ -1,10 +1,12 @@
 /**
- * The peek window: a symbol's definition and uses on the left, the chosen
- * file on the right, IDE-style.
+ * The peek window: a symbol's definition, implementations and uses on the
+ * left, the chosen file on the right, IDE-style.
  *
- * - The definition is listed first and shown as soon as it's found; uses
- *   fill in below when the server has looked them up, files this review
- *   changes first.
+ * - The definition is listed first and shown as soon as it's found;
+ *   implementations (the classes behind an interface, the methods behind an
+ *   interface method) and uses fill in below when the server has looked them
+ *   up, files this review changes first. An interface with just one
+ *   implementation opens on that one instead, unless Settings says not to.
  * - Clicking a file shows it at its first use, clicking a use at that line;
  *   ↑/↓ step through the list.
  * - The preview is the whole file, highlighted like the diff, with hover and
@@ -115,8 +117,9 @@ export type NavEntry = {
   readonly id: number;
   readonly name: string;
   definition: Load<LspDefinition | null>;
+  implementations: Load<LspReferences | null>;
   references: Load<LspReferences | null>;
-  /** The file and line on the right: the definition's, or else the first use's, once in. */
+  /** The file and line on the right: picked once enough is in (CodeIntel.tsx), then the reader's. */
   selected: { ref: string; line: number } | null;
   /** The language, when its server is switched off in Settings. */
   off: LspLanguage | null;
@@ -124,6 +127,16 @@ export type NavEntry = {
 
 /** `origin` is the token the window was opened from, marked while it's open. */
 export type Nav = { rect: DOMRect; origin: HTMLElement; entries: NavEntry[]; index: number };
+
+/**
+ * An entry's implementations, the definition itself left out: some servers
+ * name a concrete class or function as its own implementation.
+ */
+export function otherImplementations(entry: NavEntry): LspReference[] {
+  const definition = entry.definition.status === 'ready' ? entry.definition.value : null;
+  const all = entry.implementations.status === 'ready' ? (entry.implementations.value?.references ?? []) : [];
+  return all.filter((i) => i.ref !== definition?.ref || i.line !== definition.line);
+}
 
 type PreviewHandlers = {
   onTokenEnter: (props: TokenEventBase, event: PointerEvent, file: LspFile) => void;
@@ -199,7 +212,13 @@ export function PeekNavigator({
   const ref = useRef<HTMLDivElement>(null);
   const entry = nav.entries[nav.index];
   const definition = entry?.definition.status === 'ready' ? entry.definition.value : null;
-  const references = entry?.references.status === 'ready' ? (entry.references.value?.references ?? []) : [];
+  const implementations = useMemo(() => (entry === undefined ? [] : otherImplementations(entry)), [entry]);
+  // A class's `implements`/`extends` line is a use too: listed once, as the implementation.
+  const references = useMemo(() => {
+    const all = entry?.references.status === 'ready' ? (entry.references.value?.references ?? []) : [];
+    const implemented = new Set(implementations.map((i) => `${i.ref}:${i.line}`));
+    return all.filter((r) => !implemented.has(`${r.ref}:${r.line}`));
+  }, [entry, implementations]);
   const selected = entry?.selected ?? null;
   const [size, setSize] = useState(storedSize);
   /** Set once the window has been dragged or resized; until then it sits by the symbol. */
@@ -237,8 +256,8 @@ export function PeekNavigator({
   // Everything the list can select, in order, for ↑/↓.
   const stops = useMemo(() => {
     const all: { ref: string; line: number }[] = definition === null ? [] : [{ ref: definition.ref, line: definition.line }];
-    return all.concat(references.map((r) => ({ ref: r.ref, line: r.line })));
-  }, [definition, references]);
+    return all.concat([...implementations, ...references].map((r) => ({ ref: r.ref, line: r.line })));
+  }, [definition, implementations, references]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -269,7 +288,7 @@ export function PeekNavigator({
   if (entry === undefined) return <></>;
 
   // Nothing to show yet on the first step: a status line, not an empty window.
-  const found = definition !== null || references.length > 0;
+  const found = definition !== null || implementations.length > 0 || references.length > 0;
   if (!found && nav.entries.length === 1) {
     const error = loadError(entry.definition) ?? loadError(entry.references);
     const status =
@@ -355,6 +374,11 @@ export function PeekNavigator({
             <ChevronRight size={14} strokeWidth={1.75} aria-hidden />
           </button>
           <span className="ml-1 min-w-0 truncate font-mono text-chrome-fg">{entry.name}</span>
+          {implementations.length > 0 && (
+            <span className="shrink-0 text-micro text-chrome-fg-subtle">
+              {implementations.length === 1 ? '1 implementation' : `${implementations.length} implementations`}
+            </span>
+          )}
           {entry.references.status === 'ready' && entry.references.value !== null && (
             <span className="shrink-0 text-micro text-chrome-fg-subtle">
               {references.length === 1 ? '1 use' : `${references.length}${truncated ? '+' : ''} uses`}
@@ -379,6 +403,11 @@ export function PeekNavigator({
                 />
               )}
             </Section>
+            {implementations.length > 0 && (
+              <Section title={`Implementations · ${implementations.length}`}>
+                <Groups groups={groupByFile(implementations)} selected={selected} onSelect={onSelect} />
+              </Section>
+            )}
             {entry.references.status === 'loading' ? (
               <Section title="Uses">
                 <Note>Finding uses…</Note>
@@ -406,6 +435,7 @@ export function PeekNavigator({
           <Preview
             reviewId={reviewId}
             selected={selected}
+            choosing={selected === null && found}
             definition={definition}
             preview={preview}
             onJump={onJump}
@@ -538,12 +568,15 @@ function UseRow({ use, active, onClick }: { use: LspReference; active: boolean; 
 function Preview({
   reviewId,
   selected,
+  choosing,
   definition,
   preview,
   onJump,
 }: {
   reviewId: string;
   selected: NavEntry['selected'];
+  /** Nothing picked yet, while it waits to hear whether to open on an implementation. */
+  choosing: boolean;
   definition: LspDefinition | null;
   preview: PreviewHandlers;
   onJump: (path: string, line: number) => void;
@@ -626,7 +659,9 @@ function Preview({
         ) : (
           <span className="text-chrome-fg-muted">
             {load === null
-              ? 'Nothing to show'
+              ? choosing
+                ? 'Opening…'
+                : 'Nothing to show'
               : load.status === 'loading'
                 ? 'Opening…'
                 : load.status === 'error'

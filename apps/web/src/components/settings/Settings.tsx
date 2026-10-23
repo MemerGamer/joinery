@@ -24,6 +24,7 @@ import {
   Check,
   Database,
   FolderGit2,
+  Layers,
   Moon,
   MousePointer2,
   Palette,
@@ -36,7 +37,16 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiError, callApi } from '../../lib/apiClient.ts';
-import { MAX_HOVER_DELAY_MS, PEEK_KEY, setHoverDelay, setHoverEnabled, useHoverDelay, useHoverEnabled } from '../../lib/codeIntel.ts';
+import {
+  MAX_HOVER_DELAY_MS,
+  PEEK_KEY,
+  setHoverDelay,
+  setHoverEnabled,
+  setImplementationJump,
+  useHoverDelay,
+  useHoverEnabled,
+  useImplementationJump,
+} from '../../lib/codeIntel.ts';
 import { useGlobalKeymap } from '../../lib/keymap.ts';
 import { relativeTime } from '../../lib/relativeTime.ts';
 import { goHomebase, goReview } from '../../lib/router.ts';
@@ -403,6 +413,27 @@ function HoverCardsRow(): React.JSX.Element {
   );
 }
 
+/** The switch for opening the peek window on an interface's only implementation instead of the interface. */
+function ImplementationJumpRow(): React.JSX.Element {
+  const on = useImplementationJump();
+  return (
+    <Row
+      icon={<Layers strokeWidth={1.75} />}
+      title="Open the only implementation"
+      detail={`When a ${PEEK_KEY}-clicked interface has just one implementation, show that first`}
+    >
+      <Switch.Root
+        checked={on}
+        onCheckedChange={setImplementationJump}
+        aria-label={`Open the only implementation: ${on ? 'on' : 'off'}`}
+        className={SWITCH_ROOT_CLASS}
+      >
+        <Switch.Thumb className={SWITCH_THUMB_CLASS} />
+      </Switch.Root>
+    </Row>
+  );
+}
+
 /** A group of integrations: a heading, what they're for (once, not per row), and the rows. */
 function IntegrationGroup({
   title,
@@ -492,6 +523,7 @@ function IntegrationsPanel(): React.JSX.Element {
                 <LanguageServerRow key={l.language} row={l} onChanged={reload} />
               ))}
               <HoverCardsRow />
+              <ImplementationJumpRow />
             </IntegrationGroup>
           )}
         </div>

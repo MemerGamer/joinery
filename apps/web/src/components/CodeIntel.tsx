@@ -4,8 +4,8 @@
  *
  * - hover a name → a small popover with its signature and docblock;
  * - ⌘-click it (Ctrl-click elsewhere), or "Definition and uses" in that
- *   popover → the peek window (PeekNavigator.tsx): the definition and every
- *   use on the left, the chosen file on the right, where hover and ⌘-click
+ *   popover → the peek window (PeekNavigator.tsx): the definition, its
+ *   implementations and every use on the left, the chosen file on the right, where hover and ⌘-click
  *   work again and step through a history of their own;
  * - double-click it → every place it appears in that file is marked, from
  *   the server's `documentHighlight` (one file, so cheap); a click elsewhere
@@ -31,10 +31,10 @@ import type { LspDefinition, LspFile, LspHighlight, LspHover, LspLanguage, LspRe
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { callApi } from '../lib/apiClient.ts';
-import { cached, getHoverDelay, getHoverEnabled, IS_MAC, PEEK_KEY, placement } from '../lib/codeIntel.ts';
+import { cached, getHoverDelay, getHoverEnabled, getImplementationJump, IS_MAC, PEEK_KEY, placement } from '../lib/codeIntel.ts';
 import { useReview } from '../state/ReviewContext.tsx';
 import { Markdown } from './Markdown.tsx';
-import { PeekNavigator, type Load, type Nav, type NavEntry } from './PeekNavigator.tsx';
+import { otherImplementations, PeekNavigator, type Load, type Nav, type NavEntry } from './PeekNavigator.tsx';
 
 /** Grace to move the pointer from the token onto the popover. */
 const CLOSE_DELAY_MS = 150;
@@ -48,6 +48,7 @@ const hoverCache = new Map<string, Promise<LspHover | null>>();
 // Whole answers, `off` included; an answer saying the server is off isn't kept, so turning it on takes effect.
 const definitionCache = new Map<string, Promise<{ definition: LspDefinition | null; off: LspLanguage | null }>>();
 const referencesCache = new Map<string, Promise<{ references: LspReferences | null; off: LspLanguage | null }>>();
+const implementationsCache = new Map<string, Promise<{ implementations: LspReferences | null; off: LspLanguage | null }>>();
 const highlightsCache = new Map<string, Promise<LspHighlight[]>>();
 
 type TokenProps = TokenEventBase & Partial<Pick<DiffTokenEventBaseProps, 'side'>>;
@@ -125,10 +126,25 @@ function failed(err: unknown): Load<never> {
   return { status: 'error', message: err instanceof Error ? err.message : String(err) };
 }
 
-/** The first use listed, for an entry with no definition to show. */
-function firstUse(references: Load<LspReferences | null>): NavEntry['selected'] {
-  const first = references.status === 'ready' ? references.value?.references[0] : undefined;
-  return first === undefined ? null : { ref: first.ref, line: first.line };
+/**
+ * What an entry opens on, once enough is in to tell (null until then): the
+ * only implementation when there's one and Settings says to jump to it, else
+ * the definition, else the first implementation or use.
+ */
+function autoSelected(e: NavEntry): NavEntry['selected'] {
+  const jump = getImplementationJump();
+  if (jump && e.implementations.status === 'loading') return null;
+  const implementations = otherImplementations(e);
+  const [only] = implementations;
+  if (jump && implementations.length === 1 && only !== undefined) return { ref: only.ref, line: only.line };
+  if (e.definition.status === 'loading') return null;
+  if (e.definition.status === 'ready' && e.definition.value !== null) {
+    return { ref: e.definition.value.ref, line: e.definition.value.line };
+  }
+  if (e.implementations.status === 'loading') return null;
+  const first = implementations[0] ?? (e.references.status === 'ready' ? e.references.value?.references[0] : undefined);
+  if (first !== undefined) return { ref: first.ref, line: first.line };
+  return null;
 }
 
 export function useCodeIntel(): {
@@ -266,37 +282,53 @@ export function useCodeIntel(): {
       setCard(null);
       entryIds.current += 1;
       const id = entryIds.current;
-      const entry: NavEntry = { id, name: target.name, definition: LOADING, references: LOADING, selected: null, off: null };
+      const entry: NavEntry = {
+        id,
+        name: target.name,
+        definition: LOADING,
+        implementations: LOADING,
+        references: LOADING,
+        selected: null,
+        off: null,
+      };
       setNav((n) =>
         target.inPreview && n !== null
           ? { ...n, entries: [...n.entries.slice(0, n.index + 1), entry], index: n.index + 1 }
           : { rect: target.element.getBoundingClientRect(), origin: target.element, entries: [entry], index: 0 },
       );
+      // Each answer lands in the entry; what's shown is picked once enough is in, and then kept.
       const update = (patch: (e: NavEntry) => NavEntry) =>
-        setNav((n) => (n === null ? n : { ...n, entries: n.entries.map((e) => (e.id === id ? patch(e) : e)) }));
+        setNav((n) => {
+          if (n === null) return n;
+          return {
+            ...n,
+            entries: n.entries.map((e) => {
+              if (e.id !== id) return e;
+              const next = patch(e);
+              return { ...next, selected: next.selected ?? autoSelected(next) };
+            }),
+          };
+        });
       const key = keyOf(target);
       const query = { path: target.path, line: target.pos.line, character: target.pos.character };
       cached(definitionCache, key, () => callApi('getDefinition', { params: [reviewId], query })).then(
         ({ definition, off }) => {
           if (off !== null) definitionCache.delete(key);
-          update((e) => ({
-            ...e,
-            off: e.off ?? off,
-            definition: { status: 'ready', value: definition },
-            selected: e.selected ?? (definition !== null ? { ref: definition.ref, line: definition.line } : firstUse(e.references)),
-          }));
+          update((e) => ({ ...e, off: e.off ?? off, definition: { status: 'ready', value: definition } }));
         },
-        (err: unknown) => update((e) => ({ ...e, definition: failed(err), selected: e.selected ?? firstUse(e.references) })),
+        (err: unknown) => update((e) => ({ ...e, definition: failed(err) })),
+      );
+      cached(implementationsCache, key, () => callApi('getImplementations', { params: [reviewId], query })).then(
+        ({ implementations, off }) => {
+          if (off !== null) implementationsCache.delete(key);
+          update((e) => ({ ...e, off: e.off ?? off, implementations: { status: 'ready', value: implementations } }));
+        },
+        (err: unknown) => update((e) => ({ ...e, implementations: failed(err) })),
       );
       cached(referencesCache, key, () => callApi('getReferences', { params: [reviewId], query })).then(
         ({ references, off }) => {
           if (off !== null) referencesCache.delete(key);
-          update((e) => {
-            const loaded: NavEntry['references'] = { status: 'ready', value: references };
-            // The definition, when there is one, is shown first; otherwise the first use.
-            const waiting = e.definition.status === 'loading' || (e.definition.status === 'ready' && e.definition.value !== null);
-            return { ...e, off: e.off ?? off, references: loaded, selected: e.selected ?? (waiting ? null : firstUse(loaded)) };
-          });
+          update((e) => ({ ...e, off: e.off ?? off, references: { status: 'ready', value: references } }));
         },
         (err: unknown) => update((e) => ({ ...e, references: failed(err) })),
       );

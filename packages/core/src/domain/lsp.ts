@@ -112,6 +112,7 @@ export const lspReferenceSchema = z.object({
 });
 export type LspReference = z.infer<typeof lspReferenceSchema>;
 
+/** A symbol's uses, or its implementations: the same list of places. */
 export const lspReferencesSchema = z.object({
   /** Files this review changes first, then by path and line. */
   references: z.array(lspReferenceSchema),

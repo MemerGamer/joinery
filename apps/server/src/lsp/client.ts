@@ -4,7 +4,7 @@
  * server→client requests real servers block on (`workspace/configuration`,
  * `client/registerCapability`, `window/workDoneProgress/create`).
  *
- * Only what hover and go-to-definition need — no diagnostics, no edits. The
+ * Only what hover, go-to-definition and its kin need — no diagnostics, no edits. The
  * client advertises UTF-16 positions (the LSP default), which is also how
  * JavaScript strings index, so a browser-side character offset is already
  * an LSP `character`.
@@ -99,6 +99,7 @@ export class LspClient {
             synchronization: { dynamicRegistration: false, didSave: false },
             hover: { dynamicRegistration: false, contentFormat: ['markdown', 'plaintext'] },
             definition: { dynamicRegistration: false, linkSupport: true },
+            implementation: { dynamicRegistration: false, linkSupport: true },
             documentHighlight: { dynamicRegistration: false },
           },
           workspace: { configuration: true, workspaceFolders: true },

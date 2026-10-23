@@ -665,6 +665,13 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     return c.json({ references: target === null || off !== null ? null : await lsp.references(target, inReview), off });
   });
 
+  app.get('/api/reviews/:id/lsp/implementations', async (c) => {
+    const query = parseQuery(lspPositionQuerySchema, c);
+    const { target, inReview } = await lspTarget(c.req.param('id'), query, c.req.raw.signal);
+    const off = offFor(target);
+    return c.json({ implementations: target === null || off !== null ? null : await lsp.implementations(target, inReview), off });
+  });
+
   app.get('/api/reviews/:id/lsp/highlights', async (c) => {
     const query = parseQuery(lspPositionQuerySchema, c);
     const { target } = await lspTarget(c.req.param('id'), query, c.req.raw.signal);

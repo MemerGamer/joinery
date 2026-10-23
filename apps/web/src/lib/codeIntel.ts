@@ -35,6 +35,7 @@ export const CODE_INTEL_CSS = `
 
 const HOVER_KEY = 'joinery:lsp-hover';
 const HOVER_DELAY_KEY = 'joinery:lsp-hover-delay';
+const IMPLEMENTATION_JUMP_KEY = 'joinery:lsp-implementation-jump';
 export const DEFAULT_HOVER_DELAY_MS = 300;
 export const MAX_HOVER_DELAY_MS = 10_000;
 const hoverListeners = new Set<() => void>();
@@ -64,6 +65,7 @@ function subscribeHover(l: () => void): () => void {
 }
 
 let hoverOn = stored(HOVER_KEY) !== 'off';
+let implementationJump = stored(IMPLEMENTATION_JUMP_KEY) !== 'off';
 let hoverDelay = (() => {
   const n = Number(stored(HOVER_DELAY_KEY) ?? NaN);
   return Number.isInteger(n) && n >= 0 && n <= MAX_HOVER_DELAY_MS ? n : DEFAULT_HOVER_DELAY_MS;
@@ -95,6 +97,24 @@ export function setHoverDelay(ms: number): void {
 
 export function useHoverDelay(): number {
   return useSyncExternalStore(subscribeHover, getHoverDelay);
+}
+
+/**
+ * Whether the peek window opens on the implementation when there's exactly
+ * one (an interface with a single class behind it) rather than on the
+ * definition (Settings → Language servers); on by default.
+ */
+export function getImplementationJump(): boolean {
+  return implementationJump;
+}
+
+export function setImplementationJump(on: boolean): void {
+  implementationJump = on;
+  store(IMPLEMENTATION_JUMP_KEY, on ? 'on' : 'off');
+}
+
+export function useImplementationJump(): boolean {
+  return useSyncExternalStore(subscribeHover, getImplementationJump);
 }
 
 /** Shared by every waiter; a request that fails or is aborted is dropped so the next hover asks again. */

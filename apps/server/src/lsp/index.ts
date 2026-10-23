@@ -172,19 +172,34 @@ class LspManager {
   }
 
   /** Every use of the symbol at `target` (its declaration aside), with each line's text. */
-  async references(target: LspTarget, inReview: (path: string) => boolean): Promise<LspReferences | null> {
+  references(target: LspTarget, inReview: (path: string) => boolean): Promise<LspReferences | null> {
+    return this.#locations(target, inReview, 'textDocument/references', { context: { includeDeclaration: false } });
+  }
+
+  /**
+   * What implements the symbol at `target`: the classes implementing an
+   * interface, the methods implementing an interface or abstract method.
+   * Servers without it (intelephense unlicensed) answer with nothing.
+   */
+  implementations(target: LspTarget, inReview: (path: string) => boolean): Promise<LspReferences | null> {
+    return this.#locations(target, inReview, 'textDocument/implementation', {});
+  }
+
+  /** The places a location request (`method`) answers for `target`, each with its line's text. */
+  async #locations(
+    target: LspTarget,
+    inReview: (path: string) => boolean,
+    method: string,
+    extra: Record<string, unknown>,
+  ): Promise<LspReferences | null> {
     const prepared = await this.#prepare(target);
     if (prepared === null) return null;
     const { client, spec, uri, session } = prepared;
-    let result: { uri?: string; range?: Range }[] | null;
+    let result: unknown;
     try {
       result = await client.request(
-        'textDocument/references',
-        {
-          textDocument: { uri },
-          position: { line: target.line - 1, character: target.character },
-          context: { includeDeclaration: false },
-        },
+        method,
+        { textDocument: { uri }, position: { line: target.line - 1, character: target.character }, ...extra },
         target.signal,
       );
     } catch (err) {
@@ -204,16 +219,14 @@ class LspManager {
       }
       return pending;
     };
-    const found = (result ?? []).filter(
-      (r): r is { uri: string; range: Range } => typeof r.uri === 'string' && r.uri.startsWith('file:') && r.range !== undefined,
-    );
+    const found = locationsOf(result).filter((l) => l.uri.startsWith('file:'));
     const references = await Promise.all(
-      found.map(async (r): Promise<LspReference> => {
-        const line = (await linesOf(r.uri))?.[r.range.start.line] ?? '';
+      found.map(async (l): Promise<LspReference> => {
+        const line = (await linesOf(l.uri))?.[l.focus.line] ?? '';
         return {
-          ...describe(session.root, fileURLToPath(r.uri), inReview),
-          line: r.range.start.line + 1,
-          character: r.range.start.character,
+          ...describe(session.root, fileURLToPath(l.uri), inReview),
+          line: l.focus.line + 1,
+          character: l.focus.character,
           preview: line.trim().slice(0, PREVIEW_MAX_CHARS),
         };
       }),
@@ -468,21 +481,25 @@ function hoverMarkdown(contents: unknown): string | null {
  * The first `Location` or `LocationLink`. `focus` is where the name is (a
  * link's selection range, else the location's own range).
  */
+/** The places a location answer names: a `Location`, or a list of `Location`s or `LocationLink`s. */
+function locationsOf(result: unknown): { uri: string; focus: Position }[] {
+  return (Array.isArray(result) ? result : [result]).flatMap((item: unknown) => {
+    if (item === null || typeof item !== 'object') return [];
+    const loc = item as {
+      uri?: string;
+      range?: Range;
+      targetUri?: string;
+      targetRange?: Range;
+      targetSelectionRange?: Range;
+    };
+    if (typeof loc.targetUri === 'string' && loc.targetRange !== undefined) {
+      return [{ uri: loc.targetUri, focus: (loc.targetSelectionRange ?? loc.targetRange).start }];
+    }
+    if (typeof loc.uri === 'string' && loc.range !== undefined) return [{ uri: loc.uri, focus: loc.range.start }];
+    return [];
+  });
+}
+
 function firstLocation(result: unknown): { uri: string; focus: Position } | null {
-  const first = Array.isArray(result) ? result[0] : result;
-  if (first === null || typeof first !== 'object') return null;
-  const loc = first as {
-    uri?: string;
-    range?: Range;
-    targetUri?: string;
-    targetRange?: Range;
-    targetSelectionRange?: Range;
-  };
-  if (typeof loc.targetUri === 'string' && loc.targetRange !== undefined) {
-    return { uri: loc.targetUri, focus: (loc.targetSelectionRange ?? loc.targetRange).start };
-  }
-  if (typeof loc.uri === 'string' && loc.range !== undefined) {
-    return { uri: loc.uri, focus: loc.range.start };
-  }
-  return null;
+  return locationsOf(result)[0] ?? null;
 }
