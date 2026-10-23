@@ -120,3 +120,12 @@ export const lspReferencesSchema = z.object({
   server: lspServerIdSchema,
 });
 export type LspReferences = z.infer<typeof lspReferencesSchema>;
+
+/** Where the symbol at a position appears in that same file: its declaration and every use. */
+export const lspHighlightSchema = z.object({
+  /** 1-based line, and the 0-based UTF-16 characters `[start, end)` on it. */
+  line: z.number().int().positive(),
+  start: z.number().int().nonnegative(),
+  end: z.number().int().nonnegative(),
+});
+export type LspHighlight = z.infer<typeof lspHighlightSchema>;

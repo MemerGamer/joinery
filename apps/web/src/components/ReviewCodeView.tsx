@@ -145,7 +145,7 @@ export function ReviewCodeView(): React.JSX.Element {
     setScrolledPath,
   } = useReview();
   const { chromeMode } = useTheme();
-  const { onTokenEnter, onTokenLeave, onTokenClick, overlay } = useCodeIntel();
+  const { onTokenEnter, onTokenLeave, onTokenClick, onPostRender, overlay } = useCodeIntel();
 
   // `onScroll` below only fires once the reader scrolls, so take the first
   // reading here: the items mount a frame or more after `items` arrives
@@ -224,6 +224,7 @@ export function ReviewCodeView(): React.JSX.Element {
       onTokenEnter,
       onTokenLeave,
       onTokenClick,
+      onPostRender,
       onGutterUtilityClick(range: SelectedLineRange, context) {
         startDraftThread({
           path: context.item.id,
@@ -233,7 +234,7 @@ export function ReviewCodeView(): React.JSX.Element {
         });
       },
     }),
-    [chromeMode, diffStyle, loadDiffFiles, onTokenClick, onTokenEnter, onTokenLeave, startDraftThread],
+    [chromeMode, diffStyle, loadDiffFiles, onPostRender, onTokenClick, onTokenEnter, onTokenLeave, startDraftThread],
   );
 
   const byPath = useMemo(() => new Map(fileList.map((f) => [f.path, f])), [fileList]);

@@ -17,6 +17,7 @@ import {
   lspDefinitionSchema,
   lspFileQuerySchema,
   lspFileSchema,
+  lspHighlightSchema,
   lspHoverSchema,
   lspLanguageSchema,
   lspPositionQuerySchema,
@@ -560,6 +561,13 @@ export const api = {
     body: undefined,
     query: lspPositionQuerySchema,
     response: z.object({ references: lspReferencesSchema.nullable(), off: lspLanguageSchema.nullable() }),
+  }),
+  getHighlights: def({
+    method: 'GET',
+    path: (id: string) => `/api/reviews/${encodeURIComponent(id)}/lsp/highlights`,
+    body: undefined,
+    query: lspPositionQuerySchema,
+    response: z.object({ highlights: z.array(lspHighlightSchema) }),
   }),
   getLspFile: def({
     method: 'GET',

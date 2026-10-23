@@ -99,6 +99,7 @@ export class LspClient {
             synchronization: { dynamicRegistration: false, didSave: false },
             hover: { dynamicRegistration: false, contentFormat: ['markdown', 'plaintext'] },
             definition: { dynamicRegistration: false, linkSupport: true },
+            documentHighlight: { dynamicRegistration: false },
           },
           workspace: { configuration: true, workspaceFolders: true },
           window: { workDoneProgress: false },

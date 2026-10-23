@@ -22,7 +22,7 @@ import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { relative, isAbsolute, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { LspDefinition, LspFile, LspHover, LspLanguage, LspReference, LspReferences } from '@joinery/core';
+import type { LspDefinition, LspFile, LspHighlight, LspHover, LspLanguage, LspReference, LspReferences } from '@joinery/core';
 import { isCancelled, LspClient } from './client.ts';
 import { languageOf, resolveServer, type ServerSpec } from './servers.ts';
 
@@ -231,6 +231,33 @@ class LspManager {
       truncated: references.length > MAX_REFERENCES,
       server: spec.id,
     };
+  }
+
+  /**
+   * Where the symbol at `target` appears in its own file (the server's
+   * `documentHighlight`: scoped to the one file, so cheap). Ranges spanning
+   * lines are left out; a name is on one.
+   */
+  async highlights(target: LspTarget): Promise<LspHighlight[]> {
+    const prepared = await this.#prepare(target);
+    if (prepared === null) return [];
+    const { client, uri } = prepared;
+    let result: { range?: Range }[] | null;
+    try {
+      result = await client.request(
+        'textDocument/documentHighlight',
+        { textDocument: { uri }, position: { line: target.line - 1, character: target.character } },
+        target.signal,
+      );
+    } catch (err) {
+      if (isCancelled(err)) return [];
+      throw err;
+    }
+    return (result ?? []).flatMap(({ range }) =>
+      range === undefined || range.start.line !== range.end.line || range.end.character <= range.start.character
+        ? []
+        : [{ line: range.start.line + 1, start: range.start.character, end: range.end.character }],
+    );
   }
 
   /** A file to show, as the review has it; no server needed. */

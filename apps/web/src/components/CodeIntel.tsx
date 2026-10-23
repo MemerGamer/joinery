@@ -6,7 +6,10 @@
  * - ⌘-click it (Ctrl-click elsewhere), or "Definition and uses" in that
  *   popover → the peek window (PeekNavigator.tsx): the definition and every
  *   use on the left, the chosen file on the right, where hover and ⌘-click
- *   work again and step through a history of their own.
+ *   work again and step through a history of their own;
+ * - double-click it → every place it appears in that file is marked, from
+ *   the server's `documentHighlight` (one file, so cheap); a click elsewhere
+ *   or Esc clears them.
  *
  * Tokens come from `@pierre/diffs`' own token events (`onTokenEnter` and
  * friends, enabled by `useTokenTransformer` in lib/workerPool.tsx), which
@@ -23,8 +26,8 @@
  * server forwards that as `$/cancelRequest`), and answers are cached per
  * (file blob, line, token), which is immutable, for the life of the page.
  */
-import type { DiffTokenEventBaseProps, TokenEventBase } from '@pierre/diffs';
-import type { LspDefinition, LspFile, LspHover, LspLanguage, LspReferences } from '@joinery/core';
+import type { DiffTokenEventBaseProps, PostRenderPhase, TokenEventBase } from '@pierre/diffs';
+import type { LspDefinition, LspFile, LspHighlight, LspHover, LspLanguage, LspReferences } from '@joinery/core';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { callApi } from '../lib/apiClient.ts';
@@ -45,6 +48,7 @@ const hoverCache = new Map<string, Promise<LspHover | null>>();
 // Whole answers, `off` included; an answer saying the server is off isn't kept, so turning it on takes effect.
 const definitionCache = new Map<string, Promise<{ definition: LspDefinition | null; off: LspLanguage | null }>>();
 const referencesCache = new Map<string, Promise<{ references: LspReferences | null; off: LspLanguage | null }>>();
+const highlightsCache = new Map<string, Promise<LspHighlight[]>>();
 
 type TokenProps = TokenEventBase & Partial<Pick<DiffTokenEventBaseProps, 'side'>>;
 type TokenContext = { item: { id: string } };
@@ -68,6 +72,34 @@ function headPosition(props: TokenProps): HeadPosition | null {
     ?.querySelector(`[data-additions] [data-line][data-line-index$=",${CSS.escape(splitIndex)}"]`);
   const line = Number(twin?.getAttribute('data-line'));
   return Number.isInteger(line) && line > 0 ? { line, character } : null;
+}
+
+function rootOf(node: HTMLElement): ParentNode {
+  return node.shadowRoot ?? node;
+}
+
+function unmarkOccurrences(node: HTMLElement): void {
+  for (const el of rootOf(node).querySelectorAll('[data-lsp-occurrence]')) el.removeAttribute('data-lsp-occurrence');
+}
+
+/**
+ * Marks the tokens covering `ranges` in a rendered file: head-side rows only
+ * (not deleted lines, nor the base column in split view), and every token
+ * overlapping a range, since the highlighter's tokens needn't match it exactly.
+ */
+function markOccurrences(node: HTMLElement, ranges: readonly LspHighlight[]): void {
+  const root = rootOf(node);
+  for (const range of ranges) {
+    for (const row of root.querySelectorAll(`[data-line="${range.line}"]:not([data-line-type="change-deletion"])`)) {
+      if (row.closest('[data-deletions]') !== null) continue;
+      for (const token of row.querySelectorAll('[data-char]')) {
+        const text = token.textContent ?? '';
+        const start = Number(token.getAttribute('data-char')) + text.length - text.trimStart().length;
+        const end = start + text.trim().length;
+        if (start < range.end && end > range.start) token.setAttribute('data-lsp-occurrence', '');
+      }
+    }
+  }
 }
 
 /**
@@ -103,6 +135,7 @@ export function useCodeIntel(): {
   onTokenEnter: (props: TokenProps, event: PointerEvent, context: TokenContext) => void;
   onTokenLeave: (props: TokenProps, event: PointerEvent, context: TokenContext) => void;
   onTokenClick: (props: TokenProps, event: MouseEvent, context: TokenContext) => void;
+  onPostRender: (node: HTMLElement, instance: unknown, phase: PostRenderPhase, context: TokenContext) => void;
   overlay: React.ReactNode;
 } {
   const { review, fileList, items, codeViewRef } = useReview();
@@ -117,6 +150,11 @@ export function useCodeIntel(): {
   const current = useRef<Target | null>(null);
   const modifierDown = useRef(false);
   const entryIds = useRef(0);
+  /** Each file's rendered node in the diff, to mark occurrences in. */
+  const containers = useRef(new Map<string, HTMLElement>());
+  /** The double-clicked symbol's places in its file, kept marked across re-renders. */
+  const occurrences = useRef<{ path: string; ranges: LspHighlight[] } | null>(null);
+  const occurrencesRequest = useRef<AbortController | null>(null);
 
   const keyOf = useCallback(
     (t: Target) => `${reviewId}:${t.path}:${t.version}:${t.pos.line}:${t.tokenStart}`,
@@ -282,10 +320,84 @@ export function useCodeIntel(): {
     (props: TokenProps, event: PointerEvent, context: TokenContext) => enter(diffTarget(props, context), event),
     [diffTarget, enter],
   );
-  const onTokenClick = useCallback(
-    (props: TokenProps, event: MouseEvent, context: TokenContext) => click(diffTarget(props, context), event),
-    [click, diffTarget],
+  const clearOccurrences = useCallback(() => {
+    occurrencesRequest.current?.abort();
+    occurrencesRequest.current = null;
+    const shown = occurrences.current;
+    if (shown === null) return;
+    occurrences.current = null;
+    const node = containers.current.get(shown.path);
+    if (node !== undefined) unmarkOccurrences(node);
+  }, []);
+
+  const showOccurrences = useCallback(
+    (target: Target | null) => {
+      clearOccurrences();
+      if (target === null) return;
+      const controller = new AbortController();
+      occurrencesRequest.current = controller;
+      const key = keyOf(target);
+      cached(highlightsCache, key, () =>
+        callApi('getHighlights', {
+          params: [reviewId],
+          query: { path: target.path, line: target.pos.line, character: target.pos.character },
+          signal: controller.signal,
+        }).then((r) => r.highlights),
+      )
+        .then((ranges) => {
+          // Nothing found may be a server switched off or still starting: asked again next time.
+          if (ranges.length === 0) highlightsCache.delete(key);
+          if (occurrencesRequest.current !== controller) return;
+          occurrencesRequest.current = null;
+          if (ranges.length === 0) return;
+          occurrences.current = { path: target.path, ranges };
+          const node = containers.current.get(target.path);
+          if (node !== undefined) markOccurrences(node, ranges);
+        })
+        .catch(() => undefined);
+    },
+    [clearOccurrences, keyOf, reviewId],
   );
+
+  const onTokenClick = useCallback(
+    (props: TokenProps, event: MouseEvent, context: TokenContext) => {
+      const target = diffTarget(props, context);
+      if (event.detail === 2 && !(IS_MAC ? event.metaKey : event.ctrlKey)) showOccurrences(target);
+      else click(target, event);
+    },
+    [click, diffTarget, showOccurrences],
+  );
+
+  // Rows are rebuilt as the diff scrolls and re-renders: marks follow them.
+  const onPostRender = useCallback((node: HTMLElement, _instance: unknown, phase: PostRenderPhase, context: TokenContext) => {
+    const path = context.item.id;
+    if (phase === 'unmount') {
+      if (containers.current.get(path) === node) containers.current.delete(path);
+      unmarkOccurrences(node);
+      return;
+    }
+    containers.current.set(path, node);
+    const shown = occurrences.current;
+    if (shown === null) return;
+    unmarkOccurrences(node);
+    if (shown.path === path) markOccurrences(node, shown.ranges);
+  }, []);
+
+  // A single click anywhere (the first of a new double-click included), or Esc, clears the marks.
+  useEffect(() => {
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.detail < 2) clearOccurrences();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') clearOccurrences();
+    };
+    window.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [clearOccurrences]);
   const preview = useMemo(
     () => ({
       onTokenEnter: (props: TokenProps, event: PointerEvent, file: LspFile) => enter(previewTarget(props, file), event),
@@ -412,7 +524,7 @@ export function useCodeIntel(): {
     </>
   );
 
-  return { onTokenEnter, onTokenLeave: leave, onTokenClick, overlay };
+  return { onTokenEnter, onTokenLeave: leave, onTokenClick, onPostRender, overlay };
 }
 
 function HoverPopover({
