@@ -16,6 +16,7 @@
  * choices are the only stored server settings.
  */
 import type { DataUsage, FullDiskAccess, Integrations, Repo, Review, ReviewSummary } from '@joinery/core';
+import { NumberField } from '@base-ui-components/react/number-field';
 import { Switch } from '@base-ui-components/react/switch';
 import {
   Archive,
@@ -380,31 +381,29 @@ function LanguageServerRow({ row, onChanged }: { row: Integrations['lsp'][number
 function HoverCardsRow(): React.JSX.Element {
   const on = useHoverEnabled();
   const delay = useHoverDelay();
-  // The field's own text, so it can be empty or half-typed; a valid number is saved as it's typed.
-  const [text, setText] = useState(String(delay));
   return (
     <Row icon={<MousePointer2 strokeWidth={1.75} />} title="Show types on hover" detail={`Signature and docs when the pointer rests on a name; ${PEEK_KEY}-click jumps either way`}>
       {on && (
-        <label className="flex h-7 items-center gap-1 rounded-md border border-chrome-border bg-chrome-bg-raised pr-2 text-xs text-chrome-fg-subtle transition-colors hover:border-chrome-border-strong focus-within:border-chrome-accent">
-          <input
-            type="number"
-            inputMode="numeric"
-            min={0}
-            max={MAX_HOVER_DELAY_MS}
-            step={50}
-            value={text}
-            onChange={(e) => {
-              setText(e.target.value);
-              const ms = Number(e.target.value);
-              if (e.target.value.trim() !== '' && Number.isFinite(ms)) setHoverDelay(ms);
-            }}
-            onBlur={() => setText(String(delay))}
-            aria-label="Hover delay in milliseconds"
-            title="How long the pointer rests on a name before the card shows"
-            className="w-14 bg-transparent pl-2 text-right tabular-nums text-chrome-fg outline-hidden [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-          />
-          ms
-        </label>
+        // A valid number is saved as it's typed; an empty or half-typed field snaps back to the saved delay on blur.
+        <NumberField.Root
+          value={delay}
+          onValueChange={(ms) => {
+            if (ms !== null) setHoverDelay(ms);
+          }}
+          min={0}
+          max={MAX_HOVER_DELAY_MS}
+          step={50}
+          format={{ useGrouping: false }}
+        >
+          <NumberField.Group className="flex h-7 items-center gap-1 rounded-md border border-chrome-border bg-chrome-bg-raised pr-2 text-xs text-chrome-fg-subtle transition-colors hover:border-chrome-border-strong focus-within:border-chrome-accent">
+            <NumberField.Input
+              aria-label="Hover delay in milliseconds"
+              title="How long the pointer rests on a name before the card shows"
+              className="w-14 bg-transparent pl-2 text-right tabular-nums text-chrome-fg outline-hidden"
+            />
+            ms
+          </NumberField.Group>
+        </NumberField.Root>
       )}
       <Switch.Root checked={on} onCheckedChange={setHoverEnabled} aria-label={`Show types on hover: ${on ? 'on' : 'off'}`} className={SWITCH_ROOT_CLASS}>
         <Switch.Thumb className={SWITCH_THUMB_CLASS} />

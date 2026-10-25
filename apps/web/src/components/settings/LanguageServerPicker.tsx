@@ -11,6 +11,7 @@
  * runs, or what's wrong, with those links) and `editor` (the custom path
  * form, while open) its way.
  */
+import { Input } from '@base-ui-components/react/input';
 import { Switch } from '@base-ui-components/react/switch';
 import { LSP_DEFAULT_SERVER, LSP_SERVERS, type Integrations, type LspChoice, type LspServerId } from '@joinery/core';
 import { useState } from 'react';
@@ -178,7 +179,7 @@ export function useLanguageServerPicker(
         title="Which server it is, so Joinery starts it the right way"
         className="shrink-0"
       />
-      <input
+      <Input
         value={custom.path}
         onChange={(e) => {
           setCustom((c) => ({ ...c, path: e.target.value }));
