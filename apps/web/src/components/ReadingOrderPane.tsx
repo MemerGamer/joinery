@@ -9,6 +9,7 @@
  * the initial empty state below. The title row doubles as the home for the
  * Threads entry point, since the threads panel slides over this pane.
  */
+import { Collapsible } from '@base-ui-components/react/collapsible';
 import type { AgentModel } from '@joinery/core';
 import { AlertTriangle, Check, ChevronRight, Loader2, MessageSquare } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -223,89 +224,95 @@ export function ReadingOrderPane(): React.JSX.Element {
                 const isCollapsed = !isExpanded(step.id);
                 const hasGuidance = step.guidance.length > 0;
                 const isCurrent = idx === currentStepIndex;
-                return (
-                  <li
-                    key={step.id}
-                    ref={(el) => {
-                      if (el === null) stepRefs.current.delete(step.id);
-                      else stepRefs.current.set(step.id, el);
-                    }}
-                    aria-current={isCurrent ? 'step' : undefined}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!hasGuidance) return;
-                        setHandToggled((prev) => new Map(prev).set(step.id, isCollapsed));
-                      }}
-                      aria-expanded={hasGuidance ? !isCollapsed : undefined}
-                      className="group flex w-full items-baseline gap-2 rounded-md py-1.5 pl-1.5 pr-2 text-left text-[14px] text-chrome-fg transition-colors hover:bg-chrome-bg-hover"
+                const heading = (
+                  <>
+                    <span
+                      className={`w-5 shrink-0 text-right font-mono text-micro tabular-nums ${
+                        isCurrent ? 'text-chrome-accent' : 'text-chrome-fg-subtle group-hover:text-chrome-fg-muted'
+                      }`}
+                      aria-hidden
                     >
+                      {String(idx + 1).padStart(2, '0')}
+                    </span>
+                    {/* Titles wrap rather than truncate; the number sits on the first
+                        line's baseline and the chevron centres on that line. */}
+                    <span className="min-w-0 flex-1 break-words font-medium">{step.title}</span>
+                    {step.attention !== null && (
                       <span
-                        className={`w-5 shrink-0 text-right font-mono text-micro tabular-nums ${
-                          isCurrent ? 'text-chrome-accent' : 'text-chrome-fg-subtle group-hover:text-chrome-fg-muted'
+                        className={`shrink-0 self-start rounded px-1.5 text-micro font-medium ${
+                          step.attention === 'focus'
+                            ? 'bg-chrome-accent/15 text-chrome-accent'
+                            : 'bg-chrome-bg-hover text-chrome-fg-subtle'
                         }`}
-                        aria-hidden
                       >
-                        {String(idx + 1).padStart(2, '0')}
+                        {step.attention === 'focus' ? 'Focus' : 'Skim'}
                       </span>
-                      {/* Titles wrap rather than truncate; the number sits on the first
-                          line's baseline and the chevron centres on that line. */}
-                      <span className="min-w-0 flex-1 break-words font-medium">{step.title}</span>
-                      {step.attention !== null && (
-                        <span
-                          className={`shrink-0 self-start rounded px-1.5 text-micro font-medium ${
-                            step.attention === 'focus'
-                              ? 'bg-chrome-accent/15 text-chrome-accent'
-                              : 'bg-chrome-bg-hover text-chrome-fg-subtle'
+                    )}
+                    {hasGuidance && (
+                      <span className="flex h-[1lh] shrink-0 items-center self-start" aria-hidden>
+                        <ChevronRight
+                          size={13}
+                          strokeWidth={1.75}
+                          className={`text-chrome-fg-subtle transition-transform duration-200 ease-out ${
+                            isCollapsed ? '' : 'rotate-90'
                           }`}
-                        >
-                          {step.attention === 'focus' ? 'Focus' : 'Skim'}
-                        </span>
-                      )}
-                      {hasGuidance && (
-                        <span className="flex h-[1lh] shrink-0 items-center self-start" aria-hidden>
-                          <ChevronRight
-                            size={13}
-                            strokeWidth={1.75}
-                            className={`text-chrome-fg-subtle transition-transform duration-200 ease-out ${
-                              isCollapsed ? '' : 'rotate-90'
-                            }`}
-                          />
-                        </span>
-                      )}
-                    </button>
+                        />
+                      </span>
+                    )}
+                  </>
+                );
+                return (
+                  <Collapsible.Root
+                    key={step.id}
+                    // The guidance folds; a step without any has nothing to fold.
+                    open={hasGuidance && !isCollapsed}
+                    onOpenChange={(open) => setHandToggled((prev) => new Map(prev).set(step.id, open))}
+                    disabled={!hasGuidance}
+                    render={
+                      <li
+                        ref={(el) => {
+                          if (el === null) stepRefs.current.delete(step.id);
+                          else stepRefs.current.set(step.id, el);
+                        }}
+                        aria-current={isCurrent ? 'step' : undefined}
+                      />
+                    }
+                  >
+                    {hasGuidance ? (
+                      <Collapsible.Trigger className="group flex w-full items-baseline gap-2 rounded-md py-1.5 pl-1.5 pr-2 text-left text-[14px] text-chrome-fg transition-colors hover:bg-chrome-bg-hover">
+                        {heading}
+                      </Collapsible.Trigger>
+                    ) : (
+                      <div className="group flex w-full items-baseline gap-2 rounded-md py-1.5 pl-1.5 pr-2 text-left text-[14px] text-chrome-fg">
+                        {heading}
+                      </div>
+                    )}
                     <div className="mb-2 ml-[2.125rem]">
-                      {/* Folding animates `grid-template-rows` between 0fr and
-                          1fr: it tweens to the content's natural height without
-                          measuring it. The guidance stays mounted while
-                          folded, so `inert` keeps its links out of the tab
-                          order. The file list below never folds. */}
+                      {/* Folding animates the panel's height between 0 and Base UI's
+                          measured `--collapsible-panel-height`, with a fade; once
+                          folded, Base UI hides it, which keeps its links out of the
+                          tab order. The file list below never folds. */}
                       {hasGuidance && (
-                        <div
-                          inert={isCollapsed}
+                        <Collapsible.Panel
+                          keepMounted
                           onTransitionEnd={(e) => {
                             if (e.target !== e.currentTarget || pendingRevealRef.current !== step.id) return;
                             pendingRevealRef.current = null;
                             reveal(step.id);
                           }}
-                          className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
-                            isCollapsed ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'
-                          }`}
+                          className="h-(--collapsible-panel-height) overflow-hidden opacity-100 transition-[height,opacity] duration-200 ease-out data-ending-style:h-0 data-ending-style:opacity-0 data-starting-style:h-0 data-starting-style:opacity-0"
                         >
-                          <div className="min-h-0 overflow-hidden">
-                            {/* The step's guidance used to render as a header card
-                                above the diff (see ReviewCodeView.tsx); it lives here
-                                now, right next to the step's own files. `prose-sm` in
-                                `Markdown` is unconstrained, so cap it to this narrow
-                                column explicitly rather than letting e.g. a wide code
-                                block or table blow out the panel; the trailing right
-                                padding keeps its measure off the panel's edge. */}
-                            <div className="min-w-0 overflow-hidden pb-2 pr-2 pt-0.5 text-body leading-[1.75] text-chrome-fg-muted [&_.prose-sm]:text-body [&_.prose-sm]:leading-[1.75] [&_code]:break-words [&_pre]:overflow-x-auto">
-                              <Markdown>{step.guidance}</Markdown>
-                            </div>
+                          {/* The step's guidance used to render as a header card
+                              above the diff (see ReviewCodeView.tsx); it lives here
+                              now, right next to the step's own files. `prose-sm` in
+                              `Markdown` is unconstrained, so cap it to this narrow
+                              column explicitly rather than letting e.g. a wide code
+                              block or table blow out the panel; the trailing right
+                              padding keeps its measure off the panel's edge. */}
+                          <div className="min-w-0 overflow-hidden pb-2 pr-2 pt-0.5 text-body leading-[1.75] text-chrome-fg-muted [&_.prose-sm]:text-body [&_.prose-sm]:leading-[1.75] [&_code]:break-words [&_pre]:overflow-x-auto">
+                            <Markdown>{step.guidance}</Markdown>
                           </div>
-                        </div>
+                        </Collapsible.Panel>
                       )}
                       <ul className="flex flex-col gap-0.5">
                         {step.files.map((f) => (
@@ -319,7 +326,7 @@ export function ReadingOrderPane(): React.JSX.Element {
                         ))}
                       </ul>
                     </div>
-                  </li>
+                  </Collapsible.Root>
                 );
               })}
             </ol>

@@ -4,6 +4,7 @@
  * description behind a disclosure. A branch with no PR (or no `gh`)
  * shows the stats only.
  */
+import { Collapsible } from '@base-ui-components/react/collapsible';
 import type { CiStatus, PullDetail, PullState } from '@joinery/core';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
@@ -104,26 +105,19 @@ export function ReviewSummaryCard(): React.JSX.Element | null {
         </div>
       </div>
       {hasDescription && (
-        <div className="border-t border-chrome-border">
-          <button
-            type="button"
-            onClick={() => setDescriptionOpen((v) => !v)}
-            aria-expanded={descriptionOpen}
-            className="flex h-8 w-full items-center gap-1.5 px-3 text-xs font-medium text-chrome-fg-muted hover:text-chrome-fg"
-          >
+        <Collapsible.Root open={descriptionOpen} onOpenChange={setDescriptionOpen} className="border-t border-chrome-border">
+          <Collapsible.Trigger className="flex h-8 w-full items-center gap-1.5 px-3 text-xs font-medium text-chrome-fg-muted hover:text-chrome-fg">
             {descriptionOpen ? (
               <ChevronDown size={14} strokeWidth={1.5} aria-hidden />
             ) : (
               <ChevronRight size={14} strokeWidth={1.5} aria-hidden />
             )}
             Description
-          </button>
-          {descriptionOpen && (
-            <div className="px-4 pb-3">
-              <Markdown>{pull.body}</Markdown>
-            </div>
-          )}
-        </div>
+          </Collapsible.Trigger>
+          <Collapsible.Panel className="px-4 pb-3">
+            <Markdown>{pull.body}</Markdown>
+          </Collapsible.Panel>
+        </Collapsible.Root>
       )}
     </section>
   );
