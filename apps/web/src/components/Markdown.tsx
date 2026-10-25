@@ -5,11 +5,25 @@
  */
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { getSharedHighlighter } from '@pierre/diffs';
-import { useEffect, useState, type ReactNode } from 'react';
+import { getHighlighterIfLoaded, getSharedHighlighter, type DiffsHighlighter } from '@pierre/diffs';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { PREFERRED_HIGHLIGHTER } from '../lib/workerPool.tsx';
 import { useTheme } from '../state/ThemeContext.tsx';
 
+/** Highlighted HTML, or null for a language the highlighter can't do. */
+function toHtml(highlighter: DiffsHighlighter, code: string, lang: string, theme: string): string | null {
+  try {
+    return highlighter.codeToHtml(code, { lang, theme });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Highlighted during render when the highlighter already has the theme and
+ * language, so the block's first paint is its last (a hover card sizes to it
+ * and would jump); only a cold start waits a frame or more on the plain one.
+ */
 function CodeBlock({
   className,
   children,
@@ -19,35 +33,44 @@ function CodeBlock({
 }): React.JSX.Element {
   const lang = /language-(\w+)/.exec(className ?? '')?.[1] ?? 'text';
   const code = typeof children === 'string' ? children : String(children ?? '');
-  const [html, setHtml] = useState<string | null>(null);
+  const [late, setLate] = useState<string | null>(null);
   const { chromeMode, diffTheme } = useTheme();
   const theme = chromeMode === 'dark' ? diffTheme.dark : diffTheme.light;
 
+  const loaded = getHighlighterIfLoaded({ theme, lang });
+  // undefined: not loaded yet; null: loaded, but this language can't be highlighted.
+  const now = useMemo(
+    () => (loaded === undefined ? undefined : toHtml(loaded, code, lang, theme)),
+    [loaded, code, lang, theme],
+  );
+
   useEffect(() => {
+    if (now !== undefined) return;
     let cancelled = false;
     getSharedHighlighter({ themes: [theme], langs: [lang], preferredHighlighter: PREFERRED_HIGHLIGHTER })
       .then((highlighter) => {
-        if (cancelled) return;
-        try {
-          setHtml(highlighter.codeToHtml(code, { lang, theme }));
-        } catch {
-          setHtml(null);
-        }
+        if (!cancelled) setLate(toHtml(highlighter, code, lang, theme));
       })
-      .catch(() => setHtml(null));
+      .catch(() => {
+        if (!cancelled) setLate(null);
+      });
     return () => {
       cancelled = true;
     };
-  }, [code, lang, theme]);
+  }, [now, code, lang, theme]);
 
+  const html = now ?? late;
   if (html !== null) {
-    // eslint-disable-next-line react/no-danger -- Shiki output, not user HTML.
+    // eslint-disable-next-line react/no-danger -- highlighter output, not user HTML.
     return <div className="thread-code-block text-xs" dangerouslySetInnerHTML={{ __html: html }} />;
   }
+  // The same box as the highlighted block, so swapping one for the other only changes colours.
   return (
-    <pre className="overflow-x-auto rounded bg-chrome-bg-sunken p-1.5 text-xs">
-      <code>{code}</code>
-    </pre>
+    <div className="thread-code-block text-xs">
+      <pre className="bg-chrome-bg-sunken">
+        <code>{code}</code>
+      </pre>
+    </div>
   );
 }
 

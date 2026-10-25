@@ -494,7 +494,7 @@ body {
   box-shadow: inset 0 40px 40px -40px var(--chrome-island-sheen);
 }
 
-/* Shiki-rendered fenced blocks inside markdown (thread bodies, step notes). */
+/* Fenced blocks inside markdown (thread bodies, step notes), highlighted or still plain. */
 .thread-code-block pre {
   margin: 0;
   padding: 8px 10px;
