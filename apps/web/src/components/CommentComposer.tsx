@@ -8,6 +8,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { AskButton } from './AskButton.tsx';
+import { Hint } from './controls.tsx';
 
 export function CommentComposer({
   onSubmit,
@@ -91,10 +92,12 @@ export function CommentComposer({
 
         <AskButton onAsk={() => submit(true)} disabled={empty} title="Submit and ask {model} to reply" onPicked={() => ref.current?.focus()} />
 
-        <button type="button" onClick={() => submit(false)} disabled={empty} title="Comment (⌘Enter)" className="chrome-btn-primary">
-          Comment
-          <kbd className="font-sans text-micro opacity-70">⌘↵</kbd>
-        </button>
+        <Hint label="Comment (⌘Enter)">
+          <button type="button" onClick={() => submit(false)} disabled={empty} className="chrome-btn-primary">
+            Comment
+            <kbd className="font-sans text-micro opacity-70">⌘↵</kbd>
+          </button>
+        </Hint>
       </div>
     </div>
   );

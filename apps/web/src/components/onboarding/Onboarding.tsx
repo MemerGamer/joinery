@@ -42,7 +42,7 @@ import { Chip, type Tone } from '../home/primitives.tsx';
 import { LSP_TITLE, useLanguageServerPicker } from '../settings/LanguageServerPicker.tsx';
 import { REASON, hostHint } from '../settings/Settings.tsx';
 import { ThemePicker } from '../settings/ThemePicker.tsx';
-import { SEGMENT_CLASS, Segment, Segmented } from '../controls.tsx';
+import { Hint, SEGMENT_CLASS, Segment, Segmented } from '../controls.tsx';
 import { MockReview } from './MockReview.tsx';
 
 const STEPS = ['welcome', 'repos', 'tools', 'theme'] as const;
@@ -486,9 +486,11 @@ function ToolsStep(): React.JSX.Element {
   return (
     <>
       <StepActions>
-        <button type="button" onClick={reload} aria-label="Check again" title="Check again" className="chrome-icon-btn">
-          <RefreshCw size={14} strokeWidth={1.75} className={loading ? 'animate-spin' : ''} aria-hidden />
-        </button>
+        <Hint label="Check again">
+          <button type="button" onClick={reload} aria-label="Check again" className="chrome-icon-btn">
+            <RefreshCw size={14} strokeWidth={1.75} className={loading ? 'animate-spin' : ''} aria-hidden />
+          </button>
+        </Hint>
       </StepActions>
       <div className={`flex flex-col gap-5 transition-opacity ${loading && data !== null ? 'opacity-60' : ''}`}>
         <ToolGroup title="Basics">{rows(BASICS)}</ToolGroup>
@@ -530,23 +532,25 @@ function ToolIcon({ children }: { children: React.ReactNode }): React.JSX.Elemen
 
 function ToolRow({ tool, status, loading }: { tool: Tool; status: ToolStatus | null; loading: boolean }): React.JSX.Element {
   return (
-    <li className="flex items-start gap-3.5 rounded-md px-3 py-2.5" title={status?.info}>
-      <ToolIcon>{tool.icon}</ToolIcon>
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="text-body font-medium text-chrome-fg">{tool.title}</span>
-        {tool.why !== undefined && <span className="text-xs text-chrome-fg-muted">{tool.why}</span>}
-        {status?.fix !== undefined && <code className="mt-1 truncate text-micro text-chrome-fg-subtle">{status.fix}</code>}
-      </span>
-      <span className="mt-0.5 shrink-0">
-        {status !== null ? (
-          <Chip tone={status.tone} {...(status.tone === 'success' ? { icon: <Check size={11} strokeWidth={2.5} /> } : {})}>
-            {status.label}
-          </Chip>
-        ) : (
-          <Chip>{loading ? 'Checking…' : "Couldn't check"}</Chip>
-        )}
-      </span>
-    </li>
+    <Hint label={status?.info}>
+      <li className="flex items-start gap-3.5 rounded-md px-3 py-2.5">
+        <ToolIcon>{tool.icon}</ToolIcon>
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="text-body font-medium text-chrome-fg">{tool.title}</span>
+          {tool.why !== undefined && <span className="text-xs text-chrome-fg-muted">{tool.why}</span>}
+          {status?.fix !== undefined && <code className="mt-1 truncate text-micro text-chrome-fg-subtle">{status.fix}</code>}
+        </span>
+        <span className="mt-0.5 shrink-0">
+          {status !== null ? (
+            <Chip tone={status.tone} {...(status.tone === 'success' ? { icon: <Check size={11} strokeWidth={2.5} /> } : {})}>
+              {status.label}
+            </Chip>
+          ) : (
+            <Chip>{loading ? 'Checking…' : "Couldn't check"}</Chip>
+          )}
+        </span>
+      </li>
+    </Hint>
   );
 }
 

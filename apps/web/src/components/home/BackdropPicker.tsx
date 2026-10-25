@@ -12,6 +12,7 @@ import { RadioGroup } from '@base-ui-components/react/radio-group';
 import { Tabs } from '@base-ui-components/react/tabs';
 import { useState } from 'react';
 import { GLOWS, PAINTINGS, SHAPES, glowSwatch, paintingUrl, type Backdrop, type BackdropStyle, type ShapeId } from '../../lib/covers.ts';
+import { Hint } from '../controls.tsx';
 import { GlowScene } from './GlowScene.tsx';
 
 type Tab = Backdrop['kind'];
@@ -49,9 +50,11 @@ export function BackdropPicker({
 
   return (
     <Popover.Root>
-      <Popover.Trigger aria-label="Change backdrop" title="Change backdrop" className="chrome-icon-btn">
-        <Palette size={16} strokeWidth={1.75} aria-hidden />
-      </Popover.Trigger>
+      <Hint label="Change backdrop">
+        <Popover.Trigger aria-label="Change backdrop" className="chrome-icon-btn">
+          <Palette size={16} strokeWidth={1.75} aria-hidden />
+        </Popover.Trigger>
+      </Hint>
       <Popover.Portal>
         <Popover.Positioner side="bottom" align="end" sideOffset={8} collisionPadding={8} className="z-50">
           <Popover.Popup aria-label="Backdrop" className="home-island flex w-72 flex-col gap-3 p-3 outline-hidden">
@@ -93,18 +96,18 @@ export function BackdropPicker({
                   className="grid grid-cols-6 gap-2"
                 >
                   {GLOWS.map((g) => (
-                    <Radio.Root
-                      key={g.id}
-                      value={g.id}
-                      title={g.name}
-                      aria-label={g.name}
-                      className={`${SWATCH_CLASS} flex aspect-square items-center justify-center`}
-                      style={{ background: glowSwatch(g) }}
-                    >
-                      <Radio.Indicator>
-                        <Check size={13} strokeWidth={3} className="text-white drop-shadow" aria-hidden />
-                      </Radio.Indicator>
-                    </Radio.Root>
+                    <Hint key={g.id} label={g.name}>
+                      <Radio.Root
+                        value={g.id}
+                        aria-label={g.name}
+                        className={`${SWATCH_CLASS} flex aspect-square items-center justify-center`}
+                        style={{ background: glowSwatch(g) }}
+                      >
+                        <Radio.Indicator>
+                          <Check size={13} strokeWidth={3} className="text-white drop-shadow" aria-hidden />
+                        </Radio.Indicator>
+                      </Radio.Root>
+                    </Hint>
                   ))}
                 </RadioGroup>
 
@@ -121,7 +124,6 @@ export function BackdropPicker({
                         <Radio.Root
                           key={s.id}
                           value={s.id}
-                          title={s.name}
                           className={`${SWATCH_CLASS} relative aspect-[4/3] overflow-hidden`}
                         >
                           <GlowScene glow={previewGlow} shape={s.id} />
@@ -143,18 +145,18 @@ export function BackdropPicker({
                   className="grid grid-cols-4 gap-2"
                 >
                   {PAINTINGS.map((p) => (
-                    <Radio.Root
-                      key={p.id}
-                      value={p.id}
-                      title={`${p.name} — ${p.artist}`}
-                      aria-label={`${p.name} — ${p.artist}`}
-                      className={`${SWATCH_CLASS} relative aspect-[4/3] overflow-hidden bg-chrome-bg-hover`}
-                    >
-                      <img src={paintingUrl(p, 'thumb')} alt="" loading="lazy" className="size-full object-cover" />
-                      <Radio.Indicator className="absolute inset-0 flex items-center justify-center bg-black/30">
-                        <Check size={14} strokeWidth={3} className="text-white" aria-hidden />
-                      </Radio.Indicator>
-                    </Radio.Root>
+                    <Hint key={p.id} label={`${p.name} — ${p.artist}`}>
+                      <Radio.Root
+                        value={p.id}
+                        aria-label={`${p.name} — ${p.artist}`}
+                        className={`${SWATCH_CLASS} relative aspect-[4/3] overflow-hidden bg-chrome-bg-hover`}
+                      >
+                        <img src={paintingUrl(p, 'thumb')} alt="" loading="lazy" className="size-full object-cover" />
+                        <Radio.Indicator className="absolute inset-0 flex items-center justify-center bg-black/30">
+                          <Check size={14} strokeWidth={3} className="text-white" aria-hidden />
+                        </Radio.Indicator>
+                      </Radio.Root>
+                    </Hint>
                   ))}
                 </RadioGroup>
 

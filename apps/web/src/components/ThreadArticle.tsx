@@ -18,6 +18,7 @@ import { Markdown } from './Markdown.tsx';
 import { ReactionBar, ReactionPicker } from './ReactionBar.tsx';
 import { threadSummary } from '../lib/threadSummary.ts';
 import { useReview } from '../state/ReviewContext.tsx';
+import { Hint } from './controls.tsx';
 
 /**
  * `createdAt` comes from SQLite's `unixepoch()` (seconds); anything that
@@ -116,22 +117,23 @@ export function ThreadArticle({
         onFocusCapture={markActive}
         className="w-full max-w-2xl rounded-[4px] font-sans"
       >
-        <button
-          type="button"
-          onClick={() => setCollapsed(false)}
-          aria-expanded={false}
-          title={commentCount === 1 ? '1 comment' : `${commentCount} comments`}
-          className="flex h-[22px] w-full min-w-0 items-center gap-2 rounded-[4px] px-2 text-left text-xs text-chrome-fg-muted transition-colors hover:bg-chrome-bg-hover"
-        >
-          <MessageSquare
-            size={12}
-            strokeWidth={1.75}
-            fill="currentColor"
-            className={`shrink-0 ${resolved ? 'text-chrome-success' : 'text-chrome-accent'}`}
-            aria-hidden
-          />
-          <span className="min-w-0 flex-1 truncate">{summary}</span>
-        </button>
+        <Hint label={commentCount === 1 ? '1 comment' : `${commentCount} comments`}>
+          <button
+            type="button"
+            onClick={() => setCollapsed(false)}
+            aria-expanded={false}
+            className="flex h-[22px] w-full min-w-0 items-center gap-2 rounded-[4px] px-2 text-left text-xs text-chrome-fg-muted transition-colors hover:bg-chrome-bg-hover"
+          >
+            <MessageSquare
+              size={12}
+              strokeWidth={1.75}
+              fill="currentColor"
+              className={`shrink-0 ${resolved ? 'text-chrome-success' : 'text-chrome-accent'}`}
+              aria-hidden
+            />
+            <span className="min-w-0 flex-1 truncate">{summary}</span>
+          </button>
+        </Hint>
       </article>
     );
   }
@@ -153,16 +155,17 @@ export function ThreadArticle({
         }}
         className={`flex cursor-pointer items-center gap-1.5 pl-2 pr-3 pt-2 ${hasBadges ? 'pb-0.5' : '-mb-1.5'}`}
       >
-        <button
-          type="button"
-          onClick={() => setCollapsed(true)}
-          aria-expanded
-          aria-label="Collapse thread"
-          title="Collapse thread"
-          className="chrome-icon-btn size-6 text-chrome-fg-subtle"
-        >
-          <ChevronDown size={13} strokeWidth={1.75} aria-hidden />
-        </button>
+        <Hint label="Collapse thread">
+          <button
+            type="button"
+            onClick={() => setCollapsed(true)}
+            aria-expanded
+            aria-label="Collapse thread"
+            className="chrome-icon-btn size-6 text-chrome-fg-subtle"
+          >
+            <ChevronDown size={13} strokeWidth={1.75} aria-hidden />
+          </button>
+        </Hint>
         {hasBadges && (
           <>
           {thread.outdated && (
@@ -179,18 +182,19 @@ export function ThreadArticle({
         )}
         <div className="ml-auto flex items-center gap-0.5">
           {/* A toggle names its state, not the action: "Resolved, pressed" rather than "Reopen thread, pressed". */}
-          <Toggle
-            pressed={resolved}
-            onPressedChange={(next) => void resolve(next)}
-            aria-label="Resolved"
-            title={resolved ? 'Reopen thread' : 'Resolve thread'}
-            className={`chrome-icon-btn h-6 gap-1 text-xs font-medium ${
-              resolved ? 'w-auto px-1.5 text-chrome-success! hover:text-chrome-success!' : 'w-6 text-chrome-fg-subtle'
-            }`}
-          >
-            <Check size={14} strokeWidth={resolved ? 2.5 : 1.75} aria-hidden />
-            {resolved && 'Resolved'}
-          </Toggle>
+          <Hint label={resolved ? 'Reopen thread' : 'Resolve thread'}>
+            <Toggle
+              pressed={resolved}
+              onPressedChange={(next) => void resolve(next)}
+              aria-label="Resolved"
+              className={`chrome-icon-btn h-6 gap-1 text-xs font-medium ${
+                resolved ? 'w-auto px-1.5 text-chrome-success! hover:text-chrome-success!' : 'w-6 text-chrome-fg-subtle'
+              }`}
+            >
+              <Check size={14} strokeWidth={resolved ? 2.5 : 1.75} aria-hidden />
+              {resolved && 'Resolved'}
+            </Toggle>
+          </Hint>
           <ConfirmDelete
             onConfirm={deleteThread}
             prompt="Delete this thread and all its comments?"

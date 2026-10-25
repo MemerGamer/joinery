@@ -5,6 +5,7 @@
 import { Menu } from '@base-ui-components/react/menu';
 import { Switch } from '@base-ui-components/react/switch';
 import { Toggle } from '@base-ui-components/react/toggle';
+import { Tooltip } from '@base-ui-components/react/tooltip';
 import { ToggleGroup } from '@base-ui-components/react/toggle-group';
 
 /**
@@ -60,9 +61,11 @@ export function Segment({
   title?: string | undefined;
 }): React.JSX.Element {
   return (
-    <Toggle value={value} title={title} className={className}>
-      {children}
-    </Toggle>
+    <Hint label={title}>
+      <Toggle value={value} className={className}>
+        {children}
+      </Toggle>
+    </Hint>
   );
 }
 
@@ -81,15 +84,17 @@ export const POPUP_ITEM_CLASS =
 export const POPUP_LABEL_CLASS = 'px-2 pt-1.5 pb-1 text-micro font-medium text-chrome-fg-subtle';
 
 const MENU_TRIGGER_CLASS =
-  'chrome-icon-btn relative size-6 text-chrome-fg-muted data-popup-open:bg-chrome-bg-active data-popup-open:text-chrome-fg';
+  'chrome-icon-btn relative size-6 text-chrome-fg-muted aria-expanded:bg-chrome-bg-active aria-expanded:text-chrome-fg';
 
 /** An icon-triggered menu, as the Homebase and Explore panel headers use. */
 export function MenuShell({ trigger, label, children }: { trigger: React.ReactNode; label: string; children: React.ReactNode }): React.JSX.Element {
   return (
     <Menu.Root modal={false}>
-      <Menu.Trigger aria-label={label} title={label} className={MENU_TRIGGER_CLASS}>
-        {trigger}
-      </Menu.Trigger>
+      <Hint label={label}>
+        <Menu.Trigger aria-label={label} className={MENU_TRIGGER_CLASS}>
+          {trigger}
+        </Menu.Trigger>
+      </Hint>
       <Menu.Portal>
         <Menu.Positioner side="bottom" align="end" sideOffset={4} collisionPadding={8} className="z-50">
           <Menu.Popup className={`${MENU_POPUP_CLASS} min-w-48`}>{children}</Menu.Popup>
@@ -122,15 +127,63 @@ export function ChromeSwitch({
   title?: string | undefined;
 }): React.JSX.Element {
   return (
-    <Switch.Root
-      checked={checked}
-      onCheckedChange={(next) => onCheckedChange(next)}
-      disabled={disabled}
-      aria-label={label}
-      title={title}
-      className="relative inline-flex h-[18px] w-8 shrink-0 cursor-pointer items-center rounded-full bg-chrome-bg-active p-0.5 transition-colors data-checked:bg-chrome-accent data-disabled:cursor-default data-disabled:opacity-60"
-    >
-      <Switch.Thumb className="size-3.5 rounded-full bg-chrome-fg shadow-sm transition-transform data-checked:translate-x-3.5 data-checked:bg-chrome-accent-fg" />
-    </Switch.Root>
+    <Hint label={title}>
+      <Switch.Root
+        checked={checked}
+        onCheckedChange={(next) => onCheckedChange(next)}
+        disabled={disabled}
+        aria-label={label}
+        className="relative inline-flex h-[18px] w-8 shrink-0 cursor-pointer items-center rounded-full bg-chrome-bg-active p-0.5 transition-colors data-checked:bg-chrome-accent data-disabled:cursor-default data-disabled:opacity-60"
+      >
+        <Switch.Thumb className="size-3.5 rounded-full bg-chrome-fg shadow-sm transition-transform data-checked:translate-x-3.5 data-checked:bg-chrome-accent-fg" />
+      </Switch.Root>
+    </Hint>
+  );
+}
+
+/**
+ * App-wide tooltip timing. The first hint waits `delay`; once one has
+ * shown, moving onto another within `timeout` opens it at once, and after a
+ * longer pause the full delay applies again.
+ */
+export function HintProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return (
+    <Tooltip.Provider delay={600} closeDelay={0} timeout={400}>
+      {children}
+    </Tooltip.Provider>
+  );
+}
+
+/**
+ * A hover/focus hint on `children` (Base UI Tooltip), in place of the
+ * native `title`. `children` must be one element that takes a ref and
+ * props: a DOM element or a Base UI part. A hint is visual only, so an
+ * icon-only control still needs its own `aria-label`. The trigger gets
+ * `data-popup-open` while the hint shows, so a menu or select trigger under a
+ * hint styles its open state on `aria-expanded` instead. No `label`, no hint;
+ * the tooltip is only disabled then, so a label that comes and goes doesn't
+ * remount the control.
+ */
+export function Hint({
+  label,
+  children,
+  side = 'top',
+}: {
+  label: React.ReactNode;
+  children: React.ReactElement<Record<string, unknown>>;
+  side?: 'top' | 'bottom' | 'left' | 'right';
+}): React.JSX.Element {
+  const empty = label === undefined || label === null || label === false || label === '';
+  return (
+    <Tooltip.Root disabled={empty}>
+      <Tooltip.Trigger render={children} />
+      <Tooltip.Portal>
+        <Tooltip.Positioner side={side} sideOffset={6} collisionPadding={8} className="z-[100]">
+          <Tooltip.Popup className="max-w-80 whitespace-pre-line break-words rounded-md bg-chrome-bg-raised px-2 py-1 font-sans text-xs text-chrome-fg shadow-chrome ring-1 ring-chrome-fg/10 transition-opacity duration-100 data-ending-style:opacity-0 data-instant:transition-none data-starting-style:opacity-0">
+            {label}
+          </Tooltip.Popup>
+        </Tooltip.Positioner>
+      </Tooltip.Portal>
+    </Tooltip.Root>
   );
 }

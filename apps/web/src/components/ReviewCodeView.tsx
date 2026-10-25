@@ -29,6 +29,7 @@ import { ReviewFooter } from './ReviewFooter.tsx';
 import { ReviewSummaryCard } from './ReviewSummaryCard.tsx';
 import { useSelectionComment } from './SelectionComment.tsx';
 import { ThreadArticle } from './ThreadArticle.tsx';
+import { Hint } from './controls.tsx';
 
 /**
  * Diff density, in one place. These are *both* the `@pierre/diffs` CSS custom
@@ -339,35 +340,37 @@ export function ReviewCodeView(): React.JSX.Element {
           if (entry === undefined) return null;
           const viewed = isViewed(entry);
           return (
-            <Checkbox.Root
-              checked={viewed}
-              onCheckedChange={() => void toggleViewed(entry.path)}
-              title={viewed ? 'Viewed — unchecks itself when this file changes' : 'Mark as viewed'}
-              className="relative z-1 flex h-6 shrink-0 select-none items-center gap-1.5 rounded-md px-2 font-sans text-xs text-chrome-fg-muted transition-colors not-data-checked:hover:bg-chrome-bg-hover not-data-checked:hover:text-chrome-fg data-checked:bg-chrome-success-bg data-checked:text-chrome-success"
-            >
-              <Check size={12} strokeWidth={viewed ? 2.5 : 1.75} aria-hidden />
-              Viewed
-            </Checkbox.Root>
+            <Hint label={viewed ? 'Viewed — unchecks itself when this file changes' : 'Mark as viewed'}>
+              <Checkbox.Root
+                checked={viewed}
+                onCheckedChange={() => void toggleViewed(entry.path)}
+                className="relative z-1 flex h-6 shrink-0 select-none items-center gap-1.5 rounded-md px-2 font-sans text-xs text-chrome-fg-muted transition-colors not-data-checked:hover:bg-chrome-bg-hover not-data-checked:hover:text-chrome-fg data-checked:bg-chrome-success-bg data-checked:text-chrome-success"
+              >
+                <Check size={12} strokeWidth={viewed ? 2.5 : 1.75} aria-hidden />
+                Viewed
+              </Checkbox.Root>
+            </Hint>
           );
         }}
         renderHeaderPrefix={(item: CodeViewItem<ThreadAnnotationMeta>) => (
-          <button
-            type="button"
-            onClick={() => toggleFileCollapsed(item.id)}
-            aria-label={item.collapsed === true ? `Expand ${item.id}` : `Collapse ${item.id}`}
-            title={item.collapsed === true ? `Expand ${item.id}` : `Collapse ${item.id}`}
-            aria-expanded={item.collapsed !== true}
-            // `after:` stretches the hit area over the whole header (the
-            // nearest positioned ancestor), so its empty space folds the file
-            // too; the title, counts, and "Viewed" sit above it.
-            className="chrome-icon-btn -ml-1 size-6 text-chrome-fg-subtle after:absolute after:inset-0 after:cursor-pointer"
-          >
-            {item.collapsed === true ? (
-              <ChevronRight size={14} strokeWidth={1.5} aria-hidden />
-            ) : (
-              <ChevronDown size={14} strokeWidth={1.5} aria-hidden />
-            )}
-          </button>
+          <Hint label={item.collapsed === true ? `Expand ${item.id}` : `Collapse ${item.id}`}>
+            <button
+              type="button"
+              onClick={() => toggleFileCollapsed(item.id)}
+              aria-label={item.collapsed === true ? `Expand ${item.id}` : `Collapse ${item.id}`}
+              aria-expanded={item.collapsed !== true}
+              // `after:` stretches the hit area over the whole header (the
+              // nearest positioned ancestor), so its empty space folds the file
+              // too; the title, counts, and "Viewed" sit above it.
+              className="chrome-icon-btn -ml-1 size-6 text-chrome-fg-subtle after:absolute after:inset-0 after:cursor-pointer"
+            >
+              {item.collapsed === true ? (
+                <ChevronRight size={14} strokeWidth={1.5} aria-hidden />
+              ) : (
+                <ChevronDown size={14} strokeWidth={1.5} aria-hidden />
+              )}
+            </button>
+          </Hint>
         )}
         renderAnnotation={(...[annotation]: CodeViewAnnotationArgs<ThreadAnnotationMeta>) => {
           const meta = annotation.metadata;

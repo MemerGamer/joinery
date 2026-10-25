@@ -38,7 +38,7 @@ import {
   RECENT_DAYS,
   type BranchFilters,
 } from './home/BranchMenus.tsx';
-import { Segment, Segmented } from './controls.tsx';
+import { Hint, Segment, Segmented } from './controls.tsx';
 import { FolderPicker } from './home/FolderPicker.tsx';
 import { Panel } from './home/Panel.tsx';
 import { Avatar, Chip, CiIcon, EffortMeter, SectionHeading, type Tone } from './home/primitives.tsx';
@@ -741,18 +741,19 @@ function BranchRow({
           </span>
         </span>
         <span className="flex shrink-0 flex-col items-end gap-1 pt-0.5">
-          <span
-            className="flex items-center gap-1 text-micro text-chrome-fg-muted"
-            title={b.hasLocalRef && b.hasRemoteRef ? 'Local and on origin' : b.hasLocalRef ? 'Local only' : 'Only on origin'}
-          >
-            {b.hasLocalRef && <HardDrive size={11} strokeWidth={2} aria-label="local" />}
-            {b.hasRemoteRef && <Cloud size={11} strokeWidth={2} aria-label="origin" />}
-            {!isDefault && b.ahead !== null && b.behind !== null && (b.ahead > 0 || b.behind > 0) && (
-              <span className="tabular-nums">
-                ↑{b.ahead} ↓{b.behind}
-              </span>
-            )}
-          </span>
+          <Hint label={b.hasLocalRef && b.hasRemoteRef ? 'Local and on origin' : b.hasLocalRef ? 'Local only' : 'Only on origin'}>
+            <span
+              className="flex items-center gap-1 text-micro text-chrome-fg-muted"
+            >
+              {b.hasLocalRef && <HardDrive size={11} strokeWidth={2} aria-label="local" />}
+              {b.hasRemoteRef && <Cloud size={11} strokeWidth={2} aria-label="origin" />}
+              {!isDefault && b.ahead !== null && b.behind !== null && (b.ahead > 0 || b.behind > 0) && (
+                <span className="tabular-nums">
+                  ↑{b.ahead} ↓{b.behind}
+                </span>
+              )}
+            </span>
+          </Hint>
           <span className="text-micro tabular-nums text-chrome-fg-subtle">{relativeTime(b.committerDate)}</span>
         </span>
       </button>

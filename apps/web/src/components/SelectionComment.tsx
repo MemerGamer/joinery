@@ -11,6 +11,7 @@ import { MessageSquarePlus } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { DraftThread } from '../state/ReviewContext.tsx';
+import { Hint } from './controls.tsx';
 
 /** How long a released selection sits before the button shows. */
 const SHOW_DELAY_MS = 350;
@@ -182,26 +183,27 @@ export function useSelectionComment(startDraftThread: (draft: DraftThread) => vo
     offer === null
       ? null
       : createPortal(
-          <button
-            ref={buttonRef}
-            type="button"
-            title="Comment on the selection"
-            aria-label="Comment on the selection"
-            // Pressing a button can collapse the selection, which would hide
-            // this button before the click lands.
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => {
-              setOffer(null);
-              document.getSelection()?.removeAllRanges();
-              startDraftThread(offer.draft);
-            }}
-            style={{ left: offer.left, top: offer.top, width: BUTTON_SIZE, height: BUTTON_SIZE }}
-            // Not `chrome-icon-btn`: its hover swaps in a translucent
-            // background, and this floats over code.
-            className="fixed z-[60] inline-flex items-center justify-center rounded-md bg-chrome-bg-raised text-chrome-fg-muted shadow-chrome ring-1 ring-chrome-fg/10 transition-colors hover:text-chrome-fg hover:ring-chrome-fg/25"
-          >
-            <MessageSquarePlus size={14} strokeWidth={1.75} aria-hidden />
-          </button>,
+          <Hint label="Comment on the selection">
+            <button
+              ref={buttonRef}
+              type="button"
+              aria-label="Comment on the selection"
+              // Pressing a button can collapse the selection, which would hide
+              // this button before the click lands.
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                setOffer(null);
+                document.getSelection()?.removeAllRanges();
+                startDraftThread(offer.draft);
+              }}
+              style={{ left: offer.left, top: offer.top, width: BUTTON_SIZE, height: BUTTON_SIZE }}
+              // Not `chrome-icon-btn`: its hover swaps in a translucent
+              // background, and this floats over code.
+              className="fixed z-[60] inline-flex items-center justify-center rounded-md bg-chrome-bg-raised text-chrome-fg-muted shadow-chrome ring-1 ring-chrome-fg/10 transition-colors hover:text-chrome-fg hover:ring-chrome-fg/25"
+            >
+              <MessageSquarePlus size={14} strokeWidth={1.75} aria-hidden />
+            </button>
+          </Hint>,
           document.body,
         );
 

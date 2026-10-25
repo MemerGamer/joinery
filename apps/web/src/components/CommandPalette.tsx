@@ -85,6 +85,7 @@ import { listThemeOptions, type ThemeOption } from '../lib/themes.ts';
 import { threadSummary } from '../lib/threadSummary.ts';
 import { useOptionalReview } from '../state/ReviewContext.tsx';
 import { useTheme, type ChromeMode } from '../state/ThemeContext.tsx';
+import { Hint } from './controls.tsx';
 
 type Mode = 'root' | 'command' | 'theme' | 'review' | 'file' | 'generate';
 
@@ -854,21 +855,23 @@ function ThemeItem({
   onSelect: () => void;
 }): React.JSX.Element {
   return (
-    <Command.Item value={themeItemValue(opt)} onSelect={onSelect} className={ITEM_CLASS} title={opt.name}>
-      {opt.colorScheme === 'light' ? (
-        <Sun size={14} strokeWidth={1.5} aria-hidden />
-      ) : (
-        <Moon size={14} strokeWidth={1.5} aria-hidden />
-      )}
-      <span className="truncate">{opt.displayName}</span>
-      <span className="ml-auto flex items-center gap-1.5">
-        {opt.colorblindSafe && (
-          <span className="rounded-[3px] bg-chrome-bg-hover px-1 text-micro text-chrome-fg-muted" title="Colorblind-safe">
-            CB
-          </span>
+    <Hint label={opt.name} side="right">
+      <Command.Item value={themeItemValue(opt)} onSelect={onSelect} className={ITEM_CLASS}>
+        {opt.colorScheme === 'light' ? (
+          <Sun size={14} strokeWidth={1.5} aria-hidden />
+        ) : (
+          <Moon size={14} strokeWidth={1.5} aria-hidden />
         )}
-        {active && <Check size={13} strokeWidth={2} className="text-chrome-accent!" aria-hidden />}
-      </span>
-    </Command.Item>
+        <span className="truncate">{opt.displayName}</span>
+        <span className="ml-auto flex items-center gap-1.5">
+          {opt.colorblindSafe && (
+            <Hint label="Colorblind-safe">
+              <span className="rounded-[3px] bg-chrome-bg-hover px-1 text-micro text-chrome-fg-muted">CB</span>
+            </Hint>
+          )}
+          {active && <Check size={13} strokeWidth={2} className="text-chrome-accent!" aria-hidden />}
+        </span>
+      </Command.Item>
+    </Hint>
   );
 }

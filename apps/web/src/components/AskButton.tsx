@@ -10,7 +10,7 @@ import { AGENT_MODELS, type AgentModel } from '@joinery/core';
 import { Check, ChevronDown } from 'lucide-react';
 import { useRef } from 'react';
 import { setAgentModel, useAgentModel } from '../lib/agentModel.ts';
-import { MENU_POPUP_CLASS, POPUP_ITEM_CLASS, Tick } from './controls.tsx';
+import { Hint, MENU_POPUP_CLASS, POPUP_ITEM_CLASS, Tick } from './controls.tsx';
 
 export function AskButton({
   onAsk,
@@ -42,15 +42,16 @@ export function AskButton({
 
   return (
     <div className="relative flex h-[26px] items-stretch rounded-md border bg-chrome-bg-hover text-xs font-medium text-chrome-fg-muted">
-      <button
-        type="button"
-        onClick={onAsk}
-        disabled={disabled}
-        title={title.replace('{model}', label)}
-        className="rounded-l-[5px] px-2.5 transition-colors hover:bg-chrome-bg-active hover:text-chrome-fg disabled:opacity-50 disabled:hover:bg-transparent"
-      >
-        {actionLabel}
-      </button>
+      <Hint label={title.replace('{model}', label)}>
+        <button
+          type="button"
+          onClick={onAsk}
+          disabled={disabled}
+          className="rounded-l-[5px] px-2.5 transition-colors hover:bg-chrome-bg-active hover:text-chrome-fg disabled:opacity-50 disabled:hover:bg-transparent"
+        >
+          {actionLabel}
+        </button>
+      </Hint>
       <span className={`my-1.5 w-px bg-chrome-border-strong ${disabled ? 'opacity-50' : ''}`} aria-hidden />
       <Menu.Root
         modal={false}

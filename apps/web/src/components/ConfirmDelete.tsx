@@ -6,6 +6,7 @@
  */
 import { Popover } from '@base-ui-components/react/popover';
 import { useRef, useState } from 'react';
+import { Hint } from './controls.tsx';
 
 export function ConfirmDelete({
   onConfirm,
@@ -52,9 +53,11 @@ export function ConfirmDelete({
         setOpen(next);
       }}
     >
-      <Popover.Trigger aria-label={triggerLabel} title={triggerLabel} className={triggerClassName}>
-        {children}
-      </Popover.Trigger>
+      <Hint label={triggerLabel}>
+        <Popover.Trigger aria-label={triggerLabel} className={triggerClassName}>
+          {children}
+        </Popover.Trigger>
+      </Hint>
       <Popover.Portal>
         <Popover.Positioner side="bottom" align="end" sideOffset={4} collisionPadding={8} className="z-50">
           <Popover.Popup

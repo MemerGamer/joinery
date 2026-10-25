@@ -5,6 +5,7 @@ import { Homebase } from './components/Homebase.tsx';
 import { ReviewWindow } from './components/ReviewWindow.tsx';
 import { Onboarding } from './components/onboarding/Onboarding.tsx';
 import { Settings } from './components/settings/Settings.tsx';
+import { HintProvider } from './components/controls.tsx';
 
 export function App(): React.JSX.Element {
   const route = useRoute();
@@ -12,14 +13,16 @@ export function App(): React.JSX.Element {
   return (
     <DiffWorkerPoolProvider>
       <ThemeProvider>
-        {route.name === 'homebase' ? (
-          <Homebase />
-        ) : route.name === 'settings' ? (
-          <Settings />
-        ) : (
-          <ReviewWindow reviewId={route.reviewId} />
-        )}
-        <Onboarding />
+        <HintProvider>
+          {route.name === 'homebase' ? (
+            <Homebase />
+          ) : route.name === 'settings' ? (
+            <Settings />
+          ) : (
+            <ReviewWindow reviewId={route.reviewId} />
+          )}
+          <Onboarding />
+        </HintProvider>
       </ThemeProvider>
     </DiffWorkerPoolProvider>
   );

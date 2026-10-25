@@ -47,7 +47,7 @@ import { goReview, goSettings } from '../lib/router.ts';
 import { useHomeData, type HomeReview } from '../state/HomeData.tsx';
 import { useTheme } from '../state/ThemeContext.tsx';
 import { CommandPalette } from './CommandPalette.tsx';
-import { MENU_POPUP_CLASS, POPUP_ITEM_CLASS, Segment, Segmented } from './controls.tsx';
+import { Hint, MENU_POPUP_CLASS, POPUP_ITEM_CLASS, Segment, Segmented } from './controls.tsx';
 import { BackdropPicker } from './home/BackdropPicker.tsx';
 import { HeroBand, HomeBackdrop } from './home/HomeBackdrop.tsx';
 import { Panel } from './home/Panel.tsx';
@@ -326,18 +326,21 @@ export function Homebase(): React.JSX.Element {
           <div className="home-topbar-right absolute top-[13px] right-4 flex h-9 items-center gap-1" data-tone={behindButtons}>
             <UpdateButton {...version} />
             <BackdropPicker value={backdrop} onChange={setBackdrop} layout={backdropStyle} onLayoutChange={setBackdropStyle} />
-            <button type="button" aria-label="Settings" title="Settings" onClick={goSettings} className="chrome-icon-btn">
-              <SettingsIcon size={16} strokeWidth={1.75} aria-hidden />
-            </button>
-            <button
-              type="button"
-              aria-label="Refresh"
-              title="Refresh"
-              onClick={() => void refresh({ force: true })}
-              className="chrome-icon-btn"
-            >
-              <RefreshCw size={16} strokeWidth={1.75} className={refreshing || loading ? 'animate-spin' : ''} aria-hidden />
-            </button>
+            <Hint label="Settings">
+              <button type="button" aria-label="Settings" onClick={goSettings} className="chrome-icon-btn">
+                <SettingsIcon size={16} strokeWidth={1.75} aria-hidden />
+              </button>
+            </Hint>
+            <Hint label="Refresh">
+              <button
+                type="button"
+                aria-label="Refresh"
+                onClick={() => void refresh({ force: true })}
+                className="chrome-icon-btn"
+              >
+                <RefreshCw size={16} strokeWidth={1.75} className={refreshing || loading ? 'animate-spin' : ''} aria-hidden />
+              </button>
+            </Hint>
           </div>
         </div>
         {hasHero && !fullWindow && <HeroBand backdrop={backdrop} painting={painting} glow={glow} mode={chromeMode} height={HERO_HEIGHT} />}
@@ -597,16 +600,17 @@ function ReviewCard({
             <span className="truncate text-body font-medium text-chrome-fg">{title}</span>
             {review.prNumber !== null &&
               (prHref !== null ? (
-                <a
-                  href={prHref}
-                  target="_blank"
-                  rel="noreferrer"
-                  title="Open pull request in a new tab"
-                  className="pointer-events-auto flex shrink-0 items-center gap-0.5 text-micro tabular-nums text-chrome-fg-subtle hover:text-chrome-fg hover:underline"
-                >
-                  <GitPullRequest size={11} strokeWidth={2} aria-hidden />
-                  {review.prNumber}
-                </a>
+                <Hint label="Open pull request in a new tab">
+                  <a
+                    href={prHref}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="pointer-events-auto flex shrink-0 items-center gap-0.5 text-micro tabular-nums text-chrome-fg-subtle hover:text-chrome-fg hover:underline"
+                  >
+                    <GitPullRequest size={11} strokeWidth={2} aria-hidden />
+                    {review.prNumber}
+                  </a>
+                </Hint>
               ) : (
                 <span className="flex shrink-0 items-center gap-0.5 text-micro tabular-nums text-chrome-fg-subtle">
                   <GitPullRequest size={11} strokeWidth={2} aria-hidden />
@@ -679,13 +683,14 @@ function ReviewOptions({
 
   return (
     <Menu.Root modal={false}>
-      <Menu.Trigger
-        aria-label="Review options"
-        title="Options"
-        className="chrome-icon-btn pointer-events-auto size-5! rounded-[5px]! data-popup-open:bg-chrome-bg-active"
-      >
-        <ChevronDown size={13} strokeWidth={2} aria-hidden />
-      </Menu.Trigger>
+      <Hint label="Options">
+        <Menu.Trigger
+          aria-label="Review options"
+          className="chrome-icon-btn pointer-events-auto size-5! rounded-[5px]! aria-expanded:bg-chrome-bg-active"
+        >
+          <ChevronDown size={13} strokeWidth={2} aria-hidden />
+        </Menu.Trigger>
+      </Hint>
       <Menu.Portal>
         <Menu.Positioner side="bottom" align="end" sideOffset={4} collisionPadding={8} className="z-50">
           <Menu.Popup className={`${MENU_POPUP_CLASS} min-w-48`}>
@@ -747,18 +752,19 @@ function DoneRow({ review: hr, onArchive }: { review: HomeReview; onArchive: (id
           </span>
         </span>
       </button>
-      <button
-        type="button"
-        aria-label="Archive review"
-        title="Archive"
-        onClick={(e) => {
-          e.stopPropagation();
-          void onArchive(review.id);
-        }}
-        className="chrome-icon-btn mr-2 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-      >
-        <Archive size={14} strokeWidth={1.75} aria-hidden />
-      </button>
+      <Hint label="Archive">
+        <button
+          type="button"
+          aria-label="Archive review"
+          onClick={(e) => {
+            e.stopPropagation();
+            void onArchive(review.id);
+          }}
+          className="chrome-icon-btn mr-2 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+        >
+          <Archive size={14} strokeWidth={1.75} aria-hidden />
+        </button>
+      </Hint>
     </li>
   );
 }

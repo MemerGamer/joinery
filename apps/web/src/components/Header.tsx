@@ -16,6 +16,7 @@ import { goHomebase } from '../lib/router.ts';
 import { useReview } from '../state/ReviewContext.tsx';
 import { useReviewPull } from './ReviewSummaryCard.tsx';
 import { RevisionPicker } from './RevisionPicker.tsx';
+import { Hint } from './controls.tsx';
 
 /**
  * "Start review" / "Reopen review" — moves a `draft`/`archived` review to
@@ -42,20 +43,21 @@ function StartReviewButton({ status }: { status: 'draft' | 'archived' }): React.
   };
 
   return (
-    <button
-      type="button"
-      onClick={() => void handleClick()}
-      disabled={starting}
-      title={error ?? undefined}
-      className="chrome-btn-primary ml-2"
-    >
-      {starting ? (
-        <Loader2 size={13} strokeWidth={1.75} className="animate-spin" aria-hidden />
-      ) : (
-        <Play size={13} strokeWidth={1.75} aria-hidden />
-      )}
-      {status === 'archived' ? 'Reopen review' : 'Start review'}
-    </button>
+    <Hint label={error ?? undefined}>
+      <button
+        type="button"
+        onClick={() => void handleClick()}
+        disabled={starting}
+        className="chrome-btn-primary ml-2"
+      >
+        {starting ? (
+          <Loader2 size={13} strokeWidth={1.75} className="animate-spin" aria-hidden />
+        ) : (
+          <Play size={13} strokeWidth={1.75} aria-hidden />
+        )}
+        {status === 'archived' ? 'Reopen review' : 'Start review'}
+      </button>
+    </Hint>
   );
 }
 
@@ -125,34 +127,37 @@ export function Header({ onOpenPalette }: { onOpenPalette: () => void }): React.
 
       {/* Breadcrumb: repo › branch. The full path is a tooltip, not a second
           line of tiny text competing with the branch name. */}
-      <div className="flex min-w-0 items-center gap-1.5 pl-1 text-body" title={repo?.rootPath}>
-        {repoName !== undefined && (
-          <>
-            <span className="truncate text-chrome-fg-muted">{repoName}</span>
-            <span className="text-chrome-fg-subtle" aria-hidden>
-              /
-            </span>
-          </>
-        )}
-        <span className="truncate font-medium text-chrome-fg">
-          {review?.branch ?? review?.pinnedSha?.slice(0, 10) ?? '…'}
-        </span>
-        {pull !== null &&
-          (pull.url !== null ? (
-            <a
-              href={pull.url}
-              target="_blank"
-              rel="noreferrer"
-              title="Open pull request in a new window"
-              className="group inline-flex shrink-0 items-center gap-0.5 tabular-nums text-chrome-fg-subtle hover:text-chrome-fg hover:underline"
-            >
-              #{pull.number}
-              <ArrowUpRight size={12} strokeWidth={1.5} aria-hidden className="opacity-0 group-hover:opacity-100" />
-            </a>
-          ) : (
-            <span className="shrink-0 tabular-nums text-chrome-fg-subtle">#{pull.number}</span>
-          ))}
-      </div>
+      <Hint label={repo?.rootPath}>
+        <div className="flex min-w-0 items-center gap-1.5 pl-1 text-body">
+          {repoName !== undefined && (
+            <>
+              <span className="truncate text-chrome-fg-muted">{repoName}</span>
+              <span className="text-chrome-fg-subtle" aria-hidden>
+                /
+              </span>
+            </>
+          )}
+          <span className="truncate font-medium text-chrome-fg">
+            {review?.branch ?? review?.pinnedSha?.slice(0, 10) ?? '…'}
+          </span>
+          {pull !== null &&
+            (pull.url !== null ? (
+              <Hint label="Open pull request in a new window">
+                <a
+                  href={pull.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="group inline-flex shrink-0 items-center gap-0.5 tabular-nums text-chrome-fg-subtle hover:text-chrome-fg hover:underline"
+                >
+                  #{pull.number}
+                  <ArrowUpRight size={12} strokeWidth={1.5} aria-hidden className="opacity-0 group-hover:opacity-100" />
+                </a>
+              </Hint>
+            ) : (
+              <span className="shrink-0 tabular-nums text-chrome-fg-subtle">#{pull.number}</span>
+            ))}
+        </div>
+      </Hint>
 
       {/* Nothing left to start on once the branch has landed. */}
       {(review?.status === 'draft' || review?.status === 'archived') && reviewState?.merged !== true && (
@@ -161,15 +166,16 @@ export function Header({ onOpenPalette }: { onOpenPalette: () => void }): React.
 
       <div className="flex-1" />
 
-      <button
-        type="button"
-        onClick={onOpenPalette}
-        aria-label="Jump to file, step, or command"
-        title="Jump to… (⌘K)"
-        className="chrome-icon-btn"
-      >
-        <Search size={15} strokeWidth={1.75} aria-hidden />
-      </button>
+      <Hint label="Jump to… (⌘K)">
+        <button
+          type="button"
+          onClick={onOpenPalette}
+          aria-label="Jump to file, step, or command"
+          className="chrome-icon-btn"
+        >
+          <Search size={15} strokeWidth={1.75} aria-hidden />
+        </button>
+      </Hint>
 
       <div className="mx-1.5 h-4 w-px bg-chrome-border-strong opacity-60" aria-hidden />
 
@@ -178,85 +184,91 @@ export function Header({ onOpenPalette }: { onOpenPalette: () => void }): React.
       <div className="mx-1.5 h-4 w-px bg-chrome-border-strong opacity-60" aria-hidden />
 
       <div className="flex items-center gap-0.5">
-        <button
-          type="button"
-          onClick={collapseAllFiles}
-          aria-label="Collapse all files"
-          title="Collapse all files"
-          className="chrome-icon-btn"
-        >
-          <ChevronsDownUp size={15} strokeWidth={1.75} aria-hidden />
-        </button>
-        <button
-          type="button"
-          onClick={expandAllFiles}
-          aria-label="Expand all files"
-          title="Expand all files"
-          className="chrome-icon-btn"
-        >
-          <ChevronsUpDown size={15} strokeWidth={1.75} aria-hidden />
-        </button>
-        <button
-          type="button"
-          aria-label={diffStyle === 'split' ? 'Switch to unified diff' : 'Switch to split diff'}
-          title={diffStyle === 'split' ? 'Switch to unified diff' : 'Switch to split diff'}
-          onClick={() => setDiffStyle(diffStyle === 'split' ? 'unified' : 'split')}
-          className="chrome-icon-btn"
-        >
-          {diffStyle === 'split' ? (
-            <Columns2 size={15} strokeWidth={1.75} aria-hidden />
-          ) : (
-            <Rows2 size={15} strokeWidth={1.75} aria-hidden />
-          )}
-        </button>
+        <Hint label="Collapse all files">
+          <button
+            type="button"
+            onClick={collapseAllFiles}
+            aria-label="Collapse all files"
+            className="chrome-icon-btn"
+          >
+            <ChevronsDownUp size={15} strokeWidth={1.75} aria-hidden />
+          </button>
+        </Hint>
+        <Hint label="Expand all files">
+          <button
+            type="button"
+            onClick={expandAllFiles}
+            aria-label="Expand all files"
+            className="chrome-icon-btn"
+          >
+            <ChevronsUpDown size={15} strokeWidth={1.75} aria-hidden />
+          </button>
+        </Hint>
+        <Hint label={diffStyle === 'split' ? 'Switch to unified diff' : 'Switch to split diff'}>
+          <button
+            type="button"
+            aria-label={diffStyle === 'split' ? 'Switch to unified diff' : 'Switch to split diff'}
+            onClick={() => setDiffStyle(diffStyle === 'split' ? 'unified' : 'split')}
+            className="chrome-icon-btn"
+          >
+            {diffStyle === 'split' ? (
+              <Columns2 size={15} strokeWidth={1.75} aria-hidden />
+            ) : (
+              <Rows2 size={15} strokeWidth={1.75} aria-hidden />
+            )}
+          </button>
+        </Hint>
         {/* Threads live in the right pane, so opening them opens that too. */}
-        <button
-          type="button"
-          aria-label={threadsShown ? 'Close threads' : 'Open threads'}
-          title={threadsShown ? 'Close threads (T)' : 'Open threads (T)'}
-          aria-expanded={threadsShown}
-          onClick={() => {
-            if (threadsShown) {
-              setThreadsPanelOpen(false);
-            } else {
-              setRightPanelOpen(true);
-              setThreadsPanelOpen(true);
-            }
-          }}
-          className="chrome-icon-btn"
-        >
-          <MessageSquare
-            size={15}
-            strokeWidth={1.75}
-            fill={threadsShown ? 'currentColor' : 'none'}
-            aria-hidden
-          />
-        </button>
+        <Hint label={threadsShown ? 'Close threads (T)' : 'Open threads (T)'}>
+          <button
+            type="button"
+            aria-label={threadsShown ? 'Close threads' : 'Open threads'}
+            aria-expanded={threadsShown}
+            onClick={() => {
+              if (threadsShown) {
+                setThreadsPanelOpen(false);
+              } else {
+                setRightPanelOpen(true);
+                setThreadsPanelOpen(true);
+              }
+            }}
+            className="chrome-icon-btn"
+          >
+            <MessageSquare
+              size={15}
+              strokeWidth={1.75}
+              fill={threadsShown ? 'currentColor' : 'none'}
+              aria-hidden
+            />
+          </button>
+        </Hint>
       </div>
 
       <div className="mx-1.5 h-4 w-px bg-chrome-border-strong opacity-60" aria-hidden />
 
       <div className="flex items-center gap-0.5">
-        <button
-          type="button"
-          aria-label="Toggle file tree"
-          title="Toggle file tree"
-          aria-expanded={leftPanelOpen}
-          onClick={toggleLeftPanel}
-          className="chrome-icon-btn"
-        >
-          <PanelToggleIcon side="left" filled={leftPanelOpen} />
-        </button>
-        <button
-          type="button"
-          aria-label="Toggle reading order"
-          title="Toggle reading order"
-          aria-expanded={rightPanelOpen}
-          onClick={toggleRightPanel}
-          className="chrome-icon-btn"
-        >
-          <PanelToggleIcon side="right" filled={rightPanelOpen} />
-        </button>
+        <Hint label="Toggle file tree">
+          <button
+            type="button"
+            aria-label="Toggle file tree"
+            aria-expanded={leftPanelOpen}
+            onClick={toggleLeftPanel}
+            className="chrome-icon-btn"
+          >
+            <PanelToggleIcon side="left" filled={leftPanelOpen} />
+          </button>
+        </Hint>
+        <Hint label="Toggle reading order">
+          <button
+            type="button"
+            aria-label="Toggle reading order"
+            aria-expanded={rightPanelOpen}
+            onClick={toggleRightPanel}
+            className="chrome-icon-btn"
+          >
+            <PanelToggleIcon side="right" filled={rightPanelOpen} />
+          </button>
+        </Hint>
       </div>
     </header>
   );

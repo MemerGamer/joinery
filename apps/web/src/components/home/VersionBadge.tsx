@@ -11,6 +11,7 @@ import type { VersionInfo } from '@joinery/core';
 import { ArrowUpCircle, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { callApi } from '../../lib/apiClient.ts';
+import { Hint } from '../controls.tsx';
 
 const POLL_MS = 2_000;
 const POLL_TIMEOUT_MS = 120_000;
@@ -105,26 +106,27 @@ export function UpdateButton({ info, phase, startUpdate }: VersionState): React.
   if (!info.updateAvailable || info.latest === null) return null;
   if (info.mode !== 'installed') {
     return (
-      <span className={`home-update ${text} text-chrome-success`} title="Running from source — pull to update">
-        v{info.latest} available
-      </span>
+      <Hint label="Running from source — pull to update">
+        <span className={`home-update ${text} text-chrome-success`}>v{info.latest} available</span>
+      </Hint>
     );
   }
   const updating = phase === 'updating';
   return (
-    <button
-      type="button"
-      disabled={updating}
-      onClick={startUpdate}
-      title={`Update Joinery from v${info.current} to v${info.latest}`}
-      className={`home-update ${text} rounded-md text-chrome-success transition-colors hover:bg-chrome-success-bg disabled:opacity-60`}
-    >
-      {updating ? (
-        <RefreshCw size={14} strokeWidth={1.75} className="animate-spin" aria-hidden />
-      ) : (
-        <ArrowUpCircle size={14} strokeWidth={1.75} aria-hidden />
-      )}
-      {updating ? 'Updating…' : `Update to v${info.latest}`}
-    </button>
+    <Hint label={`Update Joinery from v${info.current} to v${info.latest}`}>
+      <button
+        type="button"
+        disabled={updating}
+        onClick={startUpdate}
+        className={`home-update ${text} rounded-md text-chrome-success transition-colors hover:bg-chrome-success-bg disabled:opacity-60`}
+      >
+        {updating ? (
+          <RefreshCw size={14} strokeWidth={1.75} className="animate-spin" aria-hidden />
+        ) : (
+          <ArrowUpCircle size={14} strokeWidth={1.75} aria-hidden />
+        )}
+        {updating ? 'Updating…' : `Update to v${info.latest}`}
+      </button>
+    </Hint>
   );
 }

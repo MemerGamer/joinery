@@ -7,7 +7,7 @@ import { Check, Loader2, MessageSquare, X } from 'lucide-react';
 import { useState } from 'react';
 import type { Thread } from '@joinery/core';
 import { useReview } from '../state/ReviewContext.tsx';
-import { Segment, Segmented } from './controls.tsx';
+import { Hint, Segment, Segmented } from './controls.tsx';
 import { threadSummary } from '../lib/threadSummary.ts';
 
 /** Whether the agent currently has `eyes` on any comment in the thread. */
@@ -91,9 +91,11 @@ export function ThreadsPanel(): React.JSX.Element {
                     {threadSummary(thread.comments[0]?.body ?? '') || '(empty)'}
                   </span>
                   {agentIsLooking(thread) && (
-                    <span title="Agent is looking" aria-label="Agent is looking" className="shrink-0">
-                      👀
-                    </span>
+                    <Hint label="Agent is looking">
+                      <span role="img" aria-label="Agent is looking" className="shrink-0">
+                        👀
+                      </span>
+                    </Hint>
                   )}
                   {runLive && (
                     <Loader2

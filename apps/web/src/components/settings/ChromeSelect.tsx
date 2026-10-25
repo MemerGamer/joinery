@@ -5,7 +5,7 @@
  */
 import { Select } from '@base-ui-components/react/select';
 import { Check, ChevronDown } from 'lucide-react';
-import { LIST_POPUP_CLASS, POPUP_ITEM_CLASS } from '../controls.tsx';
+import { Hint, LIST_POPUP_CLASS, POPUP_ITEM_CLASS } from '../controls.tsx';
 
 export type ChromeSelectOption<V extends string> = { value: V; label: string };
 
@@ -36,14 +36,15 @@ export function ChromeSelect<V extends string>({
       }}
       disabled={disabled}
     >
-      <Select.Trigger
-        aria-label={label}
-        title={title}
-        className={`flex h-8 min-w-0 items-center gap-2 rounded-md border border-chrome-border bg-chrome-bg-raised px-2.5 text-left text-body text-chrome-fg! outline-hidden transition-colors hover:border-chrome-border-strong disabled:opacity-60 data-popup-open:border-chrome-accent ${className}`}
-      >
-        <Select.Value className="min-w-0 flex-1 truncate" />
-        <ChevronDown size={14} strokeWidth={1.75} className="shrink-0 text-chrome-fg-subtle" aria-hidden />
-      </Select.Trigger>
+      <Hint label={title}>
+        <Select.Trigger
+          aria-label={label}
+          className={`flex h-8 min-w-0 items-center gap-2 rounded-md border border-chrome-border bg-chrome-bg-raised px-2.5 text-left text-body text-chrome-fg! outline-hidden transition-colors hover:border-chrome-border-strong disabled:opacity-60 aria-expanded:border-chrome-accent ${className}`}
+        >
+          <Select.Value className="min-w-0 flex-1 truncate" />
+          <ChevronDown size={14} strokeWidth={1.75} className="shrink-0 text-chrome-fg-subtle" aria-hidden />
+        </Select.Trigger>
+      </Hint>
       <Select.Portal>
         <Select.Positioner side="bottom" align="end" sideOffset={4} collisionPadding={8} alignItemWithTrigger={false} className="z-50">
           <Select.Popup className={`${LIST_POPUP_CLASS} min-w-(--anchor-width)`}>

@@ -19,6 +19,7 @@ import { REACTIONS, glyphOf } from '../lib/reactions.ts';
 
 const TITLE_BY_KIND = new Map(REACTIONS.map((r) => [r.kind, r.title]));
 import { useReview } from '../state/ReviewContext.tsx';
+import { Hint } from './controls.tsx';
 
 function actorsTitle(actors: readonly ('user' | 'agent')[]): string {
   const hasUser = actors.includes('user');
@@ -41,24 +42,24 @@ export function ReactionBar({ comment }: { comment: Comment }): React.JSX.Elemen
       {comment.reactions.map((r) => {
         const mine = r.actors.includes('user');
         return (
-          <button
-            key={r.kind}
-            type="button"
-            aria-pressed={mine}
-            aria-label={`${glyphOf(r.kind)} ${TITLE_BY_KIND.get(r.kind) ?? r.kind}: ${String(r.actors.length)} (${actorsTitle(r.actors)})`}
-            title={actorsTitle(r.actors)}
-            onClick={() => toggle(r.kind, mine)}
-            // Text colours carry `!`: the unlayered global `button { color: inherit }`
-            // in styles/index.css otherwise beats layered Tailwind utilities.
-            className={`flex h-5 items-center gap-1 rounded-full px-1.5 text-micro font-medium transition-colors ${
-              mine
-                ? 'bg-chrome-accent-soft text-chrome-accent!'
-                : 'bg-chrome-bg-sunken text-chrome-fg-muted! hover:bg-chrome-bg-hover'
-            }`}
-          >
-            <span aria-hidden>{glyphOf(r.kind)}</span>
-            <span>{r.actors.length}</span>
-          </button>
+          <Hint key={r.kind} label={actorsTitle(r.actors)}>
+            <button
+              type="button"
+              aria-pressed={mine}
+              aria-label={`${glyphOf(r.kind)} ${TITLE_BY_KIND.get(r.kind) ?? r.kind}: ${String(r.actors.length)} (${actorsTitle(r.actors)})`}
+              onClick={() => toggle(r.kind, mine)}
+              // Text colours carry `!`: the unlayered global `button { color: inherit }`
+              // in styles/index.css otherwise beats layered Tailwind utilities.
+              className={`flex h-5 items-center gap-1 rounded-full px-1.5 text-micro font-medium transition-colors ${
+                mine
+                  ? 'bg-chrome-accent-soft text-chrome-accent!'
+                  : 'bg-chrome-bg-sunken text-chrome-fg-muted! hover:bg-chrome-bg-hover'
+              }`}
+            >
+              <span aria-hidden>{glyphOf(r.kind)}</span>
+              <span>{r.actors.length}</span>
+            </button>
+          </Hint>
         );
       })}
     </div>
@@ -74,13 +75,14 @@ export function ReactionPicker({ comment }: { comment: Comment }): React.JSX.Ele
 
   return (
     <Popover.Root>
-      <Popover.Trigger
-        aria-label="Add reaction"
-        title="Add reaction"
-        className="chrome-icon-btn size-5 text-chrome-fg-subtle"
-      >
-        <SmilePlus size={12} strokeWidth={1.75} aria-hidden />
-      </Popover.Trigger>
+      <Hint label="Add reaction">
+        <Popover.Trigger
+          aria-label="Add reaction"
+          className="chrome-icon-btn size-5 text-chrome-fg-subtle"
+        >
+          <SmilePlus size={12} strokeWidth={1.75} aria-hidden />
+        </Popover.Trigger>
+      </Hint>
       <Popover.Portal>
         {/* Opens beside the trigger, level with the reaction row, so it never
             lands on the next comment's author line; collision handling flips
@@ -94,18 +96,18 @@ export function ReactionPicker({ comment }: { comment: Comment }): React.JSX.Ele
             {REACTIONS.map(({ kind, glyph, title }) => {
               const mine = comment.reactions.some((r) => r.kind === kind && r.actors.includes('user'));
               return (
-                <Popover.Close
-                  key={kind}
-                  title={title}
-                  aria-label={`${mine ? 'Remove' : 'React with'} ${glyph} ${title}`}
-                  aria-pressed={mine}
-                  onClick={() => toggle(kind, mine)}
-                  className={`flex size-7 items-center justify-center rounded-md text-base transition-colors hover:bg-chrome-bg-hover ${
-                    mine ? 'bg-chrome-accent-soft' : ''
-                  }`}
-                >
-                  {glyph}
-                </Popover.Close>
+                <Hint key={kind} label={title}>
+                  <Popover.Close
+                    aria-label={`${mine ? 'Remove' : 'React with'} ${glyph} ${title}`}
+                    aria-pressed={mine}
+                    onClick={() => toggle(kind, mine)}
+                    className={`flex size-7 items-center justify-center rounded-md text-base transition-colors hover:bg-chrome-bg-hover ${
+                      mine ? 'bg-chrome-accent-soft' : ''
+                    }`}
+                  >
+                    {glyph}
+                  </Popover.Close>
+                </Hint>
               );
             })}
           </Popover.Popup>

@@ -7,6 +7,7 @@ import { RadioGroup } from '@base-ui-components/react/radio-group';
 import { useEffect, useState } from 'react';
 import type { HeadSource, Revision } from '@joinery/core';
 import { useReview } from '../state/ReviewContext.tsx';
+import { Hint } from './controls.tsx';
 
 const LABELS: Record<Revision, string> = { working: 'Working', head: 'Head', pr: 'PR' };
 
@@ -75,20 +76,20 @@ export function RevisionPicker(): React.JSX.Element | null {
         const source = rev === 'head' ? reviewState.headSource : null;
         const suffix = source === null ? null : HEAD_SOURCE_SUFFIX[source];
         return (
-          <Radio.Root
-            key={rev}
-            value={rev}
-            // Tied to the real pending state, not the delayed sweep: the
-            // switch is in flight either way, and the animation is decorative.
-            aria-busy={pending}
-            title={source === null ? undefined : HEAD_SOURCE_TITLE[source]}
-            className={`flex h-7 items-center gap-1 rounded-md px-2.5 text-xs font-medium text-chrome-fg-muted transition-colors not-data-checked:hover:bg-chrome-bg-hover not-data-checked:hover:text-chrome-fg data-checked:bg-chrome-bg-active data-checked:text-chrome-fg ${
-              pending && sweeping ? 'chrome-sweep' : ''
-            }`}
-          >
-            {LABELS[rev]}
-            {suffix !== null && <span className="font-normal text-chrome-fg-subtle">{suffix}</span>}
-          </Radio.Root>
+          <Hint key={rev} label={source === null ? undefined : HEAD_SOURCE_TITLE[source]}>
+            <Radio.Root
+              value={rev}
+              // Tied to the real pending state, not the delayed sweep: the
+              // switch is in flight either way, and the animation is decorative.
+              aria-busy={pending}
+              className={`flex h-7 items-center gap-1 rounded-md px-2.5 text-xs font-medium text-chrome-fg-muted transition-colors not-data-checked:hover:bg-chrome-bg-hover not-data-checked:hover:text-chrome-fg data-checked:bg-chrome-bg-active data-checked:text-chrome-fg ${
+                pending && sweeping ? 'chrome-sweep' : ''
+              }`}
+            >
+              {LABELS[rev]}
+              {suffix !== null && <span className="font-normal text-chrome-fg-subtle">{suffix}</span>}
+            </Radio.Root>
+          </Hint>
         );
       })}
     </RadioGroup>

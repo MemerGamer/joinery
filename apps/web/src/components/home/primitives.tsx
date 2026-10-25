@@ -6,17 +6,20 @@
 import { Bot, CircleCheck, CircleDashed, CircleX } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { Ci, Person } from '../../lib/people.ts';
+import { Hint } from '../controls.tsx';
 
 export function Avatar({ person, size = 24 }: { person: Person; size?: number }): React.JSX.Element {
   return (
-    <span
-      className="home-avatar shrink-0"
-      style={{ ['--h' as string]: person.hue, width: size, height: size, fontSize: Math.round(size * 0.38) }}
-      title={person.name}
-      aria-label={person.name}
-    >
-      {person.agent === true ? <Bot size={Math.round(size * 0.55)} strokeWidth={2} aria-hidden /> : person.initials}
-    </span>
+    <Hint label={person.name}>
+      <span
+        role="img"
+        aria-label={person.name}
+        className="home-avatar shrink-0"
+        style={{ ['--h' as string]: person.hue, width: size, height: size, fontSize: Math.round(size * 0.38) }}
+      >
+        {person.agent === true ? <Bot size={Math.round(size * 0.55)} strokeWidth={2} aria-hidden /> : person.initials}
+      </span>
+    </Hint>
   );
 }
 
@@ -42,13 +45,14 @@ export function Chip({
   title?: string;
 }): React.JSX.Element {
   return (
-    <span
-      title={title}
-      className={`inline-flex h-5 shrink-0 items-center gap-1 rounded-md px-1.5 text-micro font-medium whitespace-nowrap tabular-nums ${TONE[tone]}`}
-    >
-      {icon}
-      {children}
-    </span>
+    <Hint label={title}>
+      <span
+        className={`inline-flex h-5 shrink-0 items-center gap-1 rounded-md px-1.5 text-micro font-medium whitespace-nowrap tabular-nums ${TONE[tone]}`}
+      >
+        {icon}
+        {children}
+      </span>
+    </Hint>
   );
 }
 
@@ -86,20 +90,22 @@ export function DiffStat({
   const blocks = 5;
   const add = total === 0 ? 0 : Math.round((additions / total) * blocks);
   return (
-    <span className="inline-flex items-center gap-1.5 text-micro tabular-nums whitespace-nowrap" title={`${String(additions)} additions, ${String(deletions)} deletions`}>
-      <span className="text-chrome-success">+{additions.toLocaleString()}</span>
-      <span className="text-chrome-danger">−{deletions.toLocaleString()}</span>
-      {showBlocks && (
-        <span className="inline-flex gap-px" aria-hidden>
-          {Array.from({ length: blocks }, (_, i) => (
-            <span
-              key={i}
-              className={`size-1.5 rounded-[1px] ${i < add ? 'bg-chrome-success' : i < blocks && total > 0 ? 'bg-chrome-danger' : 'bg-chrome-bg-active'}`}
-            />
-          ))}
-        </span>
-      )}
-    </span>
+    <Hint label={`${String(additions)} additions, ${String(deletions)} deletions`}>
+      <span className="inline-flex items-center gap-1.5 text-micro tabular-nums whitespace-nowrap">
+        <span className="text-chrome-success">+{additions.toLocaleString()}</span>
+        <span className="text-chrome-danger">−{deletions.toLocaleString()}</span>
+        {showBlocks && (
+          <span className="inline-flex gap-px" aria-hidden>
+            {Array.from({ length: blocks }, (_, i) => (
+              <span
+                key={i}
+                className={`size-1.5 rounded-[1px] ${i < add ? 'bg-chrome-success' : i < blocks && total > 0 ? 'bg-chrome-danger' : 'bg-chrome-bg-active'}`}
+              />
+            ))}
+          </span>
+        )}
+      </span>
+    </Hint>
   );
 }
 
@@ -153,17 +159,19 @@ export function elapsed(sinceUnix: number): string {
 export function EffortMeter({ level, label, minutes }: { level: 1 | 2 | 3 | 4; label: string; minutes: number }): React.JSX.Element {
   const tone = ['text-chrome-success', 'text-chrome-accent', 'text-chrome-warning', 'text-chrome-danger'][level - 1];
   return (
-    <span className="inline-flex items-end gap-1.5 text-micro leading-none whitespace-nowrap" title={`${label} · about ${String(minutes)} minutes`}>
-      <span className="tabular-nums text-chrome-fg-muted">{minutes}m</span>
-      <span className={`inline-flex items-end gap-px ${tone ?? ''}`} aria-hidden>
-        {[1, 2, 3, 4].map((i) => (
-          <span
-            key={i}
-            className={`w-1 rounded-[1px] ${i <= level ? 'bg-current' : 'bg-chrome-bg-active'}`}
-            style={{ height: 3 + i * 2.5 }}
-          />
-        ))}
+    <Hint label={`${label} · about ${String(minutes)} minutes`}>
+      <span className="inline-flex items-end gap-1.5 text-micro leading-none whitespace-nowrap">
+        <span className="tabular-nums text-chrome-fg-muted">{minutes}m</span>
+        <span className={`inline-flex items-end gap-px ${tone ?? ''}`} aria-hidden>
+          {[1, 2, 3, 4].map((i) => (
+            <span
+              key={i}
+              className={`w-1 rounded-[1px] ${i <= level ? 'bg-current' : 'bg-chrome-bg-active'}`}
+              style={{ height: 3 + i * 2.5 }}
+            />
+          ))}
+        </span>
       </span>
-    </span>
+    </Hint>
   );
 }

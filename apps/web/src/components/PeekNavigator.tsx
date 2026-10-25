@@ -33,6 +33,7 @@ import { PREFERRED_HIGHLIGHTER } from '../lib/workerPool.tsx';
 import { useTheme } from '../state/ThemeContext.tsx';
 import { LSP_TITLE } from './settings/LanguageServerPicker.tsx';
 import { cached, CODE_INTEL_CSS, IS_MAC, placement } from '../lib/codeIntel.ts';
+import { Hint } from './controls.tsx';
 
 const WIDTH = 1_080;
 const HEIGHT = 520;
@@ -426,26 +427,28 @@ export function PeekNavigator({
           onPointerDown={(e) => grab(e, null)}
           className="flex h-8 shrink-0 cursor-move items-center gap-1 border-b pl-1 pr-1 text-xs"
         >
-          <button
-            type="button"
-            onClick={() => onStep(-1)}
-            disabled={nav.index === 0}
-            aria-label="Back"
-            title={`Back (${IS_MAC ? '⌘[' : 'Ctrl+['})`}
-            className="chrome-icon-btn size-6 shrink-0 text-chrome-fg-subtle disabled:opacity-40"
-          >
-            <ChevronLeft size={14} strokeWidth={1.75} aria-hidden />
-          </button>
-          <button
-            type="button"
-            onClick={() => onStep(1)}
-            disabled={nav.index === nav.entries.length - 1}
-            aria-label="Forward"
-            title={`Forward (${IS_MAC ? '⌘]' : 'Ctrl+]'})`}
-            className="chrome-icon-btn size-6 shrink-0 text-chrome-fg-subtle disabled:opacity-40"
-          >
-            <ChevronRight size={14} strokeWidth={1.75} aria-hidden />
-          </button>
+          <Hint label={`Back (${IS_MAC ? '⌘[' : 'Ctrl+['})`}>
+            <button
+              type="button"
+              onClick={() => onStep(-1)}
+              disabled={nav.index === 0}
+              aria-label="Back"
+              className="chrome-icon-btn size-6 shrink-0 text-chrome-fg-subtle disabled:opacity-40"
+            >
+              <ChevronLeft size={14} strokeWidth={1.75} aria-hidden />
+            </button>
+          </Hint>
+          <Hint label={`Forward (${IS_MAC ? '⌘]' : 'Ctrl+]'})`}>
+            <button
+              type="button"
+              onClick={() => onStep(1)}
+              disabled={nav.index === nav.entries.length - 1}
+              aria-label="Forward"
+              className="chrome-icon-btn size-6 shrink-0 text-chrome-fg-subtle disabled:opacity-40"
+            >
+              <ChevronRight size={14} strokeWidth={1.75} aria-hidden />
+            </button>
+          </Hint>
           <span className="ml-1 min-w-0 truncate font-mono text-chrome-fg">{entry.name}</span>
           {implementations.length > 0 && (
             <span className="shrink-0 text-micro text-chrome-fg-subtle">
@@ -529,15 +532,16 @@ export function PeekNavigator({
 
 function CloseButton({ onClose }: { onClose: () => void }): React.JSX.Element {
   return (
-    <button
-      type="button"
-      onClick={onClose}
-      aria-label="Close"
-      title="Close (Esc)"
-      className="chrome-icon-btn ml-auto size-6 shrink-0 text-chrome-fg-subtle"
-    >
-      <X size={14} strokeWidth={1.75} aria-hidden />
-    </button>
+    <Hint label="Close (Esc)">
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close"
+        className="chrome-icon-btn ml-auto size-6 shrink-0 text-chrome-fg-subtle"
+      >
+        <X size={14} strokeWidth={1.75} aria-hidden />
+      </button>
+    </Hint>
   );
 }
 
@@ -571,17 +575,18 @@ function FileRow({
     if (active) rowRef.current?.scrollIntoView({ block: 'nearest' });
   }, [active]);
   return (
-    <button
-      ref={rowRef}
-      type="button"
-      onClick={onClick}
-      title={path}
-      className={`flex w-full min-w-0 items-baseline gap-1.5 px-3 py-0.5 text-left transition-colors hover:bg-chrome-bg-hover ${active ? 'bg-chrome-bg-hover text-chrome-fg' : 'text-chrome-fg'}`}
-    >
-      <span className="shrink-0 truncate">{name}</span>
-      {line !== undefined && <span className="shrink-0 font-mono text-micro text-chrome-fg-subtle">:{line}</span>}
-      <span className="min-w-0 truncate text-micro text-chrome-fg-subtle">{dir}</span>
-    </button>
+    <Hint label={path}>
+      <button
+        ref={rowRef}
+        type="button"
+        onClick={onClick}
+        className={`flex w-full min-w-0 items-baseline gap-1.5 px-3 py-0.5 text-left transition-colors hover:bg-chrome-bg-hover ${active ? 'bg-chrome-bg-hover text-chrome-fg' : 'text-chrome-fg'}`}
+      >
+        <span className="shrink-0 truncate">{name}</span>
+        {line !== undefined && <span className="shrink-0 font-mono text-micro text-chrome-fg-subtle">:{line}</span>}
+        <span className="min-w-0 truncate text-micro text-chrome-fg-subtle">{dir}</span>
+      </button>
+    </Hint>
   );
 }
 
@@ -712,10 +717,12 @@ function Preview({
       <div className="flex h-7 shrink-0 items-center gap-2 border-b pl-3 pr-1 text-xs">
         {file !== null && selected !== null ? (
           <>
-            <span className="min-w-0 truncate font-mono text-chrome-fg" title={file.path}>
-              {file.path}
-              <span className="text-chrome-fg-subtle">:{selected.line}</span>
-            </span>
+            <Hint label={file.path}>
+              <span className="min-w-0 truncate font-mono text-chrome-fg">
+                {file.path}
+                <span className="text-chrome-fg-subtle">:{selected.line}</span>
+              </span>
+            </Hint>
             {file.external && <span className="shrink-0 text-micro text-chrome-fg-subtle">outside this repo</span>}
             {file.truncated && <span className="shrink-0 text-micro text-chrome-fg-subtle">cut short, very large file</span>}
             {file.inReview && (

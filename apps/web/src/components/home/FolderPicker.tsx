@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Repo } from '@joinery/core';
 import { ApiError } from '../../lib/apiClient.ts';
 import { useHomeData, type AddReposResult, type ListDirsResult } from '../../state/HomeData.tsx';
+import { Hint } from '../controls.tsx';
 
 interface Props {
   /** Called once everything requested was added. */
@@ -149,20 +150,21 @@ export function FolderPicker({ onAdded, onCancel }: Props): React.JSX.Element {
           <EntryName entry={entry} className="text-chrome-fg" />
           <ChevronHint />
         </Command.Item>
-        <Checkbox.Root
-          checked={ticked}
-          disabled={added}
-          onCheckedChange={() => toggle(entry.path)}
-          aria-label={added ? `${entry.name} is already added` : `Select ${entry.name}`}
-          title={added ? 'Already added' : undefined}
-          // Keep focus in the input, so typing and ↵ keep working.
-          onMouseDown={(e) => e.preventDefault()}
-          className="absolute top-1/2 left-2.5 flex size-4 -translate-y-1/2 items-center justify-center rounded-[4px] border border-chrome-border-strong transition-colors hover:border-chrome-fg-subtle data-checked:border-chrome-accent data-checked:bg-chrome-accent data-disabled:opacity-50"
-        >
-          <Checkbox.Indicator>
-            <Check size={11} strokeWidth={2.5} className="text-chrome-accent-fg" aria-hidden />
-          </Checkbox.Indicator>
-        </Checkbox.Root>
+        <Hint label={added ? 'Already added' : undefined}>
+          <Checkbox.Root
+            checked={ticked}
+            disabled={added}
+            onCheckedChange={() => toggle(entry.path)}
+            aria-label={added ? `${entry.name} is already added` : `Select ${entry.name}`}
+            // Keep focus in the input, so typing and ↵ keep working.
+            onMouseDown={(e) => e.preventDefault()}
+            className="absolute top-1/2 left-2.5 flex size-4 -translate-y-1/2 items-center justify-center rounded-[4px] border border-chrome-border-strong transition-colors hover:border-chrome-fg-subtle data-checked:border-chrome-accent data-checked:bg-chrome-accent data-disabled:opacity-50"
+          >
+            <Checkbox.Indicator>
+              <Check size={11} strokeWidth={2.5} className="text-chrome-accent-fg" aria-hidden />
+            </Checkbox.Indicator>
+          </Checkbox.Root>
+        </Hint>
       </div>
     );
   };
@@ -212,17 +214,18 @@ export function FolderPicker({ onAdded, onCancel }: Props): React.JSX.Element {
 
             {listing !== null && (
               <nav aria-label="Path" className="flex min-w-0 shrink-0 items-center gap-0.5 px-3.5 pb-2 text-xs text-chrome-fg-subtle">
-                <button
-                  type="button"
-                  title="Up one folder (⌫)"
-                  aria-label="Up one folder"
-                  disabled={loading || listing.parent === null}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => void go(listing.parent ?? undefined)}
-                  className="mr-1 flex size-5 shrink-0 items-center justify-center rounded-[4px] hover:bg-chrome-bg-hover hover:text-chrome-fg disabled:opacity-40"
-                >
-                  <CornerLeftUp size={13} strokeWidth={1.75} aria-hidden />
-                </button>
+                <Hint label="Up one folder (⌫)">
+                  <button
+                    type="button"
+                    aria-label="Up one folder"
+                    disabled={loading || listing.parent === null}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => void go(listing.parent ?? undefined)}
+                    className="mr-1 flex size-5 shrink-0 items-center justify-center rounded-[4px] hover:bg-chrome-bg-hover hover:text-chrome-fg disabled:opacity-40"
+                  >
+                    <CornerLeftUp size={13} strokeWidth={1.75} aria-hidden />
+                  </button>
+                </Hint>
                 <div className="flex min-w-0 items-center gap-0.5 overflow-hidden whitespace-nowrap [direction:rtl]">
                   {/* rtl keeps the tail of a long path visible; the inner span restores reading order. */}
                   <span className="flex items-center gap-0.5 [direction:ltr]">
@@ -335,9 +338,11 @@ export function FolderPicker({ onAdded, onCancel }: Props): React.JSX.Element {
                     </p>
                     {result.failed.map((f) => (
                       <div key={f.path}>
-                        <p className="truncate" title={`${f.path}\n${f.message}`}>
-                          <span className="font-mono">{baseName(f.path)}</span> — {f.message}
-                        </p>
+                        <Hint label={`${f.path}\n${f.message}`}>
+                          <p className="truncate">
+                            <span className="font-mono">{baseName(f.path)}</span> — {f.message}
+                          </p>
+                        </Hint>
                         {f.hint !== undefined && <p>{f.hint}</p>}
                       </div>
                     ))}

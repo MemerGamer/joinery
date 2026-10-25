@@ -55,7 +55,7 @@ import { useHomeData } from '../../state/HomeData.tsx';
 import { useTheme, type ChromeMode } from '../../state/ThemeContext.tsx';
 import { CommandPalette } from '../CommandPalette.tsx';
 import { ConfirmDelete } from '../ConfirmDelete.tsx';
-import { ChromeSwitch } from '../controls.tsx';
+import { ChromeSwitch, Hint } from '../controls.tsx';
 import { repoLabel } from '../Explore.tsx';
 import { GitHubMark, GitLabMark, GitMark, LANGUAGE_MARK } from '../brandMarks.tsx';
 import { FolderPicker } from '../home/FolderPicker.tsx';
@@ -146,9 +146,11 @@ export function Settings(): React.JSX.Element {
       <div className="h-full overflow-y-auto">
         <div className="mx-auto flex max-w-3xl flex-col gap-5 px-4 pt-6 pb-16">
           <header className="flex items-center gap-2">
-            <button type="button" onClick={goHomebase} aria-label="Back to Homebase" title="Back to Homebase" className="chrome-icon-btn">
-              <ArrowLeft size={16} strokeWidth={1.75} aria-hidden />
-            </button>
+            <Hint label="Back to Homebase">
+              <button type="button" onClick={goHomebase} aria-label="Back to Homebase" className="chrome-icon-btn">
+                <ArrowLeft size={16} strokeWidth={1.75} aria-hidden />
+              </button>
+            </Hint>
             <h1 className="text-lg font-semibold tracking-tight text-chrome-fg">Settings</h1>
           </header>
           <AppearancePanel />
@@ -396,11 +398,12 @@ function HoverCardsRow(): React.JSX.Element {
           format={{ useGrouping: false }}
         >
           <NumberField.Group className="flex h-7 items-center gap-1 rounded-md border border-chrome-border bg-chrome-bg-raised pr-2 text-xs text-chrome-fg-subtle transition-colors hover:border-chrome-border-strong focus-within:border-chrome-accent">
-            <NumberField.Input
-              aria-label="Hover delay in milliseconds"
-              title="How long the pointer rests on a name before the card shows"
-              className="w-14 bg-transparent pl-2 text-right tabular-nums text-chrome-fg outline-hidden"
-            />
+            <Hint label="How long the pointer rests on a name before the card shows">
+              <NumberField.Input
+                aria-label="Hover delay in milliseconds"
+                className="w-14 bg-transparent pl-2 text-right tabular-nums text-chrome-fg outline-hidden"
+              />
+            </Hint>
             ms
           </NumberField.Group>
         </NumberField.Root>
@@ -458,9 +461,11 @@ function IntegrationsPanel(): React.JSX.Element {
       className={OVERFLOW}
       bodyClassName={`px-1 pb-1.5 ${OVERFLOW}`}
       actions={
-        <button type="button" onClick={reload} aria-label="Check again" title="Check again" className="chrome-icon-btn">
-          <RefreshCw size={14} strokeWidth={1.75} className={loading ? 'animate-spin' : ''} aria-hidden />
-        </button>
+        <Hint label="Check again">
+          <button type="button" onClick={reload} aria-label="Check again" className="chrome-icon-btn">
+            <RefreshCw size={14} strokeWidth={1.75} className={loading ? 'animate-spin' : ''} aria-hidden />
+          </button>
+        </Hint>
       }
     >
       {error !== null && <ErrorLine>{error}</ErrorLine>}
@@ -578,9 +583,11 @@ function FullDiskAccessPanel(): React.JSX.Element {
       className={OVERFLOW}
       actions={
         data?.applies === true && (
-          <button type="button" onClick={reload} aria-label="Check again" title="Check again" className="chrome-icon-btn">
-            <RefreshCw size={14} strokeWidth={1.75} className={loading ? 'animate-spin' : ''} aria-hidden />
-          </button>
+          <Hint label="Check again">
+            <button type="button" onClick={reload} aria-label="Check again" className="chrome-icon-btn">
+              <RefreshCw size={14} strokeWidth={1.75} className={loading ? 'animate-spin' : ''} aria-hidden />
+            </button>
+          </Hint>
         )
       }
       bodyClassName={`px-3 pb-3 ${OVERFLOW}`}
@@ -632,7 +639,11 @@ function FullDiskAccessBody({
           <li>Restart the server so the grant applies.</li>
         </ol>
       )}
-      {data.binary !== null && <p className="truncate font-mono text-micro text-chrome-fg-subtle" title={data.binary}>{data.binary}</p>}
+      {data.binary !== null && (
+        <Hint label={data.binary}>
+          <p className="truncate font-mono text-micro text-chrome-fg-subtle">{data.binary}</p>
+        </Hint>
+      )}
       <div className="flex items-center gap-1.5">
         {data.granted !== true && (
           <button type="button" onClick={onOpen} disabled={busy !== null} className="chrome-btn-primary">
@@ -815,9 +826,9 @@ function UsageTree({
       <div className="flex items-baseline gap-3">
         <span className="flex min-w-0 flex-col">
           <span className="text-body text-chrome-fg">Data folder</span>
-          <span className="truncate text-micro text-chrome-fg-subtle" title={usage.root}>
-            {usage.root}
-          </span>
+          <Hint label={usage.root}>
+            <span className="truncate text-micro text-chrome-fg-subtle">{usage.root}</span>
+          </Hint>
         </span>
         <span className="ml-auto shrink-0 text-xs tabular-nums text-chrome-fg-muted">{formatBytes(total)}</span>
       </div>
@@ -825,12 +836,9 @@ function UsageTree({
       {/* Segments grow by size; a tiny one keeps a few pixels so it's still there to see. */}
       <div className="flex h-5 gap-px overflow-hidden rounded-md bg-chrome-bg-hover" role="img" aria-label="Data folder usage">
         {shown.map((p) => (
-          <span
-            key={p.key}
-            className={`h-full ${p.color}`}
-            style={{ flexGrow: p.bytes, flexBasis: 0, minWidth: 4 }}
-            title={`${p.title}: ${formatBytes(p.bytes)}`}
-          />
+          <Hint key={p.key} label={`${p.title}: ${formatBytes(p.bytes)}`}>
+            <span className={`h-full ${p.color}`} style={{ flexGrow: p.bytes, flexBasis: 0, minWidth: 4 }} />
+          </Hint>
         ))}
       </div>
 

@@ -20,6 +20,7 @@ import { useReview, useScrolledPath } from '../state/ReviewContext.tsx';
 import { AskButton } from './AskButton.tsx';
 import { Markdown } from './Markdown.tsx';
 import { ThreadsPanel } from './ThreadsPanel.tsx';
+import { Hint } from './controls.tsx';
 
 export function ReadingOrderPane(): React.JSX.Element {
   const {
@@ -154,17 +155,18 @@ export function ReadingOrderPane(): React.JSX.Element {
           </span>
         )}
         <div className="flex-1" />
-        <button
-          type="button"
-          onClick={toggleThreadsPanel}
-          aria-pressed={threadsPanelOpen}
-          title="Threads (T)"
-          className="chrome-btn h-6 bg-transparent px-1.5"
-        >
-          <MessageSquare size={13} strokeWidth={1.75} aria-hidden />
-          Threads
-          {openThreads > 0 && <span className="tabular-nums text-chrome-fg-subtle">{openThreads}</span>}
-        </button>
+        <Hint label="Threads (T)">
+          <button
+            type="button"
+            onClick={toggleThreadsPanel}
+            aria-pressed={threadsPanelOpen}
+            className="chrome-btn h-6 bg-transparent px-1.5"
+          >
+            <MessageSquare size={13} strokeWidth={1.75} aria-hidden />
+            Threads
+            {openThreads > 0 && <span className="tabular-nums text-chrome-fg-subtle">{openThreads}</span>}
+          </button>
+        </Hint>
       </div>
       {runState.phase === 'error' && (
         // A contained, inset card rather than a full-bleed band with a
@@ -372,13 +374,13 @@ export function ReadingOrderPane(): React.JSX.Element {
                 </h3>
                 <ul className="mb-2 ml-[2.125rem] flex flex-col gap-0.5">
                   {missingPaths.map((path) => (
-                    <li
-                      key={path}
-                      title={path}
-                      className="flex min-w-0 items-center px-2 py-[3px] font-mono text-xs text-chrome-fg-subtle"
-                    >
-                      <FilePath path={path} />
-                    </li>
+                    <Hint key={path} label={path}>
+                      <li
+                        className="flex min-w-0 items-center px-2 py-[3px] font-mono text-xs text-chrome-fg-subtle"
+                      >
+                        <FilePath path={path} />
+                      </li>
+                    </Hint>
                   ))}
                 </ul>
               </section>
@@ -410,17 +412,18 @@ function FileRow({
 }): React.JSX.Element {
   return (
     <li>
-      <button
-        type="button"
-        onClick={onClick}
-        className="flex w-full min-w-0 items-center gap-1 rounded-[4px] px-2 py-[3px] text-left font-mono text-xs text-chrome-fg-muted transition-colors hover:bg-chrome-bg-hover hover:text-chrome-fg"
-        title={title ?? path}
-      >
-        <FilePath path={path} />
-        {viewed && (
-          <Check size={12} strokeWidth={2} className="ml-auto shrink-0 text-chrome-success" aria-label="Viewed" />
-        )}
-      </button>
+      <Hint label={title ?? path}>
+        <button
+          type="button"
+          onClick={onClick}
+          className="flex w-full min-w-0 items-center gap-1 rounded-[4px] px-2 py-[3px] text-left font-mono text-xs text-chrome-fg-muted transition-colors hover:bg-chrome-bg-hover hover:text-chrome-fg"
+        >
+          <FilePath path={path} />
+          {viewed && (
+            <Check size={12} strokeWidth={2} className="ml-auto shrink-0 text-chrome-success" aria-label="Viewed" />
+          )}
+        </button>
+      </Hint>
     </li>
   );
 }
