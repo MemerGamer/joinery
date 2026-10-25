@@ -11,10 +11,8 @@ import { Combobox } from '@base-ui-components/react/combobox';
 import { Check, ChevronDown, Search } from 'lucide-react';
 import { useMemo } from 'react';
 import type { ThemeOption } from '../../lib/themes.ts';
+import { LIST_POPUP_CLASS, POPUP_ITEM_CLASS, POPUP_LABEL_CLASS } from '../controls.tsx';
 
-const ITEM_CLASS =
-  'flex h-7 cursor-default select-none items-center gap-2 rounded px-2 text-body text-chrome-fg outline-hidden data-highlighted:bg-chrome-bg-hover';
-const LABEL_CLASS = 'px-2 pt-2 pb-1 text-micro font-medium text-chrome-fg-subtle';
 
 type ThemeGroup = { value: string; items: ThemeOption[] };
 
@@ -69,7 +67,7 @@ export function ThemePicker({
       </Combobox.Trigger>
       <Combobox.Portal>
         <Combobox.Positioner side="bottom" align="start" sideOffset={4} collisionPadding={8} className="z-50">
-          <Combobox.Popup className="flex max-h-[min(22rem,var(--available-height))] w-(--anchor-width) flex-col overflow-hidden rounded-md bg-chrome-bg-raised text-xs shadow-chrome ring-1 ring-chrome-fg/10 outline-hidden">
+          <Combobox.Popup className={`${LIST_POPUP_CLASS} w-(--anchor-width)`}>
             <label className="flex h-9 shrink-0 items-center gap-2 border-b border-chrome-border px-2.5">
               <Search size={13} strokeWidth={1.75} className="shrink-0 text-chrome-fg-subtle" aria-hidden />
               <Combobox.Input
@@ -81,10 +79,10 @@ export function ThemePicker({
             <Combobox.List className="min-h-0 overflow-y-auto p-1 empty:hidden">
               {(group: ThemeGroup) => (
                 <Combobox.Group key={group.value} items={group.items}>
-                  <Combobox.GroupLabel className={LABEL_CLASS}>{group.value}</Combobox.GroupLabel>
+                  <Combobox.GroupLabel className={POPUP_LABEL_CLASS}>{group.value}</Combobox.GroupLabel>
                   <Combobox.Collection>
                     {(o: ThemeOption) => (
-                      <Combobox.Item key={o.name} value={o} className={ITEM_CLASS}>
+                      <Combobox.Item key={o.name} value={o} className={POPUP_ITEM_CLASS}>
                         <span className="min-w-0 flex-1 truncate">{o.displayName}</span>
                         <Combobox.ItemIndicator className="shrink-0 text-chrome-accent">
                           <Check size={13} strokeWidth={2} aria-hidden />

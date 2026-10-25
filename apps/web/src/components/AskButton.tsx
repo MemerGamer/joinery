@@ -10,7 +10,7 @@ import { AGENT_MODELS, type AgentModel } from '@joinery/core';
 import { Check, ChevronDown } from 'lucide-react';
 import { useRef } from 'react';
 import { setAgentModel, useAgentModel } from '../lib/agentModel.ts';
-import { Tick } from './home/QueueMenus.tsx';
+import { MENU_POPUP_CLASS, POPUP_ITEM_CLASS, Tick } from './controls.tsx';
 
 export function AskButton({
   onAsk,
@@ -70,7 +70,7 @@ export function AskButton({
         {/* Portaled, so ancestors with `overflow` (the diff view) can't clip it. */}
         <Menu.Portal>
           <Menu.Positioner side="bottom" align="end" sideOffset={4} collisionPadding={8} className="z-50">
-            <Menu.Popup className="min-w-32 rounded-md bg-chrome-bg-raised p-1 text-xs shadow-chrome ring-1 ring-chrome-fg/10 outline-hidden">
+            <Menu.Popup className={`${MENU_POPUP_CLASS} min-w-32`}>
               <Menu.RadioGroup
                 value={model}
                 onValueChange={(m: AgentModel) => {
@@ -84,7 +84,7 @@ export function AskButton({
                     key={m.id}
                     value={m.id}
                     closeOnClick
-                    className="flex h-7 cursor-default select-none items-center gap-2 rounded px-2 text-chrome-fg outline-hidden data-highlighted:bg-chrome-bg-hover"
+                    className={POPUP_ITEM_CLASS}
                   >
                     <span className="flex-1">{m.label}</span>
                     <Tick>

@@ -47,12 +47,12 @@ import { goReview, goSettings } from '../lib/router.ts';
 import { useHomeData, type HomeReview } from '../state/HomeData.tsx';
 import { useTheme } from '../state/ThemeContext.tsx';
 import { CommandPalette } from './CommandPalette.tsx';
-import { Segment, Segmented } from './controls.tsx';
+import { MENU_POPUP_CLASS, POPUP_ITEM_CLASS, Segment, Segmented } from './controls.tsx';
 import { BackdropPicker } from './home/BackdropPicker.tsx';
 import { HeroBand, HomeBackdrop } from './home/HomeBackdrop.tsx';
 import { Panel } from './home/Panel.tsx';
 import { Avatar, Chip, CiIcon, DiffStat, EffortMeter, ProgressBar } from './home/primitives.tsx';
-import { ITEM_CLASS as MENU_ITEM_CLASS, POPUP_CLASS as MENU_POPUP_CLASS, QueueFilterMenu, QueueSortMenu, type QueueSort } from './home/QueueMenus.tsx';
+import { QueueFilterMenu, QueueSortMenu, type QueueSort } from './home/QueueMenus.tsx';
 import { ExploreSection } from './Explore.tsx';
 import { UpdateButton, useVersion, VersionText } from './home/VersionBadge.tsx';
 import { FolderPicker } from './home/FolderPicker.tsx';
@@ -675,7 +675,7 @@ function ReviewOptions({
   onArchive: () => void;
 }): React.JSX.Element {
   const lastGenerationModel = useGenerationModel();
-  const disabledItem = `${MENU_ITEM_CLASS} data-disabled:text-chrome-fg-muted`;
+  const disabledItem = `${POPUP_ITEM_CLASS} data-disabled:text-chrome-fg-muted`;
 
   return (
     <Menu.Root modal={false}>
@@ -688,7 +688,7 @@ function ReviewOptions({
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Positioner side="bottom" align="end" sideOffset={4} collisionPadding={8} className="z-50">
-          <Menu.Popup className={MENU_POPUP_CLASS}>
+          <Menu.Popup className={`${MENU_POPUP_CLASS} min-w-48`}>
             <Menu.SubmenuRoot>
               <Menu.SubmenuTrigger disabled={generating} className={`${disabledItem} data-popup-open:bg-chrome-bg-hover`}>
                 {generating ? (
@@ -703,9 +703,9 @@ function ReviewOptions({
               </Menu.SubmenuTrigger>
               <Menu.Portal>
                 <Menu.Positioner sideOffset={8} alignOffset={-4} collisionPadding={8} className="z-50">
-                  <Menu.Popup className={`${MENU_POPUP_CLASS} min-w-36!`}>
+                  <Menu.Popup className={`${MENU_POPUP_CLASS} min-w-36`}>
                     {AGENT_MODELS.map((m) => (
-                      <Menu.Item key={m.id} onClick={() => onGenerateReadingOrder(m.id)} className={MENU_ITEM_CLASS}>
+                      <Menu.Item key={m.id} onClick={() => onGenerateReadingOrder(m.id)} className={POPUP_ITEM_CLASS}>
                         <span className="flex-1">{m.label}</span>
                         {m.id === lastGenerationModel && <span className="text-chrome-fg-subtle">last used</span>}
                       </Menu.Item>
@@ -715,7 +715,7 @@ function ReviewOptions({
               </Menu.Portal>
             </Menu.SubmenuRoot>
             <Menu.Separator className="my-1 h-px bg-chrome-border" />
-            <Menu.Item onClick={onArchive} className={MENU_ITEM_CLASS}>
+            <Menu.Item onClick={onArchive} className={POPUP_ITEM_CLASS}>
               <Archive size={13} strokeWidth={1.75} aria-hidden />
               Archive
             </Menu.Item>

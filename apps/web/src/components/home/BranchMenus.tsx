@@ -8,7 +8,7 @@
 import { Menu } from '@base-ui-components/react/menu';
 import type { BranchSort } from '@joinery/core';
 import { ArrowDownUp, Check, ListFilter } from 'lucide-react';
-import { ITEM_CLASS, LABEL_CLASS, MenuShell, Tick } from './QueueMenus.tsx';
+import { MenuShell, POPUP_ITEM_CLASS, POPUP_LABEL_CLASS, Tick } from '../controls.tsx';
 
 export type BranchFilters = {
   mine: boolean;
@@ -49,7 +49,7 @@ const SEPARATOR = <Menu.Separator className="my-1 h-px bg-chrome-border" />;
 
 function CheckItem({ checked, onChange, children }: { checked: boolean; onChange: (on: boolean) => void; children: React.ReactNode }): React.JSX.Element {
   return (
-    <Menu.CheckboxItem checked={checked} onCheckedChange={onChange} className={ITEM_CLASS}>
+    <Menu.CheckboxItem checked={checked} onCheckedChange={onChange} className={POPUP_ITEM_CLASS}>
       <Tick>
         <Menu.CheckboxItemIndicator>
           <Check size={12} strokeWidth={2.25} aria-hidden />
@@ -73,10 +73,10 @@ function RadioGroup<T extends string>({
 }): React.JSX.Element {
   return (
     <Menu.Group>
-      <Menu.GroupLabel className={LABEL_CLASS}>{label}</Menu.GroupLabel>
+      <Menu.GroupLabel className={POPUP_LABEL_CLASS}>{label}</Menu.GroupLabel>
       <Menu.RadioGroup value={value} onValueChange={(v: T) => onChange(v)}>
         {options.map((o) => (
-          <Menu.RadioItem key={o.value} value={o.value} className={ITEM_CLASS}>
+          <Menu.RadioItem key={o.value} value={o.value} className={POPUP_ITEM_CLASS}>
             <Tick>
               <Menu.RadioItemIndicator>
                 <Check size={12} strokeWidth={2.25} aria-hidden />
@@ -119,7 +119,7 @@ export function BranchFilterMenu({ filters, onChange }: { filters: BranchFilters
       {active && (
         <>
           {SEPARATOR}
-          <Menu.Item onClick={() => onChange(NO_BRANCH_FILTERS)} className={ITEM_CLASS}>
+          <Menu.Item onClick={() => onChange(NO_BRANCH_FILTERS)} className={POPUP_ITEM_CLASS}>
             <Tick>{null}</Tick>
             Clear filters
           </Menu.Item>
@@ -133,10 +133,10 @@ export function BranchSortMenu({ sort, onChange }: { sort: BranchSort; onChange:
   return (
     <MenuShell label="Sort branches" trigger={<ArrowDownUp size={14} strokeWidth={1.75} aria-hidden />}>
       <Menu.Group>
-        <Menu.GroupLabel className={LABEL_CLASS}>Sort by</Menu.GroupLabel>
+        <Menu.GroupLabel className={POPUP_LABEL_CLASS}>Sort by</Menu.GroupLabel>
         <Menu.RadioGroup value={sort} onValueChange={(value: BranchSort) => onChange(value)}>
           {SORT_LABELS.map(({ value, label }) => (
-            <Menu.RadioItem key={value} value={value} closeOnClick className={ITEM_CLASS}>
+            <Menu.RadioItem key={value} value={value} closeOnClick className={POPUP_ITEM_CLASS}>
               <Tick>
                 <Menu.RadioItemIndicator>
                   <Check size={12} strokeWidth={2.25} aria-hidden />

@@ -5,7 +5,7 @@
  */
 import { Menu } from '@base-ui-components/react/menu';
 import { ArrowDownUp, Check, ListFilter } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { MenuShell, POPUP_ITEM_CLASS, POPUP_LABEL_CLASS, Tick } from '../controls.tsx';
 
 export type QueueSort = 'effort' | 'newest' | 'oldest';
 
@@ -14,34 +14,6 @@ const SORT_LABELS: readonly { value: QueueSort; label: string }[] = [
   { value: 'newest', label: 'Newest first' },
   { value: 'oldest', label: 'Oldest first' },
 ];
-
-const TRIGGER_CLASS =
-  'chrome-icon-btn relative size-6 text-chrome-fg-muted data-popup-open:bg-chrome-bg-active data-popup-open:text-chrome-fg';
-export const POPUP_CLASS =
-  'min-w-48 rounded-md bg-chrome-bg-raised p-1 text-xs shadow-chrome ring-1 ring-chrome-fg/10 outline-hidden';
-export const ITEM_CLASS =
-  'flex h-7 cursor-default select-none items-center gap-2 rounded px-2 text-chrome-fg outline-hidden data-highlighted:bg-chrome-bg-hover';
-export const LABEL_CLASS = 'px-2 pt-1.5 pb-1 text-micro font-medium text-chrome-fg-subtle';
-
-export function MenuShell({ trigger, label, children }: { trigger: ReactNode; label: string; children: ReactNode }): React.JSX.Element {
-  return (
-    <Menu.Root modal={false}>
-      <Menu.Trigger aria-label={label} title={label} className={TRIGGER_CLASS}>
-        {trigger}
-      </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Positioner side="bottom" align="end" sideOffset={4} collisionPadding={8} className="z-50">
-          <Menu.Popup className={POPUP_CLASS}>{children}</Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.Root>
-  );
-}
-
-/** A fixed slot so checked and unchecked rows keep their text aligned. */
-export function Tick({ children }: { children: ReactNode }): React.JSX.Element {
-  return <span className="flex size-3.5 shrink-0 items-center justify-center">{children}</span>;
-}
 
 export function QueueFilterMenu({
   onlyRequested,
@@ -68,7 +40,7 @@ export function QueueFilterMenu({
         </>
       }
     >
-      <Menu.CheckboxItem checked={onlyRequested} onCheckedChange={onOnlyRequestedChange} className={ITEM_CLASS}>
+      <Menu.CheckboxItem checked={onlyRequested} onCheckedChange={onOnlyRequestedChange} className={POPUP_ITEM_CLASS}>
         <Tick>
           <Menu.CheckboxItemIndicator>
             <Check size={12} strokeWidth={2.25} aria-hidden />
@@ -80,13 +52,13 @@ export function QueueFilterMenu({
         <>
           <Menu.Separator className="my-1 h-px bg-chrome-border" />
           <Menu.Group>
-            <Menu.GroupLabel className={LABEL_CLASS}>Repositories</Menu.GroupLabel>
+            <Menu.GroupLabel className={POPUP_LABEL_CLASS}>Repositories</Menu.GroupLabel>
             {repos.map((repo) => (
               <Menu.CheckboxItem
                 key={repo.id}
                 checked={!hiddenRepoIds.has(repo.id)}
                 onCheckedChange={(shown) => onRepoToggle(repo.id, shown)}
-                className={ITEM_CLASS}
+                className={POPUP_ITEM_CLASS}
               >
                 <Tick>
                   <Menu.CheckboxItemIndicator>
@@ -107,10 +79,10 @@ export function QueueSortMenu({ sort, onSortChange }: { sort: QueueSort; onSortC
   return (
     <MenuShell label="Sort" trigger={<ArrowDownUp size={14} strokeWidth={1.75} aria-hidden />}>
       <Menu.Group>
-        <Menu.GroupLabel className={LABEL_CLASS}>Sort by</Menu.GroupLabel>
+        <Menu.GroupLabel className={POPUP_LABEL_CLASS}>Sort by</Menu.GroupLabel>
         <Menu.RadioGroup value={sort} onValueChange={(value: QueueSort) => onSortChange(value)}>
           {SORT_LABELS.map(({ value, label }) => (
-            <Menu.RadioItem key={value} value={value} closeOnClick className={ITEM_CLASS}>
+            <Menu.RadioItem key={value} value={value} closeOnClick className={POPUP_ITEM_CLASS}>
               <Tick>
                 <Menu.RadioItemIndicator>
                   <Check size={12} strokeWidth={2.25} aria-hidden />
