@@ -7,6 +7,7 @@
  * places can be added in one go, and a "master folder" is bulk-added with
  * "Select all". Repos that are already registered show up ticked and locked.
  */
+import { Checkbox } from '@base-ui-components/react/checkbox';
 import { Dialog } from '@base-ui-components/react/dialog';
 import { Command } from 'cmdk';
 import { Check, CornerLeftUp, Folder, FolderGit2, FolderOpen, Plus } from 'lucide-react';
@@ -137,33 +138,32 @@ export function FolderPicker({ onAdded, onCancel }: Props): React.JSX.Element {
   const repoItem = (entry: ListDirsResult['entries'][number]): React.JSX.Element => {
     const added = addedPaths.has(entry.path);
     const ticked = added || selected.has(entry.path);
+    // The checkbox sits over the row's left edge as its sibling, not inside the option:
+    // an interactive control nested in an option is invisible to assistive tech.
+    // cmdk unmounts a filtered-out item, so the row hides with it.
     return (
-      <Command.Item key={entry.path} value={entry.name} onSelect={() => void go(entry.path)} className={ITEM_CLASS}>
-        <button
-          type="button"
-          role="checkbox"
-          aria-checked={ticked}
+      <div key={entry.path} className="relative [&:not(:has([cmdk-item]))]:hidden">
+        <Command.Item value={entry.name} onSelect={() => void go(entry.path)} className={ITEM_CLASS}>
+          <span className="size-4 shrink-0" aria-hidden />
+          <FolderGit2 size={14} strokeWidth={1.5} aria-hidden />
+          <EntryName entry={entry} className="text-chrome-fg" />
+          <ChevronHint />
+        </Command.Item>
+        <Checkbox.Root
+          checked={ticked}
+          disabled={added}
+          onCheckedChange={() => toggle(entry.path)}
           aria-label={added ? `${entry.name} is already added` : `Select ${entry.name}`}
           title={added ? 'Already added' : undefined}
-          disabled={added}
-          // Keep focus in the input, and don't let the row's own click navigate.
+          // Keep focus in the input, so typing and ↵ keep working.
           onMouseDown={(e) => e.preventDefault()}
-          onClick={(e) => {
-            e.stopPropagation();
-            toggle(entry.path);
-          }}
-          className={`flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors disabled:opacity-50 ${
-            ticked
-              ? 'border-chrome-accent bg-chrome-accent [&_svg]:text-chrome-accent-fg!'
-              : 'border-chrome-border-strong hover:border-chrome-fg-subtle'
-          }`}
+          className="absolute top-1/2 left-2.5 flex size-4 -translate-y-1/2 items-center justify-center rounded-[4px] border border-chrome-border-strong transition-colors hover:border-chrome-fg-subtle data-checked:border-chrome-accent data-checked:bg-chrome-accent data-disabled:opacity-50"
         >
-          {ticked && <Check size={11} strokeWidth={2.5} aria-hidden />}
-        </button>
-        <FolderGit2 size={14} strokeWidth={1.5} aria-hidden />
-        <EntryName entry={entry} className="text-chrome-fg" />
-        <ChevronHint />
-      </Command.Item>
+          <Checkbox.Indicator>
+            <Check size={11} strokeWidth={2.5} className="text-chrome-accent-fg" aria-hidden />
+          </Checkbox.Indicator>
+        </Checkbox.Root>
+      </div>
     );
   };
 

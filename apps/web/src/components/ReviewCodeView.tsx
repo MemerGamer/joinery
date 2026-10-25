@@ -7,6 +7,7 @@
  * + `onGutterUtilityClick` drive the hover `+` for starting a new thread;
  * the token events drive hover and peek-definition (CodeIntel.tsx).
  */
+import { Checkbox } from '@base-ui-components/react/checkbox';
 import { CodeView } from '@pierre/diffs/react';
 import type { CodeViewAnnotationArgs, CodeViewReactOptions } from '@pierre/diffs/react';
 import type { SelectedLineRange, CodeViewItem } from '@pierre/diffs';
@@ -338,21 +339,15 @@ export function ReviewCodeView(): React.JSX.Element {
           if (entry === undefined) return null;
           const viewed = isViewed(entry);
           return (
-            <button
-              type="button"
-              role="checkbox"
-              aria-checked={viewed}
-              onClick={() => void toggleViewed(entry.path)}
+            <Checkbox.Root
+              checked={viewed}
+              onCheckedChange={() => void toggleViewed(entry.path)}
               title={viewed ? 'Viewed — unchecks itself when this file changes' : 'Mark as viewed'}
-              className={`relative z-1 flex h-6 shrink-0 select-none items-center gap-1.5 rounded-md px-2 font-sans text-xs transition-colors ${
-                viewed
-                  ? 'bg-chrome-success-bg text-chrome-success'
-                  : 'text-chrome-fg-muted hover:bg-chrome-bg-hover hover:text-chrome-fg'
-              }`}
+              className="relative z-1 flex h-6 shrink-0 select-none items-center gap-1.5 rounded-md px-2 font-sans text-xs text-chrome-fg-muted transition-colors hover:bg-chrome-bg-hover hover:text-chrome-fg data-checked:bg-chrome-success-bg data-checked:text-chrome-success data-checked:hover:bg-chrome-success-bg data-checked:hover:text-chrome-success"
             >
               <Check size={12} strokeWidth={viewed ? 2.5 : 1.75} aria-hidden />
               Viewed
-            </button>
+            </Checkbox.Root>
           );
         }}
         renderHeaderPrefix={(item: CodeViewItem<ThreadAnnotationMeta>) => (
