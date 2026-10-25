@@ -5,6 +5,7 @@
  * open. Resolve/reopen and reply round-trip through the API and then ask the
  * parent to reload threads.
  */
+import { Toggle } from '@base-ui-components/react/toggle';
 import { Bot, Check, ChevronDown, Loader2, MessageSquare, Trash2, User, X } from 'lucide-react';
 import { useState } from 'react';
 import type { Thread } from '@joinery/core';
@@ -177,11 +178,11 @@ export function ThreadArticle({
           </>
         )}
         <div className="ml-auto flex items-center gap-0.5">
-          <button
-            type="button"
-            onClick={() => void resolve(!resolved)}
-            aria-pressed={resolved}
-            aria-label={resolved ? 'Reopen thread' : 'Resolve thread'}
+          {/* A toggle names its state, not the action: "Resolved, pressed" rather than "Reopen thread, pressed". */}
+          <Toggle
+            pressed={resolved}
+            onPressedChange={(next) => void resolve(next)}
+            aria-label="Resolved"
             title={resolved ? 'Reopen thread' : 'Resolve thread'}
             className={`chrome-icon-btn h-6 gap-1 text-xs font-medium ${
               resolved ? 'w-auto px-1.5 text-chrome-success! hover:text-chrome-success!' : 'w-6 text-chrome-fg-subtle'
@@ -189,7 +190,7 @@ export function ThreadArticle({
           >
             <Check size={14} strokeWidth={resolved ? 2.5 : 1.75} aria-hidden />
             {resolved && 'Resolved'}
-          </button>
+          </Toggle>
           <ConfirmDelete
             onConfirm={deleteThread}
             prompt="Delete this thread and all its comments?"
