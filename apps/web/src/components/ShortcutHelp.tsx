@@ -42,7 +42,7 @@ export function ShortcutHelp({ open, onClose }: { open: boolean; onClose: () => 
           <div className="grid grid-cols-1 gap-x-6 gap-y-1 overflow-y-auto px-2 pb-3 pt-1 sm:grid-cols-2">
             {SHORTCUT_HELP.map((group) => (
               <section key={group.title} className="min-w-0">
-                <h3 className="px-2 pb-1 pt-2.5 text-micro font-medium uppercase tracking-wider text-chrome-fg-subtle">
+                <h3 className="px-2 pb-1 pt-2.5 text-micro font-medium text-chrome-fg-subtle">
                   {group.title}
                 </h3>
                 <ul className="flex flex-col">
