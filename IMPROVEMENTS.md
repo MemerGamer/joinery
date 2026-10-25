@@ -3,20 +3,20 @@
 What's still open. Parked on purpose, not forgotten. Resolved notes and the
 history behind them live in git (`git log -p -- IMPROVEMENTS.md`).
 
-## Not built (spec)
+## Not built yet
 
-- **Long-lived agent sessions (SPEC §9).** Each run is a single `query()`.
+- **Long-lived agent sessions.** Each run is a single `query()`.
   Not built: follow-ups pushed into a live session, `resume` after a
   restart (a restart just marks in-flight runs `error`), and `startup()`
   pre-warming. The `session_id` / `resume_cursor` columns on `agent_run` are
   unused.
-- **Commit/SHA range picker and "changes since you last looked" (SPEC §4).**
+- **Commit/SHA range picker and "changes since you last looked".**
   Planned as a GitHub-style picker for a commit or range of commits, with
   "since you last looked" as one preset. `review.last_seen_pr_sha` exists
   but nothing writes or reads it.
-- **Per-review base ref override (SPEC §13.1).** `baseRef` is set once when
+- **Per-review base ref override.** `baseRef` is set once when
   the review is created. There is no route or CLI command to change it.
-- **Accessibility pass (SPEC §12, P4.5).** No axe audit, keyboard-only
+- **Accessibility pass.** No axe audit, keyboard-only
   run-through, or screen-reader walkthrough yet.
 - **Windows/Linux (P5) and code intelligence (P6).** Deferred in the spec.
 
