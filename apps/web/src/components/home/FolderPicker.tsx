@@ -7,6 +7,7 @@
  * places can be added in one go, and a "master folder" is bulk-added with
  * "Select all". Repos that are already registered show up ticked and locked.
  */
+import { Dialog } from '@base-ui-components/react/dialog';
 import { Command } from 'cmdk';
 import { Check, CornerLeftUp, Folder, FolderGit2, FolderOpen, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -112,11 +113,11 @@ export function FolderPicker({ onAdded, onCancel }: Props): React.JSX.Element {
     });
 
   function onInputKeyDown(e: React.KeyboardEvent<HTMLInputElement>): void {
-    if (e.key === 'Escape') {
-      // First Escape clears the query, like the palette; the second closes.
+    if (e.key === 'Escape' && query !== '') {
+      // First Escape clears the query, like the palette; the second reaches the dialog and closes it.
       e.preventDefault();
-      if (query !== '') setQuery('');
-      else onCancel();
+      e.stopPropagation();
+      setQuery('');
     } else if (e.key === 'Backspace' && query === '' && listing?.parent != null) {
       e.preventDefault();
       void go(listing.parent);
@@ -167,211 +168,216 @@ export function FolderPicker({ onAdded, onCancel }: Props): React.JSX.Element {
   };
 
   return (
-    // Same backdrop as the command palette; `role="dialog"` makes `keymapGuard` suppress global shortcuts.
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/25 px-4 pt-[14vh] backdrop-blur-[2px]"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onCancel();
-      }}
-      onKeyDown={(e) => {
-        e.stopPropagation();
-        // The input handles its own Escape; this catches it with focus elsewhere (e.g. a crumb).
-        if (e.key === 'Escape' && !e.defaultPrevented) onCancel();
+    // Same backdrop and frame as the command palette. The popup's `role="dialog"` makes `keymapGuard` suppress global shortcuts.
+    <Dialog.Root
+      open
+      onOpenChange={(open) => {
+        if (!open) onCancel();
       }}
     >
-      <Command
-        role="dialog"
-        aria-modal="true"
-        label="Add repositories"
-        shouldFilter={!isPathQuery}
-        value={highlighted}
-        onValueChange={setHighlighted}
-        loop
-        className="flex max-h-[min(560px,76vh)] w-full max-w-xl flex-col overflow-hidden rounded-xl bg-chrome-bg-raised shadow-[0_16px_48px_-12px_rgba(0,0,0,0.35),0_0_0_0.5px_light-dark(rgba(20,22,30,0.18),rgba(255,255,255,0.1))]"
-      >
-        <div className="flex h-12 shrink-0 items-center gap-2.5 px-3.5">
-          <span className="flex h-5 shrink-0 items-center rounded-md bg-chrome-accent-soft px-1.5 text-xs font-medium text-chrome-accent">
-            Add repo
-          </span>
-          <Command.Input
-            ref={inputRef}
-            autoFocus
-            value={query}
-            onValueChange={setQuery}
-            onKeyDown={onInputKeyDown}
-            placeholder="Filter folders, or type a path…"
-            spellCheck={false}
-            autoComplete="off"
-            className="w-full bg-transparent text-[14px] text-chrome-fg outline-hidden placeholder:text-chrome-fg-subtle"
-          />
-        </div>
-
-        {listing !== null && (
-          <nav aria-label="Path" className="flex min-w-0 shrink-0 items-center gap-0.5 px-3.5 pb-2 text-xs text-chrome-fg-subtle">
-            <button
-              type="button"
-              title="Up one folder (⌫)"
-              aria-label="Up one folder"
-              disabled={loading || listing.parent === null}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => void go(listing.parent ?? undefined)}
-              className="mr-1 flex size-5 shrink-0 items-center justify-center rounded-[4px] hover:bg-chrome-bg-hover hover:text-chrome-fg disabled:opacity-40"
-            >
-              <CornerLeftUp size={13} strokeWidth={1.75} aria-hidden />
-            </button>
-            <div className="flex min-w-0 items-center gap-0.5 overflow-hidden whitespace-nowrap [direction:rtl]">
-              {/* rtl keeps the tail of a long path visible; the inner span restores reading order. */}
-              <span className="flex items-center gap-0.5 [direction:ltr]">
-                <Crumb label="/" onClick={() => void go('/')} />
-                {crumbsOf(listing.path).map((c, i, all) => (
-                  <span key={c.path} className="flex items-center gap-0.5">
-                    {i > 0 && <span aria-hidden>/</span>}
-                    <Crumb label={c.name} current={i === all.length - 1} onClick={() => void go(c.path)} />
-                  </span>
-                ))}
-              </span>
-            </div>
-          </nav>
-        )}
-
-        <Command.List
-          // Scrollable containers take focus on click in Chromium, which would strand
-          // the keyboard (⌫, ↵, filtering) outside the input; hand it straight back.
-          onFocus={(e) => {
-            if (e.target === e.currentTarget) inputRef.current?.focus();
+      <Dialog.Portal>
+        <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/25 backdrop-blur-[2px]" />
+        <Dialog.Popup
+          aria-label="Add repositories"
+          initialFocus={inputRef}
+          // Keys stay in here; Escape goes on to the dialog, which closes.
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape') e.stopPropagation();
           }}
-          className={`min-h-0 flex-1 overflow-y-auto border-t border-chrome-border px-1.5 pt-1 pb-1.5 transition-opacity ${
-            loading && listing !== null ? 'opacity-50' : ''
-          }`}
+          className="fixed left-1/2 top-[14vh] z-50 flex max-h-[min(560px,76vh)] w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 flex-col overflow-hidden rounded-xl bg-chrome-bg-raised shadow-[0_16px_48px_-12px_rgba(0,0,0,0.35),0_0_0_0.5px_light-dark(rgba(20,22,30,0.18),rgba(255,255,255,0.1))] outline-hidden"
         >
-          {listing === null ? (
-            <div className="px-3 py-8 text-center text-xs text-chrome-fg-muted">{loading ? 'Loading…' : 'Nothing to show.'}</div>
-          ) : (
-            <>
-              <Command.Empty className="px-3 py-8 text-center text-xs text-chrome-fg-muted">
-                {isPathQuery ? 'Press ↵ to go to this path.' : query !== '' ? 'No matching folders.' : 'No subfolders.'}
-              </Command.Empty>
-
-              {listing.isRepo && (
-                <Group heading="This folder">
-                  {addedPaths.has(listing.path) ? (
-                    <Command.Item value={ADD_CURRENT} disabled className={ITEM_CLASS}>
-                      <Check size={14} strokeWidth={1.5} aria-hidden />
-                      <span className="truncate text-chrome-fg-muted">
-                        <span className="font-medium">{baseName(listing.path)}</span> is already added
-                      </span>
-                    </Command.Item>
-                  ) : (
-                    <Command.Item
-                      value={ADD_CURRENT}
-                      keywords={['add', baseName(listing.path)]}
-                      disabled={busy}
-                      onSelect={() => void add([listing.path])}
-                      className={ITEM_CLASS}
-                    >
-                      <Plus size={14} strokeWidth={1.5} aria-hidden />
-                      <span className="truncate">
-                        Add <span className="font-medium">{baseName(listing.path)}</span>
-                      </span>
-                    </Command.Item>
-                  )}
-                </Group>
-              )}
-
-              {repos.length > 0 && (
-                <Group
-                  heading={`Repositories · ${String(repos.length)}`}
-                  action={
-                    selectableRepos.length > 0 && (
-                      <button
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => setAllRepos(!allReposSelected)}
-                        className="font-normal hover:text-chrome-fg"
-                      >
-                        {allReposSelected ? 'Select none' : 'Select all'}
-                      </button>
-                    )
-                  }
-                >
-                  {repos.map(repoItem)}
-                </Group>
-              )}
-
-              {folders.length > 0 && (
-                <Group heading="Folders">
-                  {folders.map((entry) => (
-                    <Command.Item key={entry.path} value={entry.name} onSelect={() => void go(entry.path)} className={ITEM_CLASS}>
-                      {/* Spacer the width of a checkbox, so names line up with the repos above. */}
-                      <span className="size-4 shrink-0" aria-hidden />
-                      <Folder size={14} strokeWidth={1.5} aria-hidden />
-                      <EntryName entry={entry} className="text-chrome-fg-muted group-data-[selected=true]:text-chrome-fg" />
-                      <ChevronHint />
-                    </Command.Item>
-                  ))}
-                </Group>
-              )}
-            </>
-          )}
-        </Command.List>
-
-        {(error !== null || result !== null) && (
-          <div className="flex shrink-0 flex-col gap-0.5 border-t border-chrome-border bg-chrome-danger-bg px-3.5 py-2 text-xs text-chrome-danger">
-            {error !== null && (
-              <>
-                <p>{error.message}</p>
-                {error.hint !== undefined && <p>{error.hint}</p>}
-              </>
-            )}
-            {result !== null && (
-              <>
-                <p className="font-medium">
-                  {result.added.length > 0 ? `Added ${String(result.added.length)}, ` : ''}
-                  {String(result.failed.length)} failed — still ticked to retry:
-                </p>
-                {result.failed.map((f) => (
-                  <div key={f.path}>
-                    <p className="truncate" title={`${f.path}\n${f.message}`}>
-                      <span className="font-mono">{baseName(f.path)}</span> — {f.message}
-                    </p>
-                    {f.hint !== undefined && <p>{f.hint}</p>}
-                  </div>
-                ))}
-              </>
-            )}
-          </div>
-        )}
-
-        <div className="flex h-10 shrink-0 items-center gap-3 border-t border-chrome-border pr-2 pl-3.5 text-micro text-chrome-fg-subtle">
-          <span className="flex items-center gap-1">
-            <Key>↵</Key>
-            open
-          </span>
-          <span className="flex items-center gap-1">
-            <Key>⌘</Key>
-            <Key>↵</Key>
-            select
-          </span>
-          <span className="flex items-center gap-1">
-            <Key>⌫</Key>
-            up
-          </span>
-          <span className="flex items-center gap-1">
-            <Key>esc</Key>
-            close
-          </span>
-          <button
-            type="button"
-            disabled={busy || selected.size === 0}
-            onClick={() => void add([...selected])}
-            className="chrome-btn-primary ml-auto disabled:opacity-40"
+          <Command
+            label="Add repositories"
+            shouldFilter={!isPathQuery}
+            value={highlighted}
+            onValueChange={setHighlighted}
+            loop
+            className="flex min-h-0 flex-1 flex-col"
           >
-            <FolderOpen size={13} strokeWidth={1.75} aria-hidden />
-            {busy ? 'Adding…' : selected.size === 0 ? 'Add selected' : `Add ${String(selected.size)} ${selected.size === 1 ? 'repo' : 'repos'}`}
-          </button>
-        </div>
-      </Command>
-    </div>
+            <div className="flex h-12 shrink-0 items-center gap-2.5 px-3.5">
+              <span className="flex h-5 shrink-0 items-center rounded-md bg-chrome-accent-soft px-1.5 text-xs font-medium text-chrome-accent">
+                Add repo
+              </span>
+              <Command.Input
+                ref={inputRef}
+                value={query}
+                onValueChange={setQuery}
+                onKeyDown={onInputKeyDown}
+                placeholder="Filter folders, or type a path…"
+                spellCheck={false}
+                autoComplete="off"
+                className="w-full bg-transparent text-[14px] text-chrome-fg outline-hidden placeholder:text-chrome-fg-subtle"
+              />
+            </div>
+
+            {listing !== null && (
+              <nav aria-label="Path" className="flex min-w-0 shrink-0 items-center gap-0.5 px-3.5 pb-2 text-xs text-chrome-fg-subtle">
+                <button
+                  type="button"
+                  title="Up one folder (⌫)"
+                  aria-label="Up one folder"
+                  disabled={loading || listing.parent === null}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => void go(listing.parent ?? undefined)}
+                  className="mr-1 flex size-5 shrink-0 items-center justify-center rounded-[4px] hover:bg-chrome-bg-hover hover:text-chrome-fg disabled:opacity-40"
+                >
+                  <CornerLeftUp size={13} strokeWidth={1.75} aria-hidden />
+                </button>
+                <div className="flex min-w-0 items-center gap-0.5 overflow-hidden whitespace-nowrap [direction:rtl]">
+                  {/* rtl keeps the tail of a long path visible; the inner span restores reading order. */}
+                  <span className="flex items-center gap-0.5 [direction:ltr]">
+                    <Crumb label="/" onClick={() => void go('/')} />
+                    {crumbsOf(listing.path).map((c, i, all) => (
+                      <span key={c.path} className="flex items-center gap-0.5">
+                        {i > 0 && <span aria-hidden>/</span>}
+                        <Crumb label={c.name} current={i === all.length - 1} onClick={() => void go(c.path)} />
+                      </span>
+                    ))}
+                  </span>
+                </div>
+              </nav>
+            )}
+
+            <Command.List
+              // Scrollable containers take focus on click in Chromium, which would strand
+              // the keyboard (⌫, ↵, filtering) outside the input; hand it straight back.
+              onFocus={(e) => {
+                if (e.target === e.currentTarget) inputRef.current?.focus();
+              }}
+              className={`min-h-0 flex-1 overflow-y-auto border-t border-chrome-border px-1.5 pt-1 pb-1.5 transition-opacity ${
+                loading && listing !== null ? 'opacity-50' : ''
+              }`}
+            >
+              {listing === null ? (
+                <div className="px-3 py-8 text-center text-xs text-chrome-fg-muted">{loading ? 'Loading…' : 'Nothing to show.'}</div>
+              ) : (
+                <>
+                  <Command.Empty className="px-3 py-8 text-center text-xs text-chrome-fg-muted">
+                    {isPathQuery ? 'Press ↵ to go to this path.' : query !== '' ? 'No matching folders.' : 'No subfolders.'}
+                  </Command.Empty>
+
+                  {listing.isRepo && (
+                    <Group heading="This folder">
+                      {addedPaths.has(listing.path) ? (
+                        <Command.Item value={ADD_CURRENT} disabled className={ITEM_CLASS}>
+                          <Check size={14} strokeWidth={1.5} aria-hidden />
+                          <span className="truncate text-chrome-fg-muted">
+                            <span className="font-medium">{baseName(listing.path)}</span> is already added
+                          </span>
+                        </Command.Item>
+                      ) : (
+                        <Command.Item
+                          value={ADD_CURRENT}
+                          keywords={['add', baseName(listing.path)]}
+                          disabled={busy}
+                          onSelect={() => void add([listing.path])}
+                          className={ITEM_CLASS}
+                        >
+                          <Plus size={14} strokeWidth={1.5} aria-hidden />
+                          <span className="truncate">
+                            Add <span className="font-medium">{baseName(listing.path)}</span>
+                          </span>
+                        </Command.Item>
+                      )}
+                    </Group>
+                  )}
+
+                  {repos.length > 0 && (
+                    <Group
+                      heading={`Repositories · ${String(repos.length)}`}
+                      action={
+                        selectableRepos.length > 0 && (
+                          <button
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => setAllRepos(!allReposSelected)}
+                            className="font-normal hover:text-chrome-fg"
+                          >
+                            {allReposSelected ? 'Select none' : 'Select all'}
+                          </button>
+                        )
+                      }
+                    >
+                      {repos.map(repoItem)}
+                    </Group>
+                  )}
+
+                  {folders.length > 0 && (
+                    <Group heading="Folders">
+                      {folders.map((entry) => (
+                        <Command.Item key={entry.path} value={entry.name} onSelect={() => void go(entry.path)} className={ITEM_CLASS}>
+                          {/* Spacer the width of a checkbox, so names line up with the repos above. */}
+                          <span className="size-4 shrink-0" aria-hidden />
+                          <Folder size={14} strokeWidth={1.5} aria-hidden />
+                          <EntryName entry={entry} className="text-chrome-fg-muted group-data-[selected=true]:text-chrome-fg" />
+                          <ChevronHint />
+                        </Command.Item>
+                      ))}
+                    </Group>
+                  )}
+                </>
+              )}
+            </Command.List>
+
+            {(error !== null || result !== null) && (
+              <div className="flex shrink-0 flex-col gap-0.5 border-t border-chrome-border bg-chrome-danger-bg px-3.5 py-2 text-xs text-chrome-danger">
+                {error !== null && (
+                  <>
+                    <p>{error.message}</p>
+                    {error.hint !== undefined && <p>{error.hint}</p>}
+                  </>
+                )}
+                {result !== null && (
+                  <>
+                    <p className="font-medium">
+                      {result.added.length > 0 ? `Added ${String(result.added.length)}, ` : ''}
+                      {String(result.failed.length)} failed — still ticked to retry:
+                    </p>
+                    {result.failed.map((f) => (
+                      <div key={f.path}>
+                        <p className="truncate" title={`${f.path}\n${f.message}`}>
+                          <span className="font-mono">{baseName(f.path)}</span> — {f.message}
+                        </p>
+                        {f.hint !== undefined && <p>{f.hint}</p>}
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+
+            <div className="flex h-10 shrink-0 items-center gap-3 border-t border-chrome-border pr-2 pl-3.5 text-micro text-chrome-fg-subtle">
+              <span className="flex items-center gap-1">
+                <Key>↵</Key>
+                open
+              </span>
+              <span className="flex items-center gap-1">
+                <Key>⌘</Key>
+                <Key>↵</Key>
+                select
+              </span>
+              <span className="flex items-center gap-1">
+                <Key>⌫</Key>
+                up
+              </span>
+              <span className="flex items-center gap-1">
+                <Key>esc</Key>
+                close
+              </span>
+              <button
+                type="button"
+                disabled={busy || selected.size === 0}
+                onClick={() => void add([...selected])}
+                className="chrome-btn-primary ml-auto disabled:opacity-40"
+              >
+                <FolderOpen size={13} strokeWidth={1.75} aria-hidden />
+                {busy ? 'Adding…' : selected.size === 0 ? 'Add selected' : `Add ${String(selected.size)} ${selected.size === 1 ? 'repo' : 'repos'}`}
+              </button>
+            </div>
+          </Command>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 

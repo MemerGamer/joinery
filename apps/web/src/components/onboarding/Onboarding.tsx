@@ -12,6 +12,7 @@
  *  - Make it yours: light/dark and the theme, over a mock review window
  *    drawn in the chrome, so a pick visibly re-tints the whole UI.
  */
+import { Dialog } from '@base-ui-components/react/dialog';
 import type { FullDiskAccess, Integrations } from '@joinery/core';
 import {
   ArrowLeft,
@@ -26,7 +27,7 @@ import {
   ShieldCheck,
   Sun,
 } from 'lucide-react';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { callApi } from '../../lib/apiClient.ts';
 import { closeOnboarding, useOnboardingOpen } from '../../lib/onboarding.ts';
@@ -71,85 +72,96 @@ function OnboardingFlow(): React.JSX.Element {
   const [actions, setActions] = useState<HTMLDivElement | null>(null);
   const step: Step = STEPS[index] ?? 'welcome';
   const last = index === STEPS.length - 1;
+  const nextRef = useRef<HTMLButtonElement>(null);
 
   return (
-    // `role="dialog"` makes `keymapGuard` suppress the page's shortcuts underneath.
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Welcome to Joinery"
-      className="fixed inset-0 z-40 flex flex-col bg-chrome-bg"
+    // A full-window Base UI Dialog: it traps focus, and Escape skips the rest like Skip does.
+    // Its popup's `role="dialog"` makes `keymapGuard` suppress the page's shortcuts underneath.
+    <Dialog.Root
+      open
+      disablePointerDismissal
+      onOpenChange={(open) => {
+        if (!open) closeOnboarding();
+      }}
     >
-      {/* Where Homebase draws it, so it stays put through every step. The -dark file is the one drawn for dark backgrounds. */}
-      <header className="shrink-0 px-4 pt-4">
-        <img
-          src={chromeMode === 'dark' ? '/joinery-wordmark-squircle-dark.svg' : '/joinery-wordmark-squircle-light.svg'}
-          alt="Joinery"
-          className="h-[30px] w-auto select-none"
-        />
-      </header>
-      {/* A page of its own rather than a card over one: the step fills it, the footer is pinned under it. */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <header className={`mx-auto flex min-h-9 shrink-0 items-center gap-3 px-10 pt-6 ${WIDTH}`}>
-          <h2 className="text-2xl font-semibold tracking-tight text-chrome-fg">{TITLES[step]}</h2>
-          <div ref={setActions} className="ml-auto flex items-center gap-2" />
-        </header>
-        <ActionsSlot.Provider value={actions}>
-          <div key={step} className={`mx-auto flex min-h-[480px] flex-1 flex-col gap-6 px-10 pt-6 pb-8 ${WIDTH}`}>
-            {step === 'welcome' && <WelcomeStep />}
-            {step === 'repos' && <ReposStep />}
-            {step === 'tools' && <ToolsStep />}
-            {step === 'theme' && <ThemeStep />}
+      <Dialog.Portal>
+        <Dialog.Popup
+          aria-label="Welcome to Joinery"
+          initialFocus={nextRef}
+          className="fixed inset-0 z-40 flex flex-col bg-chrome-bg outline-hidden"
+        >
+          {/* Where Homebase draws it, so it stays put through every step. The -dark file is the one drawn for dark backgrounds. */}
+          <header className="shrink-0 px-4 pt-4">
+            <img
+              src={chromeMode === 'dark' ? '/joinery-wordmark-squircle-dark.svg' : '/joinery-wordmark-squircle-light.svg'}
+              alt="Joinery"
+              className="h-[30px] w-auto select-none"
+            />
+          </header>
+          {/* A page of its own rather than a card over one: the step fills it, the footer is pinned under it. */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+            <header className={`mx-auto flex min-h-9 shrink-0 items-center gap-3 px-10 pt-6 ${WIDTH}`}>
+              <h2 className="text-2xl font-semibold tracking-tight text-chrome-fg">{TITLES[step]}</h2>
+              <div ref={setActions} className="ml-auto flex items-center gap-2" />
+            </header>
+            <ActionsSlot.Provider value={actions}>
+              <div key={step} className={`mx-auto flex min-h-[480px] flex-1 flex-col gap-6 px-10 pt-6 pb-8 ${WIDTH}`}>
+                {step === 'welcome' && <WelcomeStep />}
+                {step === 'repos' && <ReposStep />}
+                {step === 'tools' && <ToolsStep />}
+                {step === 'theme' && <ThemeStep />}
+              </div>
+            </ActionsSlot.Provider>
           </div>
-        </ActionsSlot.Provider>
-      </div>
-      <div className="shrink-0 border-t border-chrome-border">
-        <footer className={`mx-auto grid h-16 grid-cols-[1fr_auto_1fr] items-center px-10 ${WIDTH}`}>
-          <div>
-            {!last && (
-              <button
-                type="button"
-                onClick={closeOnboarding}
-                className="-ml-2.5 h-8 rounded-md px-2.5 text-body font-medium text-chrome-fg-subtle transition-colors hover:bg-chrome-bg-hover hover:text-chrome-fg"
-              >
-                Skip
-              </button>
-            )}
+          <div className="shrink-0 border-t border-chrome-border">
+            <footer className={`mx-auto grid h-16 grid-cols-[1fr_auto_1fr] items-center px-10 ${WIDTH}`}>
+              <div>
+                {!last && (
+                  <button
+                    type="button"
+                    onClick={closeOnboarding}
+                    className="-ml-2.5 h-8 rounded-md px-2.5 text-body font-medium text-chrome-fg-subtle transition-colors hover:bg-chrome-bg-hover hover:text-chrome-fg"
+                  >
+                    Skip
+                  </button>
+                )}
+              </div>
+              <nav aria-label="Steps" className="flex items-center gap-1.5">
+                {STEPS.map((s, i) => (
+                  <button
+                    key={s}
+                    type="button"
+                    aria-label={`Step ${String(i + 1)} of ${String(STEPS.length)}`}
+                    aria-current={i === index ? 'step' : undefined}
+                    onClick={() => setIndex(i)}
+                    className={`h-1.5 rounded-full transition-all duration-200 ${
+                      i === index ? 'w-4 bg-chrome-fg-muted' : 'w-1.5 bg-chrome-bg-active hover:bg-chrome-border-strong'
+                    }`}
+                  />
+                ))}
+              </nav>
+              <div className="flex items-center justify-end gap-1.5">
+                {index > 0 && (
+                  <button type="button" onClick={() => setIndex(index - 1)} className={`chrome-btn ${BIG_BTN}`}>
+                    <ArrowLeft size={14} strokeWidth={1.75} aria-hidden />
+                    Back
+                  </button>
+                )}
+                <button
+                  ref={nextRef}
+                  type="button"
+                  onClick={() => (last ? closeOnboarding() : setIndex(index + 1))}
+                  className={`chrome-btn-primary ${BIG_BTN}`}
+                >
+                  {last ? 'Get started' : 'Next'}
+                  {!last && <ArrowRight size={14} strokeWidth={1.75} aria-hidden />}
+                </button>
+              </div>
+            </footer>
           </div>
-          <nav aria-label="Steps" className="flex items-center gap-1.5">
-            {STEPS.map((s, i) => (
-              <button
-                key={s}
-                type="button"
-                aria-label={`Step ${String(i + 1)} of ${String(STEPS.length)}`}
-                aria-current={i === index ? 'step' : undefined}
-                onClick={() => setIndex(i)}
-                className={`h-1.5 rounded-full transition-all duration-200 ${
-                  i === index ? 'w-4 bg-chrome-fg-muted' : 'w-1.5 bg-chrome-bg-active hover:bg-chrome-border-strong'
-                }`}
-              />
-            ))}
-          </nav>
-          <div className="flex items-center justify-end gap-1.5">
-            {index > 0 && (
-              <button type="button" onClick={() => setIndex(index - 1)} className={`chrome-btn ${BIG_BTN}`}>
-                <ArrowLeft size={14} strokeWidth={1.75} aria-hidden />
-                Back
-              </button>
-            )}
-            <button
-              type="button"
-              autoFocus
-              onClick={() => (last ? closeOnboarding() : setIndex(index + 1))}
-              className={`chrome-btn-primary ${BIG_BTN}`}
-            >
-              {last ? 'Get started' : 'Next'}
-              {!last && <ArrowRight size={14} strokeWidth={1.75} aria-hidden />}
-            </button>
-          </div>
-        </footer>
-      </div>
-    </div>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 
