@@ -119,24 +119,21 @@ export function HomeBackdrop({
 }): React.JSX.Element {
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
-      <div className="absolute inset-0">
-        <Picture backdrop={backdrop} painting={painting} glow={glow} />
-        {BLUR_STEPS.map(([px, from, to]) => {
-          const mask = `linear-gradient(to bottom, transparent calc(${softBy} - ${String(from)}px), black calc(${softBy} - ${String(to)}px))`;
-          return (
-            <div key={px} className="absolute inset-0" style={{ maskImage: mask, WebkitMaskImage: mask }}>
-              {/* Exactly over the sharp picture: scaling it up (to push the blur's soft edge off-screen) shifts every
-                  shape outward and doubles the outlines. At the sides the blur thins out over the sharp copy beneath,
-                  which is the same picture, so it just reads as a little less blurred there. */}
-              <div className="absolute inset-0" style={{ filter: `blur(${String(px)}px)` }}>
-                <Picture backdrop={backdrop} painting={painting} glow={glow} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="absolute inset-0" style={{ background: TINT }} />
-      <div className="absolute inset-0" style={{ background: VIGNETTE }} />
+      <Picture backdrop={backdrop} painting={painting} glow={glow} />
+      {BLUR_STEPS.map(([px, from, to]) => {
+        const mask = `linear-gradient(to bottom, transparent calc(${softBy} - ${String(from)}px), black calc(${softBy} - ${String(to)}px))`;
+        // The mask applies after the filter, so one element both blurs the copy and fades it in.
+        // Exactly over the sharp picture: scaling it up (to push the blur's soft edge off-screen) shifts every
+        // shape outward and doubles the outlines. At the sides the blur thins out over the sharp copy beneath,
+        // which is the same picture, so it just reads as a little less blurred there.
+        return (
+          <div key={px} className="absolute inset-0" style={{ filter: `blur(${String(px)}px)`, maskImage: mask, WebkitMaskImage: mask }}>
+            <Picture backdrop={backdrop} painting={painting} glow={glow} />
+          </div>
+        );
+      })}
+      {/* Vignette over tint: the first background layer paints on top. */}
+      <div className="absolute inset-0" style={{ background: `${VIGNETTE}, ${TINT}` }} />
       {/* The banner's dither, here over the whole window: the picture never fades into the page, so nothing to mask. */}
       <div className="absolute inset-0 opacity-30 mix-blend-multiply" style={DITHER} />
     </div>
