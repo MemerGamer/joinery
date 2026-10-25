@@ -582,8 +582,10 @@ function HoverPopover({
 }): React.JSX.Element {
   const width = Math.min(560, window.innerWidth - 16);
   return (
+    // Not `role="tooltip"`: it holds a button, and a tooltip is read as plain text.
     <div
-      role="tooltip"
+      role="group"
+      aria-label="Symbol info"
       data-code-intel=""
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}
