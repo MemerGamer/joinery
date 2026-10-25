@@ -12,10 +12,10 @@
  * form, while open) its way.
  */
 import { Input } from '@base-ui-components/react/input';
-import { Switch } from '@base-ui-components/react/switch';
 import { LSP_DEFAULT_SERVER, LSP_SERVERS, type Integrations, type LspChoice, type LspServerId } from '@joinery/core';
 import { useState } from 'react';
 import { ApiError, callApi } from '../../lib/apiClient.ts';
+import { ChromeSwitch } from '../controls.tsx';
 import { ChromeSelect } from './ChromeSelect.tsx';
 
 type LspRow = Integrations['lsp'][number];
@@ -24,11 +24,6 @@ export const LSP_TITLE: Record<LspRow['language'], { title: string; files: strin
   typescript: { title: 'TypeScript language server', files: 'TypeScript and JavaScript' },
   php: { title: 'PHP language server', files: 'PHP' },
 };
-
-export const SWITCH_ROOT_CLASS =
-  'relative inline-flex h-[18px] w-8 shrink-0 cursor-pointer items-center rounded-full bg-chrome-bg-active p-0.5 transition-colors data-checked:bg-chrome-accent data-disabled:cursor-default data-disabled:opacity-60';
-export const SWITCH_THUMB_CLASS =
-  'size-3.5 rounded-full bg-chrome-fg shadow-sm transition-transform data-checked:translate-x-3.5 data-checked:bg-chrome-accent-fg';
 
 export const SERVER_NAME: Record<LspServerId, string> = {
   tsrs: 'tsrs',
@@ -105,16 +100,13 @@ export function useLanguageServerPicker(
           Retry
         </button>
       )}
-      <Switch.Root
+      <ChromeSwitch
         checked={row.choice.source !== 'off' || editing}
         onCheckedChange={turn}
         disabled={busy !== null || row.installing}
-        aria-label={`${LSP_TITLE[row.language].title}: ${row.choice.source === 'off' ? 'off' : 'on'}`}
+        label={LSP_TITLE[row.language].title}
         title={row.choice.source === 'off' && canManage ? `Turning it on downloads ${defaultName} into Joinery's data folder` : undefined}
-        className={SWITCH_ROOT_CLASS}
-      >
-        <Switch.Thumb className={SWITCH_THUMB_CLASS} />
-      </Switch.Root>
+      />
     </>
   );
 

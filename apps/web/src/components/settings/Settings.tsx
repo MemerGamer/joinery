@@ -17,7 +17,6 @@
  */
 import type { DataUsage, FullDiskAccess, Integrations, Repo, Review, ReviewSummary } from '@joinery/core';
 import { NumberField } from '@base-ui-components/react/number-field';
-import { Switch } from '@base-ui-components/react/switch';
 import {
   Archive,
   ArrowLeft,
@@ -56,12 +55,13 @@ import { useHomeData } from '../../state/HomeData.tsx';
 import { useTheme, type ChromeMode } from '../../state/ThemeContext.tsx';
 import { CommandPalette } from '../CommandPalette.tsx';
 import { ConfirmDelete } from '../ConfirmDelete.tsx';
+import { ChromeSwitch } from '../controls.tsx';
 import { repoLabel } from '../Explore.tsx';
 import { GitHubMark, GitLabMark, GitMark, LANGUAGE_MARK } from '../brandMarks.tsx';
 import { FolderPicker } from '../home/FolderPicker.tsx';
 import { Panel } from '../home/Panel.tsx';
 import { Chip, type Tone } from '../home/primitives.tsx';
-import { LSP_TITLE, SWITCH_ROOT_CLASS, SWITCH_THUMB_CLASS, useLanguageServerPicker } from './LanguageServerPicker.tsx';
+import { LSP_TITLE, useLanguageServerPicker } from './LanguageServerPicker.tsx';
 import { ThemePicker } from './ThemePicker.tsx';
 import { ThemeSample } from './ThemeSample.tsx';
 
@@ -405,9 +405,7 @@ function HoverCardsRow(): React.JSX.Element {
           </NumberField.Group>
         </NumberField.Root>
       )}
-      <Switch.Root checked={on} onCheckedChange={setHoverEnabled} aria-label={`Show types on hover: ${on ? 'on' : 'off'}`} className={SWITCH_ROOT_CLASS}>
-        <Switch.Thumb className={SWITCH_THUMB_CLASS} />
-      </Switch.Root>
+      <ChromeSwitch checked={on} onCheckedChange={setHoverEnabled} label="Show types on hover" />
     </Row>
   );
 }
@@ -421,14 +419,7 @@ function ImplementationJumpRow(): React.JSX.Element {
       title="Open the only implementation"
       detail={`When a ${PEEK_KEY}-clicked interface has just one implementation, show that first`}
     >
-      <Switch.Root
-        checked={on}
-        onCheckedChange={setImplementationJump}
-        aria-label={`Open the only implementation: ${on ? 'on' : 'off'}`}
-        className={SWITCH_ROOT_CLASS}
-      >
-        <Switch.Thumb className={SWITCH_THUMB_CLASS} />
-      </Switch.Root>
+      <ChromeSwitch checked={on} onCheckedChange={setImplementationJump} label="Open the only implementation" />
     </Row>
   );
 }

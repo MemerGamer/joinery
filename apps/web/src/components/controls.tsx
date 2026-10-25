@@ -3,6 +3,7 @@
  * the same way, so their look and keyboard behaviour live in one place.
  */
 import { Menu } from '@base-ui-components/react/menu';
+import { Switch } from '@base-ui-components/react/switch';
 import { Toggle } from '@base-ui-components/react/toggle';
 import { ToggleGroup } from '@base-ui-components/react/toggle-group';
 
@@ -101,4 +102,35 @@ export function MenuShell({ trigger, label, children }: { trigger: React.ReactNo
 /** A fixed slot so checked and unchecked rows keep their text aligned. */
 export function Tick({ children }: { children: React.ReactNode }): React.JSX.Element {
   return <span className="flex size-3.5 shrink-0 items-center justify-center">{children}</span>;
+}
+
+/**
+ * The chrome's on/off switch (Base UI Switch). `label` names the setting,
+ * not its state: the switch announces on or off itself.
+ */
+export function ChromeSwitch({
+  checked,
+  onCheckedChange,
+  label,
+  disabled = false,
+  title,
+}: {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  label: string;
+  disabled?: boolean;
+  title?: string | undefined;
+}): React.JSX.Element {
+  return (
+    <Switch.Root
+      checked={checked}
+      onCheckedChange={(next) => onCheckedChange(next)}
+      disabled={disabled}
+      aria-label={label}
+      title={title}
+      className="relative inline-flex h-[18px] w-8 shrink-0 cursor-pointer items-center rounded-full bg-chrome-bg-active p-0.5 transition-colors data-checked:bg-chrome-accent data-disabled:cursor-default data-disabled:opacity-60"
+    >
+      <Switch.Thumb className="size-3.5 rounded-full bg-chrome-fg shadow-sm transition-transform data-checked:translate-x-3.5 data-checked:bg-chrome-accent-fg" />
+    </Switch.Root>
+  );
 }
