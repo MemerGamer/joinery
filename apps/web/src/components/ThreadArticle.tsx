@@ -145,7 +145,8 @@ export function ThreadArticle({
     >
       <div
         // Empty space in the header collapses the thread; buttons and the
-        // delete confirmation (rendered inside this row) keep their own clicks.
+        // delete confirmation keep their own clicks. The confirmation is
+        // portaled, but React still bubbles its clicks up through here.
         onClick={(e) => {
           if ((e.target as HTMLElement).closest('button, [role="dialog"]') === null) setCollapsed(true);
         }}
