@@ -2,6 +2,8 @@
  * The revision picker: switches `working`/`head`/`pr`, showing
  * only revisions that currently exist.
  */
+import { Radio } from '@base-ui-components/react/radio';
+import { RadioGroup } from '@base-ui-components/react/radio-group';
 import { useEffect, useState } from 'react';
 import type { HeadSource, Revision } from '@joinery/core';
 import { useReview } from '../state/ReviewContext.tsx';
@@ -62,38 +64,33 @@ export function RevisionPicker(): React.JSX.Element | null {
   const selected = pendingRevision ?? reviewState.currentRevision;
 
   return (
-    <div
-      role="radiogroup"
+    <RadioGroup
       aria-label="Revision"
+      value={selected}
+      onValueChange={(rev) => void setRevision(rev as Revision)}
       className="flex items-center gap-1"
     >
       {reviewState.availableRevisions.map((rev) => {
-        const active = rev === selected;
         const pending = rev === pendingRevision;
         const source = rev === 'head' ? reviewState.headSource : null;
         const suffix = source === null ? null : HEAD_SOURCE_SUFFIX[source];
         return (
-          <button
+          <Radio.Root
             key={rev}
-            type="button"
-            role="radio"
-            aria-checked={active}
+            value={rev}
             // Tied to the real pending state, not the delayed sweep: the
             // switch is in flight either way, and the animation is decorative.
             aria-busy={pending}
-            onClick={() => void setRevision(rev)}
             title={source === null ? undefined : HEAD_SOURCE_TITLE[source]}
-            className={`flex h-7 items-center gap-1 rounded-md px-2.5 text-xs font-medium transition-colors ${
-              active
-                ? 'bg-chrome-bg-active text-chrome-fg'
-                : 'text-chrome-fg-muted hover:bg-chrome-bg-hover hover:text-chrome-fg'
-            } ${pending && sweeping ? 'chrome-sweep' : ''}`}
+            className={`flex h-7 items-center gap-1 rounded-md px-2.5 text-xs font-medium text-chrome-fg-muted transition-colors hover:bg-chrome-bg-hover hover:text-chrome-fg data-checked:bg-chrome-bg-active data-checked:text-chrome-fg ${
+              pending && sweeping ? 'chrome-sweep' : ''
+            }`}
           >
             {LABELS[rev]}
             {suffix !== null && <span className="font-normal text-chrome-fg-subtle">{suffix}</span>}
-          </button>
+          </Radio.Root>
         );
       })}
-    </div>
+    </RadioGroup>
   );
 }
