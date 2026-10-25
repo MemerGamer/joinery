@@ -38,6 +38,7 @@ import {
   RECENT_DAYS,
   type BranchFilters,
 } from './home/BranchMenus.tsx';
+import { Segment, Segmented } from './controls.tsx';
 import { FolderPicker } from './home/FolderPicker.tsx';
 import { Panel } from './home/Panel.tsx';
 import { Avatar, Chip, CiIcon, EffortMeter, SectionHeading, type Tone } from './home/primitives.tsx';
@@ -414,24 +415,26 @@ export function ExploreSection(): React.JSX.Element {
               )}
 
               <div className="flex flex-wrap items-center gap-1.5">
-                {repos.length > 1 && (
-                  <RepoPill
-                    icon={<Layers size={13} strokeWidth={1.75} aria-hidden />}
-                    label="All"
-                    selected={all}
-                    onSelect={() => setRepoIdState(ALL_REPOS)}
-                  />
-                )}
-                {repos.map((r) => (
-                  <RepoPill
-                    key={r.id}
-                    icon={<FolderGit2 size={13} strokeWidth={1.75} aria-hidden />}
-                    label={repoLabel(r)}
-                    title={r.rootPath}
-                    selected={r.id === repoId || (all && repos.length === 1)}
-                    onSelect={() => setRepoIdState(r.id)}
-                  />
-                ))}
+                <Segmented
+                  // With a single repo, "All" is hidden and that repo reads as picked.
+                  value={all && repos.length === 1 ? (repos[0]?.id ?? ALL_REPOS) : repoId}
+                  onChange={setRepoIdState}
+                  aria-label="Repository"
+                  className="contents"
+                >
+                  {repos.length > 1 && (
+                    <RepoPill value={ALL_REPOS} icon={<Layers size={13} strokeWidth={1.75} aria-hidden />} label="All" />
+                  )}
+                  {repos.map((r) => (
+                    <RepoPill
+                      key={r.id}
+                      value={r.id}
+                      icon={<FolderGit2 size={13} strokeWidth={1.75} aria-hidden />}
+                      label={repoLabel(r)}
+                      title={r.rootPath}
+                    />
+                  ))}
+                </Segmented>
                 <button
                   type="button"
                   onClick={() => setAddingRepo(true)}
@@ -570,35 +573,27 @@ export function ExploreSection(): React.JSX.Element {
 }
 
 function RepoPill({
+  value,
   icon,
   label,
   title,
-  selected,
-  onSelect,
 }: {
+  value: string;
   icon: React.ReactNode;
   label: string;
   title?: string;
-  selected: boolean;
-  onSelect: () => void;
 }): React.JSX.Element {
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-pressed={selected}
+    <Segment
+      value={value}
       title={title}
       // Text colours carry `!`: the unlayered global `button { color: inherit }`
       // in styles/index.css otherwise beats layered Tailwind utilities.
-      className={`flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors ${
-        selected
-          ? 'border-chrome-accent bg-chrome-accent-soft text-chrome-accent!'
-          : 'border-transparent bg-chrome-bg-hover text-chrome-fg-muted! hover:bg-chrome-bg-active hover:text-chrome-fg!'
-      }`}
+      className="flex h-7 items-center gap-1.5 rounded-full border border-transparent bg-chrome-bg-hover px-3 text-xs font-medium text-chrome-fg-muted! transition-colors not-data-pressed:hover:bg-chrome-bg-active not-data-pressed:hover:text-chrome-fg! data-pressed:border-chrome-accent data-pressed:bg-chrome-accent-soft data-pressed:text-chrome-accent!"
     >
       {icon}
       {label}
-    </button>
+    </Segment>
   );
 }
 

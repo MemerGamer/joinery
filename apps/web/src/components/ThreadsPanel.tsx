@@ -7,6 +7,7 @@ import { Check, Loader2, MessageSquare, X } from 'lucide-react';
 import { useState } from 'react';
 import type { Thread } from '@joinery/core';
 import { useReview } from '../state/ReviewContext.tsx';
+import { Segment, Segmented } from './controls.tsx';
 import { threadSummary } from '../lib/threadSummary.ts';
 
 /** Whether the agent currently has `eyes` on any comment in the thread. */
@@ -57,22 +58,10 @@ export function ThreadsPanel(): React.JSX.Element {
           <X size={15} strokeWidth={1.5} aria-hidden />
         </button>
       </div>
-      <div className="flex gap-1 px-4 pb-1.5">
-        <button
-          type="button"
-          onClick={() => setFilter('open')}
-          className={`h-6 rounded-md px-2.5 text-xs font-medium transition-colors ${filter === 'open' ? 'bg-chrome-bg-active text-chrome-fg' : 'text-chrome-fg-muted hover:bg-chrome-bg-hover hover:text-chrome-fg'}`}
-        >
-          Open
-        </button>
-        <button
-          type="button"
-          onClick={() => setFilter('resolved')}
-          className={`h-6 rounded-md px-2.5 text-xs font-medium transition-colors ${filter === 'resolved' ? 'bg-chrome-bg-active text-chrome-fg' : 'text-chrome-fg-muted hover:bg-chrome-bg-hover hover:text-chrome-fg'}`}
-        >
-          Resolved
-        </button>
-      </div>
+      <Segmented value={filter} onChange={setFilter} aria-label="Show threads" className="flex gap-1 px-4 pb-1.5">
+        <Segment value="open">Open</Segment>
+        <Segment value="resolved">Resolved</Segment>
+      </Segmented>
       <ul className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-4 pb-4 pt-1">
         {visible.length === 0 && (
           <li className="p-2 text-center text-xs text-chrome-fg-muted">No {filter} threads.</li>

@@ -47,6 +47,7 @@ import { goReview, goSettings } from '../lib/router.ts';
 import { useHomeData, type HomeReview } from '../state/HomeData.tsx';
 import { useTheme } from '../state/ThemeContext.tsx';
 import { CommandPalette } from './CommandPalette.tsx';
+import { Segment, Segmented } from './controls.tsx';
 import { BackdropPicker } from './home/BackdropPicker.tsx';
 import { HeroBand, HomeBackdrop } from './home/HomeBackdrop.tsx';
 import { Panel } from './home/Panel.tsx';
@@ -401,10 +402,10 @@ export function Homebase(): React.JSX.Element {
                     actions={
                       // Ordering one (or no) review changes nothing, so the tabs only show when there's something to reorder.
                       list.length > 1 ? (
-                        <div role="tablist" aria-label="Order" className="flex gap-1">
-                          <OrderTab label="Lightest first" selected={order === 'effort'} onSelect={() => setOrder('effort')} />
-                          <OrderTab label="Recent" selected={order === 'recent'} onSelect={() => setOrder('recent')} />
-                        </div>
+                        <Segmented value={order} onChange={setOrder} aria-label="Order">
+                          <Segment value="effort">Lightest first</Segment>
+                          <Segment value="recent">Recent</Segment>
+                        </Segmented>
                       ) : undefined
                     }
                   >
@@ -566,22 +567,6 @@ const TOPBAR_FADE = `linear-gradient(to bottom, ${[
 const ONLY_REQUESTED_KEY = 'joinery.queue.only-requested';
 const QUEUE_SORT_KEY = 'joinery.queue.sort';
 const QUEUE_HIDDEN_REPOS_KEY = 'joinery.queue.hidden-repos';
-
-function OrderTab({ label, selected, onSelect }: { label: string; selected: boolean; onSelect: () => void }): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={selected}
-      onClick={onSelect}
-      className={`flex h-6 items-center rounded-md px-2.5 text-xs font-medium transition-colors ${
-        selected ? 'bg-chrome-bg-active text-chrome-fg' : 'text-chrome-fg-muted hover:bg-chrome-bg-hover hover:text-chrome-fg'
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
 
 function ReviewCard({
   review: hr,

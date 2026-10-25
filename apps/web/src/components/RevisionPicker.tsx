@@ -82,7 +82,7 @@ export function RevisionPicker(): React.JSX.Element | null {
             // switch is in flight either way, and the animation is decorative.
             aria-busy={pending}
             title={source === null ? undefined : HEAD_SOURCE_TITLE[source]}
-            className={`flex h-7 items-center gap-1 rounded-md px-2.5 text-xs font-medium text-chrome-fg-muted transition-colors hover:bg-chrome-bg-hover hover:text-chrome-fg data-checked:bg-chrome-bg-active data-checked:text-chrome-fg ${
+            className={`flex h-7 items-center gap-1 rounded-md px-2.5 text-xs font-medium text-chrome-fg-muted transition-colors not-data-checked:hover:bg-chrome-bg-hover not-data-checked:hover:text-chrome-fg data-checked:bg-chrome-bg-active data-checked:text-chrome-fg ${
               pending && sweeping ? 'chrome-sweep' : ''
             }`}
           >

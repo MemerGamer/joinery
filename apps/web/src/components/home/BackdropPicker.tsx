@@ -69,7 +69,7 @@ export function BackdropPicker({
                     <Tabs.Tab
                       key={t.kind}
                       value={t.kind}
-                      className="flex h-6 items-center rounded-md px-2.5 text-xs font-medium text-chrome-fg-muted transition-colors hover:bg-chrome-bg-hover hover:text-chrome-fg data-active:bg-chrome-bg-active data-active:text-chrome-fg"
+                      className="flex h-6 items-center rounded-md px-2.5 text-xs font-medium text-chrome-fg-muted transition-colors not-data-active:hover:bg-chrome-bg-hover not-data-active:hover:text-chrome-fg data-active:bg-chrome-bg-active data-active:text-chrome-fg"
                     >
                       {t.label}
                     </Tabs.Tab>
@@ -179,7 +179,7 @@ export function BackdropPicker({
                     <Radio.Root
                       key={l.style}
                       value={l.style}
-                      className="flex h-6 items-center justify-center rounded-[5px] text-xs font-medium text-chrome-fg-muted transition-colors hover:text-chrome-fg data-checked:bg-chrome-bg data-checked:text-chrome-fg data-checked:shadow-sm"
+                      className="flex h-6 items-center justify-center rounded-[5px] text-xs font-medium text-chrome-fg-muted transition-colors not-data-checked:hover:text-chrome-fg data-checked:bg-chrome-bg data-checked:text-chrome-fg data-checked:shadow-sm"
                     >
                       {l.label}
                     </Radio.Root>

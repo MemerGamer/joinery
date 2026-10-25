@@ -13,6 +13,7 @@
  *    drawn in the chrome, so a pick visibly re-tints the whole UI.
  */
 import { Dialog } from '@base-ui-components/react/dialog';
+import { Tabs } from '@base-ui-components/react/tabs';
 import type { FullDiskAccess, Integrations } from '@joinery/core';
 import {
   ArrowLeft,
@@ -33,7 +34,7 @@ import { callApi } from '../../lib/apiClient.ts';
 import { closeOnboarding, useOnboardingOpen } from '../../lib/onboarding.ts';
 import { listThemeOptions } from '../../lib/themes.ts';
 import { useHomeData } from '../../state/HomeData.tsx';
-import { useTheme, type ChromeMode } from '../../state/ThemeContext.tsx';
+import { useTheme } from '../../state/ThemeContext.tsx';
 import { repoLabel } from '../Explore.tsx';
 import { GitHubMark, GitLabMark, GitMark, LANGUAGE_MARK } from '../brandMarks.tsx';
 import { FolderPicker } from '../home/FolderPicker.tsx';
@@ -41,6 +42,7 @@ import { Chip, type Tone } from '../home/primitives.tsx';
 import { LSP_TITLE, useLanguageServerPicker } from '../settings/LanguageServerPicker.tsx';
 import { REASON, hostHint } from '../settings/Settings.tsx';
 import { ThemePicker } from '../settings/ThemePicker.tsx';
+import { SEGMENT_CLASS, Segment, Segmented } from '../controls.tsx';
 import { MockReview } from './MockReview.tsx';
 
 const STEPS = ['welcome', 'repos', 'tools', 'theme'] as const;
@@ -253,60 +255,56 @@ function WelcomeStep(): React.JSX.Element {
       </div>
       <div className="flex min-h-0 flex-1 gap-10">
         {/* The features as a vertical list: the selected one opens to its description, so uneven texts never leave gaps in a row. */}
-        <div
-          role="tablist"
-          aria-orientation="vertical"
-          aria-label="What Joinery does"
-          className="flex w-80 shrink-0 flex-col justify-center gap-1"
-          // Only reading the list holds the timer; looking at the shot doesn't.
-          onMouseEnter={() => setPaused(true)}
-          onMouseLeave={() => setPaused(false)}
-        >
-          {SHOTS.map((s, i) => {
-            const selected = i === shot;
-            return (
-              <button
-                key={s.name}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                onClick={() => setShot(i)}
-                className={`flex gap-4 rounded-lg py-3 pr-3 pl-0 text-left transition-colors ${
-                  selected ? 'text-chrome-fg' : 'text-chrome-fg-muted hover:text-chrome-fg'
-                }`}
-              >
-                {/* The shot's timer: fills downward, then the next one is selected. */}
-                <span className="block w-0.5 shrink-0 self-stretch overflow-hidden rounded-full bg-chrome-bg-active">
-                  {selected && (
+        <Tabs.Root value={shot} onValueChange={(i: number) => setShot(i)} orientation="vertical" className="flex w-80 shrink-0">
+          <Tabs.List
+            activateOnFocus
+            aria-label="What Joinery does"
+            className="flex w-full flex-col justify-center gap-1"
+            // Only reading the list holds the timer; looking at the shot doesn't.
+            onMouseEnter={() => setPaused(true)}
+            onMouseLeave={() => setPaused(false)}
+          >
+            {SHOTS.map((s, i) => {
+              const selected = i === shot;
+              return (
+                <Tabs.Tab
+                  key={s.name}
+                  value={i}
+                  className="flex gap-4 rounded-lg py-3 pr-3 pl-0 text-left text-chrome-fg-muted transition-colors hover:text-chrome-fg data-active:text-chrome-fg"
+                >
+                  {/* The shot's timer: fills downward, then the next one is selected. */}
+                  <span className="block w-0.5 shrink-0 self-stretch overflow-hidden rounded-full bg-chrome-bg-active">
+                    {selected && (
+                      <span
+                        // Keyed on the shot so the bar restarts whenever it changes, even to the same index.
+                        key={shot}
+                        className="onboarding-progress block h-full w-full rounded-full bg-chrome-accent"
+                        style={{ ['--onboarding-shot-ms' as string]: `${String(SHOT_MS)}ms`, animationPlayState: paused ? 'paused' : 'running' }}
+                        onAnimationEnd={() => setShot((shot + 1) % SHOTS.length)}
+                      />
+                    )}
+                  </span>
+                  <span className="flex min-w-0 flex-col gap-1.5">
+                    <span className="text-[15px] font-medium whitespace-pre-line">{s.title}</span>
+                    {/* Opens and closes by tweening `grid-template-rows` between 0fr and 1fr: its natural height, without measuring. */}
                     <span
-                      // Keyed on the shot so the bar restarts whenever it changes, even to the same index.
-                      key={shot}
-                      className="onboarding-progress block h-full w-full rounded-full bg-chrome-accent"
-                      style={{ ['--onboarding-shot-ms' as string]: `${String(SHOT_MS)}ms`, animationPlayState: paused ? 'paused' : 'running' }}
-                      onAnimationEnd={() => setShot((shot + 1) % SHOTS.length)}
-                    />
-                  )}
-                </span>
-                <span className="flex min-w-0 flex-col gap-1.5">
-                  <span className="text-[15px] font-medium whitespace-pre-line">{s.title}</span>
-                  {/* Opens and closes by tweening `grid-template-rows` between 0fr and 1fr: its natural height, without measuring. */}
-                  <span
-                    aria-hidden={!selected}
-                    className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
-                      selected ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
-                    }`}
-                  >
-                    <span className="flex min-h-0 flex-col gap-2 overflow-hidden text-body leading-relaxed text-chrome-fg-muted">
-                      {s.body.map((line) => (
-                        <span key={line}>{line}</span>
-                      ))}
+                      aria-hidden={!selected}
+                      className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
+                        selected ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+                      }`}
+                    >
+                      <span className="flex min-h-0 flex-col gap-2 overflow-hidden text-body leading-relaxed text-chrome-fg-muted">
+                        {s.body.map((line) => (
+                          <span key={line}>{line}</span>
+                        ))}
+                      </span>
                     </span>
                   </span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
+                </Tabs.Tab>
+              );
+            })}
+          </Tabs.List>
+        </Tabs.Root>
         {/* No frame of its own: the shots stack in one grid cell and each is sized to fit, so the screenshot's edge is the only edge. */}
         <div className="grid min-h-[220px] min-w-0 flex-1 [grid-template:minmax(0,1fr)/minmax(0,1fr)] place-items-center">
           {SHOTS.map((s, i) => (
@@ -584,11 +582,22 @@ function ThemeStep(): React.JSX.Element {
     <>
       <StepActions>
         {/* Same height, border and fill as the picker beside it. */}
-        <div role="tablist" aria-label="Mode" className="flex h-8 items-center gap-0.5 rounded-md border border-chrome-border bg-chrome-bg-raised p-[3px]">
-          {(['dark', 'light'] as const).map((mode) => (
-            <ModeTab key={mode} mode={mode} selected={chromeMode === mode} onSelect={() => setChromeMode(mode)} />
-          ))}
-        </div>
+        <Segmented
+          value={chromeMode}
+          onChange={setChromeMode}
+          aria-label="Mode"
+          className="flex h-8 items-center gap-0.5 rounded-md border border-chrome-border bg-chrome-bg-raised p-[3px]"
+        >
+          {(['dark', 'light'] as const).map((mode) => {
+            const Icon = mode === 'dark' ? Moon : Sun;
+            return (
+              <Segment key={mode} value={mode} className={`${SEGMENT_CLASS} h-full! gap-1.5 rounded-[4px]!`}>
+                <Icon size={13} strokeWidth={1.75} aria-hidden />
+                {mode === 'dark' ? 'Dark' : 'Light'}
+              </Segment>
+            );
+          })}
+        </Segmented>
         <div className="w-56">
           <ThemePicker
             // Keyed on the mode: the other mode's list is a different set of themes.
@@ -604,23 +613,5 @@ function ThemeStep(): React.JSX.Element {
       </StepActions>
       <MockReview theme={diffTheme[chromeMode]} preview={preview} />
     </>
-  );
-}
-
-function ModeTab({ mode, selected, onSelect }: { mode: ChromeMode; selected: boolean; onSelect: () => void }): React.JSX.Element {
-  const Icon = mode === 'dark' ? Moon : Sun;
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={selected}
-      onClick={onSelect}
-      className={`flex h-full items-center gap-1.5 rounded-[4px] px-2.5 text-xs font-medium transition-colors ${
-        selected ? 'bg-chrome-bg-active text-chrome-fg' : 'text-chrome-fg-muted hover:bg-chrome-bg-hover hover:text-chrome-fg'
-      }`}
-    >
-      <Icon size={13} strokeWidth={1.75} aria-hidden />
-      {mode === 'dark' ? 'Dark' : 'Light'}
-    </button>
   );
 }
