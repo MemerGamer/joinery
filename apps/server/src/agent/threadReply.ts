@@ -150,6 +150,9 @@ export async function runThreadReplyAgent(
       canUseTool: makeAgentCanUseTool({ cwd }),
       mcpServers: { joinery: tools.server },
       settingSources: [],
+      // No saved transcript and no generated title, as for reading orders.
+      persistSession: false,
+      title: 'Joinery: thread reply',
       systemPrompt: { type: 'preset', preset: 'claude_code', append: systemPromptAppend },
       maxTurns: 40,
     },

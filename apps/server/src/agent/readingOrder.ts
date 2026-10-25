@@ -138,6 +138,10 @@ export async function generateReadingOrderPlan(options: GenerateReadingOrderPlan
       // reviewing a branch that adds a permissive `allow` rule there must
       // not be able to reopen tool access this run intentionally removed.
       settingSources: [],
+      // Runs never resume and `agent_event` keeps what we need, so no
+      // transcript under ~/.claude/projects and no generated session title.
+      persistSession: false,
+      title: 'Joinery: reading order',
       outputFormat: { type: 'json_schema', schema: READING_ORDER_JSON_SCHEMA },
       systemPrompt: {
         type: 'preset',
