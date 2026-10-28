@@ -130,13 +130,32 @@ function runReadingOrder(
  *
  * One run per thread at a time: a second ask while one is going gets that
  * run, since two runs resuming one session would fork its conversation.
+ * `startingThreads` covers the gap between the check and the new row, so
+ * two asks in quick succession can't both start one.
  */
-export async function requestThreadReply(
+export function requestThreadReply(
   deps: RunsDeps,
   review: Review,
   threadId: string,
   engine: EngineForCwd,
   model?: AgentModel,
+): Promise<AgentRun> {
+  const starting = startingThreads.get(threadId);
+  if (starting !== undefined) return starting;
+  const started = startThreadReply(deps, review, threadId, engine, model).finally(() => startingThreads.delete(threadId));
+  startingThreads.set(threadId, started);
+  return started;
+}
+
+/** Thread-reply runs being created, by thread: settles once the run's row says `running`. */
+const startingThreads = new Map<string, Promise<AgentRun>>();
+
+async function startThreadReply(
+  deps: RunsDeps,
+  review: Review,
+  threadId: string,
+  engine: EngineForCwd,
+  model: AgentModel | undefined,
 ): Promise<AgentRun> {
   const reviewId = review.id;
   const active = (await listUnfinishedRuns(deps.db)).find((r) => r.threadId === threadId);
