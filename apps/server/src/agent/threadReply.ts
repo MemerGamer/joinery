@@ -16,6 +16,7 @@ import { AGENT_MODEL_ID } from './model.ts';
 import { makeAgentCanUseTool } from './permissions.ts';
 import { gitToolDefinitions } from './gitTools.ts';
 import { createReviewTools, trimToLines, type Invoke } from './tools.ts';
+import { AGENT_SYSTEM_APPEND, buildPrompt, buildReviewContext, loadReviewContext } from './reviewContext.ts';
 import { resolveRunCwd, type EngineForCwd } from './worktree.ts';
 import { appendEvent, type Db } from '../db/index.ts';
 
@@ -25,13 +26,7 @@ export type ThreadReplyDeps = {
   readonly emit: (event: ServerEvent) => void;
 };
 
-type ReviewDetail = { review: Review; repo: { remoteOwner: string | null; remoteName: string | null; rootPath: string } };
-type ReadingOrderSummary = { readingOrder: { steps: { title: string }[] } | null };
 type DiffResponse = { patch: { patch: string } };
-
-function repoLabel(repo: ReviewDetail['repo']): string {
-  return repo.remoteOwner !== null && repo.remoteName !== null ? `${repo.remoteOwner}/${repo.remoteName}` : repo.rootPath;
-}
 
 async function fetchJson<T>(invoke: Invoke, method: string, path: string): Promise<T> {
   const res = await invoke(method, path);
@@ -40,58 +35,24 @@ async function fetchJson<T>(invoke: Invoke, method: string, path: string): Promi
 }
 
 /**
- * Assembles the run's system-prompt append and user message: the review
- * header, the reading order's step titles (so the agent knows where this
- * thread sits in the bigger picture), the thread rendered as `author: body`
- * in order, its anchor (`path:startLine-endLine` plus the captured context),
- * and the diff for that path trimmed to 200 lines. Exported (and kept free
- * of any SDK call) so its shape is inspectable without spawning a
- * subprocess, matching `buildReadingOrderPrompt`.
+ * The run's task, after the shared review context: what to do, then the
+ * thread rendered as `author: body` in order, its anchor
+ * (`path:startLine-endLine` plus the captured context), and the diff for
+ * that path trimmed to 200 lines. Exported (and kept free of any SDK call)
+ * so its shape is inspectable without spawning a subprocess.
  */
-export function buildThreadReplyPrompt(input: {
-  review: Review;
-  repo: ReviewDetail['repo'];
-  readingOrderTitles: readonly string[];
-  thread: Thread;
-  diffText: string;
-}): { systemPromptAppend: string; userMessage: string } {
-  const { review, repo, readingOrderTitles, thread, diffText } = input;
-
-  const systemPromptAppend = [
-    'You are the review assistant for one code review. You cannot edit code —',
-    'you have no Write, Edit, or shell access at all. Act on the review through',
-    'the `joinery` tools: reply, react, create_thread, resolve_thread,',
-    'mark_viewed, set_reading_order, set_review_status. Answer the latest user',
-    'message in the thread below by calling `reply` with that thread\'s id (given',
-    'in the thread header); text you write outside a tool call is not shown to',
-    'the user. Keep replies short and grounded in specific',
-    "file paths and line numbers. Don't resolve a thread unless the user",
-    'explicitly asked you to. Prefer `react` over a reply for a plain',
-    'acknowledgement. To read the code use Read, Grep and Glob; for its',
-    'history (who changed what, when and why) use the read-only git_log,',
-    'git_show and git_blame tools.',
-  ].join(' ');
-
-  const header = [
-    `Repo: ${repoLabel(repo)}`,
-    `Branch: ${review.branch ?? review.pinnedSha ?? '(detached)'}`,
-    `Base: ${review.baseRef}`,
-    review.prNumber !== null ? `PR: #${String(review.prNumber)}` : null,
-  ]
-    .filter((line): line is string => line !== null)
-    .join('\n');
-
-  const readingOrderSection =
-    readingOrderTitles.length === 0
-      ? 'Reading order: not generated yet.'
-      : `Reading order steps:\n${readingOrderTitles.map((title, i) => `${String(i + 1)}. ${title}`).join('\n')}`;
-
+export function buildThreadReplyTask(input: { thread: Thread; diffText: string }): string {
+  const { thread, diffText } = input;
   const threadBody = thread.comments.map((c) => `${c.author}: ${c.body}`).join('\n\n');
-
-  const userMessage = [
-    header,
+  return [
+    '# Your task',
     '',
-    readingOrderSection,
+    'Answer the latest user message in the thread below by calling `reply`',
+    "with that thread's id (given in the thread header). Don't resolve a",
+    'thread unless the user explicitly asked you to. Prefer `react` over a',
+    'reply for a plain acknowledgement. You may use every joinery tool:',
+    'reply, react, create_thread, resolve_thread, mark_viewed,',
+    'set_reading_order, set_review_status.',
     '',
     `Thread ${thread.id} on ${thread.path}:${String(thread.startLine)}-${String(thread.endLine)} (${thread.side} side):`,
     '',
@@ -103,8 +64,6 @@ export function buildThreadReplyPrompt(input: {
     `Diff for ${thread.path}:`,
     diffText,
   ].join('\n');
-
-  return { systemPromptAppend, userMessage };
 }
 
 /**
@@ -123,24 +82,16 @@ export async function runThreadReplyAgent(
 ): Promise<void> {
   const cwd = await resolveRunCwd({ db: deps.db }, review, engine);
 
-  const [{ repo }, { readingOrder }, { patch }] = await Promise.all([
-    fetchJson<ReviewDetail>(deps.invoke, 'GET', `/api/reviews/${encodeURIComponent(review.id)}`),
-    fetchJson<ReadingOrderSummary>(deps.invoke, 'GET', `/api/reviews/${encodeURIComponent(review.id)}/reading-order`),
+  const [contextInput, { patch }] = await Promise.all([
+    loadReviewContext(deps.db, review, engine.getFileList().files),
     fetchJson<DiffResponse>(deps.invoke, 'GET', `/api/reviews/${encodeURIComponent(review.id)}/diff?path=${encodeURIComponent(thread.path)}`),
   ]);
-
-  const { systemPromptAppend, userMessage } = buildThreadReplyPrompt({
-    review,
-    repo,
-    readingOrderTitles: (readingOrder?.steps ?? []).map((s) => s.title),
-    thread,
-    diffText: trimToLines(patch.patch, 200),
-  });
+  const task = buildThreadReplyTask({ thread, diffText: trimToLines(patch.patch, 200) });
 
   const tools = createReviewTools({ invoke: deps.invoke, reviewId: review.id, runId, extraTools: gitToolDefinitions({ cwd }) });
 
   const stream = query({
-    prompt: userMessage,
+    prompt: buildPrompt(buildReviewContext(contextInput), task),
     options: {
       ...claudeExecutableOption(),
       abortController,
@@ -153,7 +104,7 @@ export async function runThreadReplyAgent(
       // No saved transcript and no generated title, as for reading orders.
       persistSession: false,
       title: 'Joinery: thread reply',
-      systemPrompt: { type: 'preset', preset: 'claude_code', append: systemPromptAppend },
+      systemPrompt: { type: 'preset', preset: 'claude_code', append: AGENT_SYSTEM_APPEND },
       maxTurns: 40,
     },
   });

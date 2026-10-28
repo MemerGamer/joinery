@@ -783,11 +783,8 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     const cwd = await resolveRunCwd({ db: deps.db }, review, engine);
     const run = await generateReadingOrder({ db: deps.db, invoke: deps.invoke, emit: (e) => dispatch(id, e) }, id, {
       cwd,
+      review,
       files,
-      loadPull: async () => {
-        const pull = (await getReviewState(deps.db, id))?.pull ?? null;
-        return pull === null ? null : { title: pull.title, body: pull.body };
-      },
       ...(body.model === undefined ? {} : { model: body.model }),
     });
     return c.json({ run }, 202);

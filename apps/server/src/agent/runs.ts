@@ -29,7 +29,8 @@ import {
   writeReadingOrderPlan,
   type Db,
 } from '../db/index.ts';
-import { generateReadingOrderPlan, ReadingOrderAgentError, type PullContext } from './readingOrder.ts';
+import { generateReadingOrderPlan, ReadingOrderAgentError } from './readingOrder.ts';
+import { buildReviewContext, loadReviewContext } from './reviewContext.ts';
 import { runThreadReplyAgent } from './threadReply.ts';
 import type { Invoke } from './tools.ts';
 import type { EngineForCwd } from './worktree.ts';
@@ -46,13 +47,8 @@ export type RunsDeps = {
 /** What `generateReadingOrder` needs from the review's engine (`cwd` = the review root). */
 export type ReadingOrderContext = {
   readonly cwd: string;
+  readonly review: Review;
   readonly files: readonly FileEntry[];
-  /**
-   * Fetches the PR's title and description; null when the review has no PR.
-   * Called inside the background run so a cold forge call never delays the
-   * 202. A failure only drops the PR context from the prompt.
-   */
-  readonly loadPull?: () => Promise<PullContext | null>;
   /** The model for the run; Claude Code's own default when absent. */
   readonly model?: AgentModel;
 };
@@ -74,12 +70,16 @@ export async function generateReadingOrder(deps: RunsDeps, reviewId: string, con
   const run = await setRunStatus(deps.db, created.id, 'running');
 
   runInBackground(deps, reviewId, run.id, async (signal) => {
-    const pull = context.loadPull === undefined ? null : await context.loadPull().catch(() => null);
+    if (context.files.length === 0) {
+      throw new ReadingOrderAgentError('review has no changed files to build a reading order from');
+    }
     const plan = await generateReadingOrderPlan({
       cwd: context.cwd,
+      context: buildReviewContext(await loadReviewContext(deps.db, context.review, context.files)),
+      invoke: deps.invoke,
+      reviewId,
+      runId: run.id,
       abortController: signal,
-      files: context.files,
-      ...(pull === null ? {} : { pull }),
       ...(context.model === undefined ? {} : { model: context.model }),
       onMessage: async (message) => {
         const type = typeof (message as { type?: unknown }).type === 'string' ? (message as { type: string }).type : 'unknown';
