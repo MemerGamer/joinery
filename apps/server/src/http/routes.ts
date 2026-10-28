@@ -41,7 +41,7 @@ import {
 import { z } from 'zod';
 import { getVersionInfo, startUpdate } from '../updates.ts';
 import { deleteRepoFully, deleteReviewFully } from '../cleanup.ts';
-import { clearCachedAnswers, clearReviewWorktrees, clearWorktrees, getDataUsage, getFullDiskAccess, getIntegrations, openFullDiskAccess, restartServer } from '../settings.ts';
+import { clearCachedAnswers, clearReviewWorktrees, clearSessions, clearWorktrees, getDataUsage, getFullDiskAccess, getIntegrations, openFullDiskAccess, restartServer } from '../settings.ts';
 import {
   appendReply,
   createReview,
@@ -307,6 +307,10 @@ export function buildRoutes(deps: RoutesDeps): Hono {
 
   app.post('/api/settings/review-worktrees/clear', async (c) => {
     return c.json({ removed: await clearReviewWorktrees() });
+  });
+
+  app.post('/api/settings/sessions/clear', async (c) => {
+    return c.json({ removed: await clearSessions(deps.db) });
   });
 
   app.post('/api/settings/cached-answers/clear', async (c) => {

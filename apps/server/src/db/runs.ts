@@ -137,6 +137,11 @@ export async function clearReviewSessions(db: Db, reviewId: string): Promise<str
   return [...new Set(rows.map((r) => r.sessionId).filter((id): id is string => id !== null))];
 }
 
+/** Forgets every run's session (all transcripts are being deleted). */
+export async function clearAllSessions(db: Db): Promise<void> {
+  await db.update(agentRun).set({ sessionId: null, resumeCursor: null }).where(isNotNull(agentRun.sessionId));
+}
+
 export async function setRunError(db: Db, id: string, error: string | null): Promise<AgentRun> {
   return update(db, id, { error });
 }

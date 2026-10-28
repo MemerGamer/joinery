@@ -109,7 +109,7 @@ packages/core  zod schemas shared by all three
   - A server restart resumes each in-flight run from its own session, at the last point with no tool call left waiting. A run with nothing saved to resume is marked `error`.
   - Transcripts live in `data/sessions/<review>/` through the SDK's `sessionStore`. The CLI's own copy under its config dir is deleted after each run. The config dir itself is never moved: the user's login lives there.
   - A resumed session is told when the head or any changed file moved since its last turn (`codeKey`), so it re-reads rather than answering from stale reads.
-  - Archiving or deleting a review cancels its runs and deletes its sessions; its threads start fresh afterwards.
+  - Sessions are a cache, like agent worktrees: a thread whose session is gone starts a fresh one. Archiving or deleting a review cancels its runs and deletes its sessions, and the settings page can clear them all while no run is going.
 - **One cached prefix (`reviewContext.ts`):**
   - Every run kind is offered the same tools and the same system prompt, so all runs of a review share the prompt cache's tools-and-system prefix. What a kind may call is `canUseTool`'s job, never the tool list's.
   - The reading order submits its plan through `set_reading_order`, not structured output, which would add a tool of its own.

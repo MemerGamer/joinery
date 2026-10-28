@@ -14,9 +14,11 @@
  * Claude Code on token refresh.
  *
  * A review's sessions last until it is archived or deleted
- * (`deleteReviewSessions`). A run that resumes one is told when the code
- * changed since its last turn (`codeKey`), so it re-reads instead of
- * answering from stale reads.
+ * (`deleteReviewSessions`), or the settings page clears them all
+ * (`deleteAllSessions`): like agent worktrees they are a cache, and a
+ * thread whose session is gone just starts a fresh one. A run that resumes
+ * one is told when the code changed since its last turn (`codeKey`), so it
+ * re-reads instead of answering from stale reads.
  */
 import type { SDKMessage, SessionKey, SessionStore, SessionStoreEntry } from '@anthropic-ai/claude-agent-sdk';
 import type { FileEntry } from '@joinery/core';
@@ -24,11 +26,16 @@ import { createHash } from 'node:crypto';
 import { appendFile, mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { clearReviewSessions, setRunResumeCursor, setRunSessionId, type Db, type ResumeCursor } from '../db/index.ts';
+import { clearAllSessions, clearReviewSessions, setRunResumeCursor, setRunSessionId, type Db, type ResumeCursor } from '../db/index.ts';
 import { resolveDataPaths } from '../db/paths.ts';
 
+/** Every review's transcripts, one dir per review. */
+export function sessionsDir(): string {
+  return join(resolveDataPaths().root, 'sessions');
+}
+
 function reviewSessionsDir(reviewId: string): string {
-  return join(resolveDataPaths().root, 'sessions', reviewId);
+  return join(sessionsDir(), reviewId);
 }
 
 /** Session ids are UUIDs and subpaths SDK-chosen names; neither may climb out of the review's dir. */
@@ -88,6 +95,24 @@ export async function deleteReviewSessions(db: Db, reviewId: string): Promise<vo
   const sessionIds = await clearReviewSessions(db, reviewId);
   await rm(reviewSessionsDir(reviewId), { recursive: true, force: true });
   for (const id of sessionIds) await removeLocalTranscript(id);
+}
+
+/** Deletes every review's sessions (settings' data cleanup); returns how many. Threads start fresh afterwards. */
+export async function deleteAllSessions(db: Db): Promise<number> {
+  const count = (await listSessionFiles()).length;
+  await clearAllSessions(db);
+  await rm(sessionsDir(), { recursive: true, force: true });
+  return count;
+}
+
+/** The transcripts on disk, laid out `<review>/<session>.jsonl`. */
+export async function listSessionFiles(): Promise<string[]> {
+  const list = (path: string): Promise<string[]> => readdir(path).catch(() => [] as string[]);
+  const reviews = await list(sessionsDir());
+  const nested = await Promise.all(
+    reviews.map(async (review) => (await list(join(sessionsDir(), review))).filter((name) => name.endsWith('.jsonl'))),
+  );
+  return nested.flat();
 }
 
 /**
