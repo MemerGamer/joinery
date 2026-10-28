@@ -32,6 +32,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { callApi } from '../lib/apiClient.ts';
 import { cached, getHoverDelay, getHoverEnabled, getImplementationJump, IS_MAC, PEEK_KEY, placement } from '../lib/codeIntel.ts';
+import { isPreviewDiff } from '../lib/preview.ts';
 import { useReview } from '../state/ReviewContext.tsx';
 import { Markdown } from './Markdown.tsx';
 import { otherImplementations, PeekNavigator, type Load, type Nav, type NavEntry } from './PeekNavigator.tsx';
@@ -496,7 +497,7 @@ export function useCodeIntel({ hoverSuppressed = false }: { hoverSuppressed?: bo
       const item = items.find((i) => i.id === path);
       if (item === undefined) return;
       // Only a line inside a shown hunk can be scrolled to; else the file's top.
-      const shown = item.collapsed !== true && item.fileDiff.hunks.some(
+      const shown = item.collapsed !== true && !isPreviewDiff(item.fileDiff) && item.fileDiff.hunks.some(
         (h) => line >= h.additionStart && line < h.additionStart + h.additionCount,
       );
       const view = codeViewRef.current;
