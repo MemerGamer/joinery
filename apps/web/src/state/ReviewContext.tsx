@@ -320,6 +320,12 @@ export interface ReviewEngine extends ReviewEngineState {
   fileViewOf: (path: string) => FileView | null;
   /** Switch a previewable file between its diff and its preview, remembered for the session. */
   setFileView: (path: string, view: FileView) => void;
+  /**
+   * Bring back a previewed file's diff, resolving once its lines are there
+   * to scroll to (at once for a file already showing it). Jumping to a
+   * thread goes through this, since a preview carries no threads.
+   */
+  showDiff: (path: string) => Promise<void>;
 }
 
 const ReviewCtx = createContext<ReviewEngine | null>(null);
@@ -532,18 +538,18 @@ export function ReviewProvider({
     [buildAnnotationsFor, itemAnnotations, notifyItemMutated, viewOf],
   );
 
-  const loadPatchInto = useCallback((entry: FileEntry) => {
+  const loadPatchInto = useCallback((entry: FileEntry): Promise<void> => {
     if (viewOf(entry) === 'preview') {
       // A preview needs no patch, only its stub (new blobs, new stub).
       const rec = itemsRef.current.get(entry.path);
-      if (rec === undefined) return;
+      if (rec === undefined) return Promise.resolve();
       rec.item.fileDiff = previewFileDiff(entry);
       rec.item.version = (rec.item.version ?? 0) + 1;
       notifyItemMutated(rec.item);
-      return;
+      return Promise.resolve();
     }
     const rev = revisionRef.current;
-    loadFileDiff(reviewId, entry, rev)
+    return loadFileDiff(reviewId, entry, rev)
       .then((fileDiff) => {
         const rec = itemsRef.current.get(entry.path);
         // Switched to its preview while the patch was on its way.
@@ -1204,22 +1210,32 @@ export function ReviewProvider({
   // diff: leave the preview showing until the patch (usually a cache hit)
   // lands, rather than flashing an empty card in between.
   const setFileView = useCallback(
-    (path: string, view: FileView) => {
+    (path: string, view: FileView): Promise<void> => {
       const rec = itemsRef.current.get(path);
-      if (rec === undefined || viewOf(rec.entry) === null || viewOf(rec.entry) === view) return;
+      if (rec === undefined || viewOf(rec.entry) === null || viewOf(rec.entry) === view) return Promise.resolve();
       viewChoicesRef.current.set(path, view);
       persistViews(reviewId, viewChoicesRef.current);
-      if (view === 'diff') {
-        loadPatchInto(rec.entry);
-        return;
-      }
+      if (view === 'diff') return loadPatchInto(rec.entry);
       rec.item.fileDiff = previewFileDiff(rec.entry);
       rec.item.annotations = itemAnnotations(rec.entry, annotationsRef.current.get(path) ?? []);
       rec.item.version = (rec.item.version ?? 0) + 1;
       notifyItemMutated(rec.item);
       setItemsVersion((v) => v + 1);
+      return Promise.resolve();
     },
     [reviewId, viewOf, loadPatchInto, itemAnnotations, notifyItemMutated],
+  );
+
+  // `CodeView` lays out the restored lines on a later frame than the
+  // mutation, and a line can only be scrolled to once it is laid out.
+  const showDiff = useCallback(
+    async (path: string) => {
+      const rec = itemsRef.current.get(path);
+      if (rec === undefined || viewOf(rec.entry) !== 'preview') return;
+      await setFileView(path, 'diff');
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    },
+    [setFileView, viewOf],
   );
 
   const startDraftThread = useCallback((draft: DraftThread) => setDraftThread(draft), []);
@@ -1340,7 +1356,8 @@ export function ReviewProvider({
     collapseAllFiles,
     expandAllFiles,
     fileViewOf,
-    setFileView,
+    setFileView: (path, view) => void setFileView(path, view),
+    showDiff,
   };
   // annotationsVersion is read only to satisfy the exhaustive-deps linter's
   // intent (annotationsByPath is a ref, so consumers re-render off version).

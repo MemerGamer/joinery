@@ -117,7 +117,7 @@ function ImageSide({ request, label }: { request: BlobRequest; label: string }):
         alt={`${request.entry.path}, ${label.toLowerCase()}`}
         onLoad={(e) => setDimensions({ width: e.currentTarget.naturalWidth, height: e.currentTarget.naturalHeight })}
         onError={() => setUndecodable(true)}
-        className="block max-h-[480px] max-w-full object-contain"
+        className="block max-h-full max-w-full object-contain"
       />
     );
   } else {
@@ -125,12 +125,14 @@ function ImageSide({ request, label }: { request: BlobRequest; label: string }):
   }
 
   return (
+    // A fixed stage, so the card is its final height before the image
+    // decodes and `CodeView` never has to re-measure it.
     <figure className="flex min-w-0 flex-col gap-1.5">
       <figcaption className="flex items-baseline justify-between gap-2 text-xs">
         <span className="font-medium text-chrome-fg-muted">{label}</span>
         <span className="truncate text-micro text-chrome-fg-subtle tabular-nums">{details.join(' · ')}</span>
       </figcaption>
-      <div className="preview-checkerboard flex min-h-40 flex-1 items-center justify-center overflow-hidden rounded-md border border-chrome-border p-2">
+      <div className="preview-checkerboard flex h-80 items-center justify-center overflow-hidden rounded-md border border-chrome-border p-2">
         {body}
       </div>
     </figure>
