@@ -1,9 +1,10 @@
 /**
  * The `thread_reply` run kind.
- * Mirrors `readingOrder.ts`'s shape (one `query()` per run, every SDK
- * message persisted via `appendEvent`) but the agent here acts through the
- * `joinery` MCP tools (`tools.ts`) instead of returning structured output,
- * and the "reply" it's asked for is a trigger, not a contract (design
+ * Like `readingOrder.ts`, every SDK message is persisted via `appendEvent`.
+ * Unlike it, a run resumes its thread's session (`sessions.ts`), so a
+ * follow-up keeps what the agent already read. The agent acts through the
+ * `joinery` MCP tools (`tools.ts`), and the "reply" it's asked for is a
+ * trigger, not a contract (design
  * decision 4): if it ends having written nothing, the caller (`runs.ts`)
  * appends a fallback reply so the click that started it never vanishes
  * silently.
@@ -17,8 +18,17 @@ import { makeAgentCanUseTool } from './permissions.ts';
 import { gitToolDefinitions } from './gitTools.ts';
 import { createReviewTools, trimToLines, type Invoke } from './tools.ts';
 import { AGENT_SYSTEM_APPEND, buildPrompt, buildReviewContext, loadReviewContext } from './reviewContext.ts';
+import {
+  codeKey,
+  codeMovedNote,
+  createSessionStore,
+  isMissingSession,
+  removeLocalTranscript,
+  safeResumePoint,
+  SessionTracker,
+} from './sessions.ts';
 import { resolveRunCwd, type EngineForCwd } from './worktree.ts';
-import { appendEvent, type Db } from '../db/index.ts';
+import { appendEvent, getLatestThreadSession, type Db, type ResumeCursor } from '../db/index.ts';
 
 export type ThreadReplyDeps = {
   readonly db: Db;
@@ -67,9 +77,44 @@ export function buildThreadReplyTask(input: { thread: Thread; diffText: string }
 }
 
 /**
+ * The prompt for a run that resumes the thread's session: only what is new
+ * since the agent's last turn (the conversation already holds the review
+ * and the thread so far), and a note when the code moved in between.
+ */
+export function buildFollowUpTask(input: { thread: Thread; codeNote: string | null; restarted: boolean }): string {
+  const { thread, codeNote, restarted } = input;
+  const lastAgent = thread.comments.findLastIndex((c) => c.author === 'agent');
+  const fresh = thread.comments.slice(lastAgent + 1);
+  // Listed after a restart too: the crash may have cut the session short of them.
+  const lines = [
+    ...(restarted ? ['The server restarted while you were answering. Pick up where you left off.', ''] : []),
+    `New in thread ${thread.id} since your last turn:`,
+    '',
+    ...fresh.map((c) => `${c.author}: ${c.body}`),
+  ];
+  if (codeNote !== null) lines.push('', codeNote);
+  lines.push(
+    '',
+    `Answer the latest user message by calling \`reply\` with thread id ${thread.id}.${restarted ? ' If you already replied to it, end your turn.' : ''}`,
+  );
+  return lines.join('\n');
+}
+
+/** Where a run resumes a session from, or null for a fresh one. */
+export type ThreadSessionStart = {
+  readonly sessionId: string;
+  readonly cursor: ResumeCursor | null;
+  /** Resuming this same run after a restart, rather than a follow-up from an earlier one. */
+  readonly restarted: boolean;
+} | null;
+
+/**
  * Runs the agent for one `thread_reply` run and resolves once the agent
  * has finished (or rejects if it failed). It never touches the run row's
  * status: `runs.ts` owns creating and ending the run, and emits `run.ended`.
+ *
+ * It resumes the thread's session when there is one (`start`, else the
+ * thread's latest run), and starts fresh when there is none or it is gone.
  */
 export async function runThreadReplyAgent(
   deps: ThreadReplyDeps,
@@ -79,46 +124,78 @@ export async function runThreadReplyAgent(
   engine: EngineForCwd,
   abortController: AbortController,
   model: AgentModel = AGENT_MODEL_ID,
+  start?: ThreadSessionStart,
 ): Promise<void> {
   const cwd = await resolveRunCwd({ db: deps.db }, review, engine);
-
-  const [contextInput, { patch }] = await Promise.all([
-    loadReviewContext(deps.db, review, engine.getFileList().files),
-    fetchJson<DiffResponse>(deps.invoke, 'GET', `/api/reviews/${encodeURIComponent(review.id)}/diff?path=${encodeURIComponent(thread.path)}`),
-  ]);
-  const task = buildThreadReplyTask({ thread, diffText: trimToLines(patch.patch, 200) });
+  const list = engine.getFileList();
+  const code = { key: codeKey(list.headSha, list.files), headSha: list.headSha };
+  const from =
+    start !== undefined
+      ? start
+      : await getLatestThreadSession(deps.db, thread.id, runId).then((s) => (s === null ? null : { ...s, restarted: false }));
 
   const tools = createReviewTools({ invoke: deps.invoke, reviewId: review.id, runId, extraTools: gitToolDefinitions({ cwd }) });
-
-  const stream = query({
-    prompt: buildPrompt(buildReviewContext(contextInput), task),
-    options: {
-      ...claudeExecutableOption(),
-      abortController,
-      cwd,
-      model,
-      disallowedTools: ['Write', 'Edit', 'NotebookEdit', 'Bash'],
-      canUseTool: makeAgentCanUseTool({ cwd }),
-      mcpServers: { joinery: tools.server },
-      settingSources: [],
-      // No saved transcript and no generated title, as for reading orders.
-      persistSession: false,
-      title: 'Joinery: thread reply',
-      systemPrompt: { type: 'preset', preset: 'claude_code', append: AGENT_SYSTEM_APPEND },
-      maxTurns: 40,
-    },
-  });
+  const tracker = new SessionTracker(deps.db, runId, code);
 
   // Text of the latest assistant message: if the agent ends without having
   // written anything (e.g. it answered as plain final text), that is the
   // best candidate for the reply.
   let lastText = '';
-  for await (const message of stream as AsyncIterable<SDKMessage>) {
-    for (const label of toolActivityLabels(message, cwd)) {
-      deps.emit({ type: 'run.activity', reviewId: review.id, runId, label });
+  const runOnce = async (prompt: string, resume: { sessionId: string; at: string } | null): Promise<void> => {
+    const stream = query({
+      prompt,
+      options: {
+        ...claudeExecutableOption(),
+        abortController,
+        cwd,
+        model,
+        disallowedTools: ['Write', 'Edit', 'NotebookEdit', 'Bash'],
+        canUseTool: makeAgentCanUseTool({ cwd }),
+        mcpServers: { joinery: tools.server },
+        settingSources: [],
+        // The transcript goes to `data/sessions/` (`sessions.ts`); no generated title.
+        sessionStore: createSessionStore(review.id),
+        sessionStoreFlush: 'eager',
+        ...(resume === null ? {} : { resume: resume.sessionId, resumeSessionAt: resume.at }),
+        title: 'Joinery: thread reply',
+        systemPrompt: { type: 'preset', preset: 'claude_code', append: AGENT_SYSTEM_APPEND },
+        maxTurns: 40,
+      },
+    });
+    for await (const message of stream as AsyncIterable<SDKMessage>) {
+      for (const label of toolActivityLabels(message, cwd)) {
+        deps.emit({ type: 'run.activity', reviewId: review.id, runId, label });
+      }
+      if (message.type === 'assistant') lastText = assistantText(message);
+      await tracker.observe(message);
+      await appendEvent(deps.db, runId, message.type, message);
     }
-    if (message.type === 'assistant') lastText = assistantText(message);
-    await appendEvent(deps.db, runId, message.type, message);
+  };
+
+  try {
+    let resumed = false;
+    // At the session's last safe point: the end of a finished run, or short
+    // of a tool call a crash or a cancel left waiting. Nothing saved: fresh.
+    const at = from === null ? null : await safeResumePoint(review.id, from.sessionId);
+    if (from !== null && at !== null) {
+      const task = buildFollowUpTask({ thread, codeNote: codeMovedNote(from.cursor, code.headSha, code.key), restarted: from.restarted });
+      try {
+        await runOnce(task, { sessionId: from.sessionId, at });
+        resumed = true;
+      } catch (err) {
+        // The session is gone (its review was archived and reopened): start over.
+        if (!isMissingSession(err) || abortController.signal.aborted) throw err;
+      }
+    }
+    if (!resumed) {
+      const [contextInput, { patch }] = await Promise.all([
+        loadReviewContext(deps.db, review, list.files),
+        fetchJson<DiffResponse>(deps.invoke, 'GET', `/api/reviews/${encodeURIComponent(review.id)}/diff?path=${encodeURIComponent(thread.path)}`),
+      ]);
+      await runOnce(buildPrompt(buildReviewContext(contextInput), buildThreadReplyTask({ thread, diffText: trimToLines(patch.patch, 200) })), null);
+    }
+  } finally {
+    if (tracker.sessionId !== null) await removeLocalTranscript(tracker.sessionId);
   }
 
   if (!abortController.signal.aborted && !tools.wasWritten()) {

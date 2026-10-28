@@ -1,6 +1,6 @@
 /**
  * Reading-order generation (the `reading_order` run kind): one `query()`
- * whose agent explores the review root with read-only, path-fenced tools
+ * (resumed once more if a restart cuts it off) whose agent explores the review root with read-only, path-fenced tools
  * (`permissions.ts`'s `makeAgentCanUseTool`, no shell) and hands its plan
  * to the `set_reading_order` tool.
  *
@@ -17,7 +17,16 @@ import { claudeExecutableOption } from './claudeExecutable.ts';
 import { gitToolDefinitions } from './gitTools.ts';
 import { makeAgentCanUseTool } from './permissions.ts';
 import { AGENT_SYSTEM_APPEND, buildPrompt } from './reviewContext.ts';
+import {
+  codeMovedNote,
+  createSessionStore,
+  isMissingSession,
+  removeLocalTranscript,
+  safeResumePoint,
+  SessionTracker,
+} from './sessions.ts';
 import { createReviewTools, type Invoke } from './tools.ts';
+import type { Db, ResumeCursor } from '../db/index.ts';
 
 /** What a reading-order run may call: the reads, the git tools, and `set_reading_order` to submit. */
 const READING_ORDER_TOOLS: ReadonlySet<string> = new Set([
@@ -60,6 +69,7 @@ export function buildReadingOrderTask(): string {
 }
 
 export type GenerateReadingOrderPlanOptions = {
+  readonly db: Db;
   readonly cwd: string;
   /** `buildReviewContext`'s text: the same bytes every run of the review starts with. */
   readonly context: string;
@@ -72,6 +82,10 @@ export type GenerateReadingOrderPlanOptions = {
   readonly abortController?: AbortController;
   /** Called with every SDK message as it streams in, for event logging. */
   readonly onMessage?: (message: unknown) => void | Promise<void>;
+  /** The code the run reads (`sessions.ts`'s `codeKey`), recorded so a resume can tell when it moved. */
+  readonly code: { readonly key: string; readonly headSha: string };
+  /** This same run's session, to resume after a restart cut it off; a fresh session when absent. */
+  readonly restart?: { readonly sessionId: string; readonly cursor: ResumeCursor | null };
 };
 
 export class ReadingOrderAgentError extends Error {}
@@ -104,36 +118,66 @@ export async function generateReadingOrderPlan(options: GenerateReadingOrderPlan
     },
   });
 
-  const stream = query({
-    prompt: buildPrompt(options.context, buildReadingOrderTask()),
-    options: {
-      ...executable,
-      ...(options.abortController === undefined ? {} : { abortController: options.abortController }),
-      cwd: options.cwd,
-      ...(options.model === undefined ? {} : { model: options.model }),
-      mcpServers: { joinery: tools.server },
-      // `Bash` is removed outright rather than gated through a read-only
-      // allowlist: no shell at all for the embedded agent, on either run kind.
-      disallowedTools: ['Write', 'Edit', 'NotebookEdit', 'Bash'],
-      canUseTool: makeAgentCanUseTool({ cwd: options.cwd, joineryTools: READING_ORDER_TOOLS }),
-      // Refuses to load the reviewed repo's own `.claude/settings*.json` —
-      // reviewing a branch that adds a permissive `allow` rule there must
-      // not be able to reopen tool access this run intentionally removed.
-      settingSources: [],
-      // Runs never resume and `agent_event` keeps what we need, so no
-      // transcript under ~/.claude/projects and no generated session title.
-      persistSession: false,
-      title: 'Joinery: reading order',
-      systemPrompt: { type: 'preset', preset: 'claude_code', append: AGENT_SYSTEM_APPEND },
-    },
-  });
+  const tracker = new SessionTracker(options.db, options.runId, options.code);
+  const runOnce = async (prompt: string, resume: { sessionId: string; at: string } | null): Promise<SDKResultMessage | undefined> => {
+    const stream = query({
+      prompt,
+      options: {
+        ...executable,
+        ...(options.abortController === undefined ? {} : { abortController: options.abortController }),
+        cwd: options.cwd,
+        ...(options.model === undefined ? {} : { model: options.model }),
+        mcpServers: { joinery: tools.server },
+        // `Bash` is removed outright rather than gated through a read-only
+        // allowlist: no shell at all for the embedded agent, on either run kind.
+        disallowedTools: ['Write', 'Edit', 'NotebookEdit', 'Bash'],
+        canUseTool: makeAgentCanUseTool({ cwd: options.cwd, joineryTools: READING_ORDER_TOOLS }),
+        // Refuses to load the reviewed repo's own `.claude/settings*.json` —
+        // reviewing a branch that adds a permissive `allow` rule there must
+        // not be able to reopen tool access this run intentionally removed.
+        settingSources: [],
+        // Kept in `data/sessions/` (`sessions.ts`) so a restart can resume
+        // the run; regenerating starts a fresh session. No generated title.
+        sessionStore: createSessionStore(options.reviewId),
+        sessionStoreFlush: 'eager',
+        ...(resume === null ? {} : { resume: resume.sessionId, resumeSessionAt: resume.at }),
+        title: 'Joinery: reading order',
+        systemPrompt: { type: 'preset', preset: 'claude_code', append: AGENT_SYSTEM_APPEND },
+      },
+    });
+    let last: SDKResultMessage | undefined;
+    for await (const message of stream as AsyncIterable<SDKMessage>) {
+      await tracker.observe(message);
+      await options.onMessage?.(message);
+      if (message.type === 'result') last = message;
+    }
+    return last;
+  };
 
   let result: SDKResultMessage | undefined;
-  for await (const message of stream as AsyncIterable<SDKMessage>) {
-    await options.onMessage?.(message);
-    if (message.type === 'result') {
-      result = message;
+  try {
+    // After a restart, resume at the session's last safe point; with none
+    // saved (or the session gone), the run starts over.
+    const { restart } = options;
+    const at = restart === undefined ? null : await safeResumePoint(options.reviewId, restart.sessionId);
+    let resumed = false;
+    if (restart !== undefined && at !== null) {
+      const codeNote = codeMovedNote(restart.cursor, options.code.headSha, options.code.key);
+      const prompt = [
+        'The server restarted while you were writing the reading order. Pick up where you left off.',
+        ...(codeNote === null ? [] : [codeNote]),
+        'Then call set_reading_order once with the whole plan.',
+      ].join('\n\n');
+      try {
+        result = await runOnce(prompt, { sessionId: restart.sessionId, at });
+        resumed = true;
+      } catch (err) {
+        if (!isMissingSession(err) || options.abortController?.signal.aborted === true) throw err;
+      }
     }
+    if (!resumed) result = await runOnce(buildPrompt(options.context, buildReadingOrderTask()), null);
+  } finally {
+    if (tracker.sessionId !== null) await removeLocalTranscript(tracker.sessionId);
   }
 
   if (result === undefined) {

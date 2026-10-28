@@ -103,6 +103,7 @@ import { captureContext } from '../engine/anchor.ts';
 import { projectThreads } from '../engine/threadProjection.ts';
 import { cancelRun, generateReadingOrder, requestThreadReply } from '../agent/runs.ts';
 import type { Invoke } from '../agent/tools.ts';
+import { deleteReviewSessions } from '../agent/sessions.ts';
 import { resolveRunCwd } from '../agent/worktree.ts';
 import { externalFile, installServer, languageOf, lsp, type LspSource, type LspTarget } from '../lsp/index.ts';
 import { installableFor } from '../lsp/install.ts';
@@ -779,12 +780,13 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     const active = await getActiveRun(deps.db, id, 'reading_order');
     if (active !== null) return c.json({ run: active }, 202);
     const engine = await requireEngine(deps, id);
-    const files = engine.getFileList().files;
+    const { files, headSha } = engine.getFileList();
     const cwd = await resolveRunCwd({ db: deps.db }, review, engine);
     const run = await generateReadingOrder({ db: deps.db, invoke: deps.invoke, emit: (e) => dispatch(id, e) }, id, {
       cwd,
       review,
       files,
+      headSha,
       ...(body.model === undefined ? {} : { model: body.model }),
     });
     return c.json({ run }, 202);
@@ -1006,13 +1008,22 @@ export function buildRoutes(deps: RoutesDeps): Hono {
     return c.json({ state, list });
   });
 
-  // Archive is a DB status flag only — it never disposes the engine or
-  // touches worktrees, and it never deletes or modifies threads, comments,
-  // reading order, or viewed state. Reversible by posting `open` again.
+  // Archive is a DB status flag, plus the end of the review's agent
+  // sessions: its live runs are cancelled and their transcripts deleted, so
+  // a thread asked again after reopening starts a fresh session. It never
+  // disposes the engine or touches worktrees, and it never deletes or
+  // modifies threads, comments, reading order, or viewed state. Reversible
+  // by posting `open` again.
   app.post('/api/reviews/:id/status', async (c) => {
     const id = c.req.param('id');
     await requireReview(deps, id);
     const body = await parseBody(setReviewStatusBodySchema, c);
+    if (body.status === 'archived') {
+      for (const run of (await listUnfinishedRuns(deps.db)).filter((r) => r.reviewId === id)) {
+        await cancelRun({ db: deps.db, invoke: deps.invoke, emit: (e) => dispatch(id, e) }, run.id);
+      }
+      await deleteReviewSessions(deps.db, id);
+    }
     const review = await setStatus(deps.db, id, body.status);
     bus.changed('home');
     return c.json({ review });
